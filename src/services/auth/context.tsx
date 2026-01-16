@@ -1,5 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { Session, User } from '@supabase/supabase-js';
+import { Platform } from 'react-native';
+import * as Linking from 'expo-linking';
 import { supabase } from '@/services/supabase';
 
 type AuthContextType = {
@@ -20,7 +22,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Get initial session
+    // Get initial session (this will parse OAuth callback URL hash/query params)
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       setUser(session?.user ?? null);
@@ -58,12 +60,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signInWithGoogle = async () => {
+    // Get the correct redirect URL based on platform
+    let redirectTo: string;
+    
+    if (Platform.OS === 'web') {
+      // For web, use the current origin + /callback
+      redirectTo = `${window.location.origin}/callback`;
+    } else {
+      // For native (iOS/Android), use expo-linking to get the deep link URL
+      // This will be something like: prompt-squad://callback
+      const scheme = Linking.createURL('/callback');
+      redirectTo = scheme;
+    }
+
+    console.log('OAuth redirect URL:', redirectTo);
+
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: typeof window !== 'undefined' ? window.location.origin : undefined,
+        redirectTo,
+        // Skip browser redirect on native - Expo handles it
+        skipBrowserRedirect: Platform.OS !== 'web',
       },
     });
+    
+    if (error) {
+      console.error('OAuth sign-in error:', error);
+    }
+    
     return { error: error as Error | null };
   };
 

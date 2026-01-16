@@ -15,7 +15,11 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.promptsquad.app"
+      "bundleIdentifier": "com.promptsquad.app",
+      "infoPlist": {
+        "NSSpeechRecognitionUsageDescription": "This app uses speech recognition to convert your voice input into text for chat messages.",
+        "NSMicrophoneUsageDescription": "This app needs access to your microphone to record voice input for chat messages."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -24,7 +28,11 @@
       },
       "package": "com.promptsquad.app",
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ],
+      "softwareKeyboardLayoutMode": "resize"
     },
     "web": {
       "favicon": "./assets/favicon.png",
@@ -32,7 +40,8 @@
     },
     "plugins": [
       "expo-router",
-      "expo-font"
+      "expo-font",
+      "expo-speech-recognition"
     ]
   }
 }

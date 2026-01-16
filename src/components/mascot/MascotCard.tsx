@@ -1,9 +1,13 @@
 import React, { useState } from 'react';
 import { View, Text, Image, StyleSheet, Pressable, Platform, ImageSourcePropType } from 'react-native';
-import { useTheme, textStyles, shadowToCSS, shadowToNative } from '@/design-system';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useTheme, textStyles, shadowToCSS, shadowToNative, skeuToGradient } from '@/design-system';
 import { MiniButton } from '../ui/MiniButton';
 
 export type MascotCardState = 'default' | 'hover' | 'locked' | 'locked-hover';
+
+// All available mascot colors
+export type MascotColorVariant = 'yellow' | 'red' | 'green' | 'pink' | 'purple' | 'darkPurple' | 'brown' | 'teal' | 'orange' | 'blue';
 
 export type MascotCardProps = {
   id: string;
@@ -11,12 +15,15 @@ export type MascotCardProps = {
   subtitle: string;
   imageUrl?: string;
   imageSource?: ImageSourcePropType;
+  grayscaleImageSource?: ImageSourcePropType; // Grayscale version of the image
   onPress?: () => void;
   isLocked?: boolean;
   /** Force a specific state for preview purposes */
   forceState?: MascotCardState;
   /** Color variant for hover border (defaults to yellow) */
-  colorVariant?: 'yellow' | 'red' | 'green' | 'pink';
+  colorVariant?: MascotColorVariant;
+  /** Force grayscale filter on the image */
+  forceGrayscale?: boolean;
 };
 
 export function MascotCard({
@@ -24,10 +31,12 @@ export function MascotCard({
   subtitle,
   imageUrl,
   imageSource,
+  grayscaleImageSource,
   onPress,
   isLocked = false,
   forceState,
   colorVariant = 'yellow',
+  forceGrayscale = false,
 }: MascotCardProps) {
   const { colors } = useTheme();
   const [isHoveredInternal, setIsHoveredInternal] = useState(false);
@@ -59,11 +68,9 @@ export function MascotCard({
     default: {},
   });
 
-  // Grayscale filter for locked state (web only, native uses tintColor)
-  const grayscaleStyle = Platform.select({
-    web: isLockedState ? { filter: 'grayscale(100%)' } as unknown as object : {},
-    default: {},
-  });
+  // Grayscale filter for locked state or when forceGrayscale is true
+  // forceGrayscale can override this if needed, but by default only locked mascots are grayscale
+  const shouldGrayscale = forceGrayscale !== undefined ? forceGrayscale : isLockedState;
 
   return (
     <Pressable
@@ -87,8 +94,8 @@ export function MascotCard({
         },
         // Web: Use inset box-shadow for border (inside the element, no layout shift)
         Platform.OS === 'web' && ({
-          boxShadow: isHovered 
-            ? `inset 0 0 0 2px ${hoverBorderColor}, ${shadowToCSS('md')}` 
+          boxShadow: isHovered
+            ? `inset 0 0 0 2px ${hoverBorderColor}, ${shadowToCSS('md')}`
             : `inset 0 0 0 1px ${colors.outline}`,
         } as unknown as object),
         // Native: Apply hover shadow separately
@@ -101,24 +108,27 @@ export function MascotCard({
           styles.imageContainer,
           (isHovered || isLockedHover) && styles.imageContainerHover,
           Platform.OS === 'web' && ({ transition: 'all 200ms ease-out' } as unknown as object),
-          grayscaleStyle,
-          // Locked state: 20% opacity on web, handled via overlay on native
-          isLockedState && Platform.OS === 'web' && { opacity: 0.2 },
+          // Locked state: reduced opacity only if not using grayscale image (which has embedded opacity)
+          isLockedState && !grayscaleImageSource && { opacity: 0.3 },
         ]}
       >
         <Image
-          source={imageSource || { uri: imageUrl }}
+          source={
+            // If locked and grayscale image is available, use it
+            isLockedState && grayscaleImageSource
+              ? grayscaleImageSource
+              // Otherwise, use regular image
+              : (imageSource || { uri: imageUrl })
+          }
           style={[
             styles.image,
-            // Native locked state: 20% opacity
-            isLockedState && Platform.OS !== 'web' && { opacity: 0.2 },
+            // Apply grayscale filter on web only if locked but no grayscale image provided
+            Platform.OS === 'web' && isLockedState && !grayscaleImageSource
+              ? { filter: 'grayscale(100%)' } as unknown as object
+              : {},
           ]}
           resizeMode="cover"
         />
-        {/* Grayscale overlay for native - now combined with opacity */}
-        {isLockedState && Platform.OS !== 'web' && (
-          <View style={styles.grayscaleOverlay} />
-        )}
       </View>
 
       {/* Text content - zIndex ensures it's above image on hover */}
@@ -156,7 +166,7 @@ export function MascotCard({
 
       {/* MiniButton for locked-hover state only - positioned at bottom of card with 16px padding */}
       {isLockedHover && (
-        <View 
+        <View
           style={styles.buttonContainer}
           {...(Platform.OS === 'web' && {
             onMouseEnter: () => {
@@ -167,8 +177,8 @@ export function MascotCard({
             },
           })}
         >
-          <MiniButton 
-            label="Unlock for 99ct" 
+          <MiniButton
+            label="Unlock for 99ct"
             onPress={onPress}
           />
         </View>
@@ -179,7 +189,7 @@ export function MascotCard({
 
 const CARD_SIZE = 192;
 const IMAGE_SIZE_DEFAULT = 128;
-const IMAGE_SIZE_HOVER = 148;
+const IMAGE_SIZE_HOVER = 140;
 
 const styles = StyleSheet.create({
   container: {
@@ -216,25 +226,20 @@ const styles = StyleSheet.create({
     position: 'absolute',
     width: IMAGE_SIZE_DEFAULT,
     height: IMAGE_SIZE_DEFAULT,
-    top: 65,
+    top: 64, // bottom aligns with card border (192 - 128 = 64)
     left: (CARD_SIZE - IMAGE_SIZE_DEFAULT) / 2,
     zIndex: 1,
   },
   imageContainerHover: {
     width: IMAGE_SIZE_HOVER,
     height: IMAGE_SIZE_HOVER,
-    top: 44,
+    top: CARD_SIZE - IMAGE_SIZE_HOVER, // 192 - 140 = 52; stay fully inside border
     left: (CARD_SIZE - IMAGE_SIZE_HOVER) / 2,
     zIndex: 5, // Higher than text on hover
   },
   image: {
     width: '100%',
     height: '100%',
-  },
-  grayscaleOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    // Using mix-blend-mode equivalent: making image appear grayscale
   },
   buttonContainer: {
     position: 'absolute',

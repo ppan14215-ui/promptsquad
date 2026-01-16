@@ -36,12 +36,19 @@ function filterValidHistory(messages: GeminiMessage[]): GeminiMessage[] {
 export async function chatWithGemini(
   messages: GeminiMessage[],
   systemPrompt?: string,
-  model: string = AI_CONFIG.gemini.defaultModel
+  model: string = AI_CONFIG.gemini.defaultModel,
+  deepThinking: boolean = false
 ): Promise<string> {
+  if (!AI_CONFIG.gemini.apiKey) {
+    throw new Error('Gemini API key not configured. Please set EXPO_PUBLIC_GEMINI_API_KEY in your environment variables.');
+  }
+
   const client = getClient();
+  const deepConfig = deepThinking ? AI_CONFIG.gemini.deepThinking : undefined;
   const generativeModel = client.getGenerativeModel({ 
     model,
     systemInstruction: systemPrompt,
+    ...(deepConfig ? { generationConfig: deepConfig } : {}),
   });
 
   // Get the last user message
@@ -55,22 +62,40 @@ export async function chatWithGemini(
   const history = toGeminiHistory(historyMessages);
   const chat = generativeModel.startChat({ history });
 
-  const result = await chat.sendMessage(lastMessage.content);
-  const response = result.response;
-  
-  return response.text();
+  try {
+    const result = await chat.sendMessage(lastMessage.content);
+    const response = result.response;
+    
+    return response.text();
+  } catch (error: any) {
+    console.error('Gemini API error:', error);
+    if (error?.message?.includes('API_KEY')) {
+      throw new Error('Gemini API key is invalid. Please check your EXPO_PUBLIC_GEMINI_API_KEY.');
+    }
+    if (error?.message?.includes('network') || error?.message?.includes('fetch')) {
+      throw new Error('Connection error: Unable to reach Gemini API. Please check your internet connection.');
+    }
+    throw new Error(error?.message || 'Gemini API request failed');
+  }
 }
 
 export async function streamChatWithGemini(
   messages: GeminiMessage[],
   onChunk: (chunk: string) => void,
   systemPrompt?: string,
-  model: string = AI_CONFIG.gemini.defaultModel
+  model: string = AI_CONFIG.gemini.defaultModel,
+  deepThinking: boolean = false
 ): Promise<string> {
+  if (!AI_CONFIG.gemini.apiKey) {
+    throw new Error('Gemini API key not configured. Please set EXPO_PUBLIC_GEMINI_API_KEY in your environment variables.');
+  }
+
   const client = getClient();
+  const deepConfig = deepThinking ? AI_CONFIG.gemini.deepThinking : undefined;
   const generativeModel = client.getGenerativeModel({ 
     model,
     systemInstruction: systemPrompt,
+    ...(deepConfig ? { generationConfig: deepConfig } : {}),
   });
 
   // Get the last user message
@@ -84,18 +109,29 @@ export async function streamChatWithGemini(
   const history = toGeminiHistory(historyMessages);
   const chat = generativeModel.startChat({ history });
 
-  const result = await chat.sendMessageStream(lastMessage.content);
-  
-  let fullResponse = '';
-  
-  for await (const chunk of result.stream) {
-    const text = chunk.text();
-    if (text) {
-      fullResponse += text;
-      onChunk(text);
+  try {
+    const result = await chat.sendMessageStream(lastMessage.content);
+    
+    let fullResponse = '';
+    
+    for await (const chunk of result.stream) {
+      const text = chunk.text();
+      if (text) {
+        fullResponse += text;
+        onChunk(text);
+      }
     }
-  }
 
-  return fullResponse;
+    return fullResponse;
+  } catch (error: any) {
+    console.error('Gemini streaming error:', error);
+    if (error?.message?.includes('API_KEY')) {
+      throw new Error('Gemini API key is invalid. Please check your EXPO_PUBLIC_GEMINI_API_KEY.');
+    }
+    if (error?.message?.includes('network') || error?.message?.includes('fetch')) {
+      throw new Error('Connection error: Unable to reach Gemini API. Please check your internet connection.');
+    }
+    throw new Error(error?.message || 'Gemini API request failed');
+  }
 }
 

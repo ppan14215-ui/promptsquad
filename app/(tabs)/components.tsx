@@ -1,6 +1,7 @@
+import { useState } from 'react';
 import { ScrollView, View, Text, StyleSheet } from 'react-native';
 import { useTheme, textStyles, fontFamilies } from '@/design-system';
-import { MascotCard, MascotCardState, CreateCustomCard, CreateCustomCardState, MiniButton, MiniButtonState, BigPrimaryButton, BigPrimaryButtonState, MediumDarkButton, MediumDarkButtonState, TextButton, TextButtonState, LinkPill, LinkPillState, ColoredTab, ColoredTabState, IconButton, IconButtonState, MascotDetails, MascotDetailsVariant } from '@/components';
+import { MascotCard, MascotCardState, CreateCustomCard, CreateCustomCardState, MiniButton, MiniButtonState, BigPrimaryButton, BigPrimaryButtonState, MediumDarkButton, MediumDarkButtonState, TextButton, TextButtonState, LinkPill, LinkPillState, ColoredTab, ColoredTabState, IconButton, IconButtonState, MascotDetails, MascotDetailsVariant, SegmentedToggle, InputField, ChatInputBox, BigSecondaryButton } from '@/components';
 
 // Sample mascot for component preview
 const SAMPLE_MASCOT = {
@@ -8,6 +9,7 @@ const SAMPLE_MASCOT = {
   name: 'Analyst Bear',
   subtitle: 'Great at research',
   image: require('../../assets/mascots/Bear.png'),
+  grayscaleImage: require('../../assets/mascots/Bear-grayscale.png'),
 };
 
 const CARD_STATES: { state: MascotCardState; label: string }[] = [
@@ -64,6 +66,11 @@ const MASCOT_DETAILS_VARIANTS: { variant: MascotDetailsVariant; label: string }[
   { variant: 'locked', label: 'Locked' },
 ];
 
+const SEGMENTED_OPTIONS = [
+  { key: 'first', label: 'First' },
+  { key: 'second', label: 'Second' },
+];
+
 const SAMPLE_MASCOT_DETAILS = {
   name: 'Analyst Bear',
   subtitle: 'Great at research',
@@ -79,6 +86,10 @@ const SAMPLE_MASCOT_DETAILS = {
 
 export default function ComponentsScreen() {
   const { colors } = useTheme();
+  const [chatInput, setChatInput] = useState('');
+  const [webSearchEnabled, setWebSearchEnabled] = useState(false);
+  const [deepThinkingEnabled, setDeepThinkingEnabled] = useState(false);
+  const [chatLLM, setChatLLM] = useState<'auto' | 'openai' | 'gemini' | 'perplexity'>('auto');
 
   return (
     <ScrollView
@@ -152,6 +163,12 @@ export default function ComponentsScreen() {
                 name={SAMPLE_MASCOT.name}
                 subtitle={SAMPLE_MASCOT.subtitle}
                 imageSource={SAMPLE_MASCOT.image}
+                grayscaleImageSource={
+                  (state === 'locked' || state === 'locked-hover') 
+                    ? SAMPLE_MASCOT.grayscaleImage 
+                    : undefined
+                }
+                isLocked={state === 'locked' || state === 'locked-hover'}
                 forceState={state}
                 onPress={() => console.log(`${label} card pressed`)}
               />
@@ -499,6 +516,220 @@ export default function ComponentsScreen() {
               />
             </View>
           ))}
+        </View>
+      </View>
+
+      {/* SegmentedToggle Section */}
+      <View style={styles.section}>
+        <Text
+          style={[
+            styles.sectionTitle,
+            {
+              fontFamily: fontFamilies.figtree.semiBold,
+              color: colors.text,
+            },
+          ]}
+        >
+          SegmentedToggle
+        </Text>
+        <Text
+          style={[
+            styles.sectionDescription,
+            {
+              fontFamily: fontFamilies.figtree.regular,
+              color: colors.textMuted,
+            },
+          ]}
+        >
+          Segmented control for switching between two or more options.
+        </Text>
+        <View style={styles.statesGrid}>
+          <View style={[styles.stateItem, { width: 320 }]}>
+            <Text
+              style={[
+                styles.stateLabel,
+                {
+                  fontFamily: fontFamilies.figtree.semiBold,
+                  color: colors.textMuted,
+                },
+              ]}
+            >
+              Default
+            </Text>
+            <SegmentedToggle
+              options={SEGMENTED_OPTIONS}
+              selectedKey="first"
+              onChange={() => {}}
+            />
+          </View>
+        </View>
+      </View>
+
+      {/* InputField Section */}
+      <View style={styles.section}>
+        <Text
+          style={[
+            styles.sectionTitle,
+            {
+              fontFamily: fontFamilies.figtree.semiBold,
+              color: colors.text,
+            },
+          ]}
+        >
+          InputField
+        </Text>
+        <Text
+          style={[
+            styles.sectionDescription,
+            {
+              fontFamily: fontFamilies.figtree.regular,
+              color: colors.textMuted,
+            },
+          ]}
+        >
+          Labeled input with outline and shadow.
+        </Text>
+        <View style={styles.statesGrid}>
+          <View style={[styles.stateItem, { width: 320 }]}>
+            <Text
+              style={[
+                styles.stateLabel,
+                {
+                  fontFamily: fontFamilies.figtree.semiBold,
+                  color: colors.textMuted,
+                },
+              ]}
+            >
+              Default
+            </Text>
+            <InputField
+              label="Email"
+              placeholder="Enter your email"
+              value=""
+              onChangeText={() => {}}
+            />
+          </View>
+        </View>
+      </View>
+
+      {/* ChatInputBox Section */}
+      <View style={styles.section}>
+        <Text
+          style={[
+            styles.sectionTitle,
+            {
+              fontFamily: fontFamilies.figtree.semiBold,
+              color: colors.text,
+            },
+          ]}
+        >
+          ChatInputBox
+        </Text>
+        <Text
+          style={[
+            styles.sectionDescription,
+            {
+              fontFamily: fontFamilies.figtree.regular,
+              color: colors.textMuted,
+            },
+          ]}
+        >
+          Full-featured chat input with LLM picker, web search, deep thinking, and voice input.
+          Uses shadow lg, 24px border radius, 24px padding, and mascot-colored send button.
+        </Text>
+        <View style={styles.statesGrid}>
+          <View style={[styles.stateItem, { width: 480, alignItems: 'stretch' }]}>
+            <Text
+              style={[
+                styles.stateLabel,
+                {
+                  fontFamily: fontFamilies.figtree.semiBold,
+                  color: colors.textMuted,
+                },
+              ]}
+            >
+              Default (all features)
+            </Text>
+            <ChatInputBox
+              value={chatInput}
+              onChangeText={setChatInput}
+              onSend={() => console.log('Send:', chatInput)}
+              placeholder="Write a message"
+              mascotColor="#EDB440"
+              showLLMPicker={true}
+              chatLLM={chatLLM}
+              onLLMChange={setChatLLM}
+              webSearchEnabled={webSearchEnabled}
+              onWebSearchToggle={() => setWebSearchEnabled(!webSearchEnabled)}
+              deepThinkingEnabled={deepThinkingEnabled}
+              onDeepThinkingToggle={() => setDeepThinkingEnabled(!deepThinkingEnabled)}
+              onVoicePress={() => console.log('Voice input pressed')}
+              maxWidth={480}
+            />
+          </View>
+        </View>
+      </View>
+
+      {/* BigSecondaryButton Section */}
+      <View style={styles.section}>
+        <Text
+          style={[
+            styles.sectionTitle,
+            {
+              fontFamily: fontFamilies.figtree.semiBold,
+              color: colors.text,
+            },
+          ]}
+        >
+          BigSecondaryButton
+        </Text>
+        <Text
+          style={[
+            styles.sectionDescription,
+            {
+              fontFamily: fontFamilies.figtree.regular,
+              color: colors.textMuted,
+            },
+          ]}
+        >
+          Large secondary button with outline style. Same rounding as primary, shadow xs, turns light gray on hover.
+        </Text>
+        <View style={styles.statesGrid}>
+          <View style={styles.stateItem}>
+            <Text
+              style={[
+                styles.stateLabel,
+                {
+                  fontFamily: fontFamilies.figtree.semiBold,
+                  color: colors.textMuted,
+                },
+              ]}
+            >
+              Default
+            </Text>
+            <BigSecondaryButton
+              label="Sign in with Google"
+              onPress={() => console.log('Secondary button pressed')}
+            />
+          </View>
+          <View style={styles.stateItem}>
+            <Text
+              style={[
+                styles.stateLabel,
+                {
+                  fontFamily: fontFamilies.figtree.semiBold,
+                  color: colors.textMuted,
+                },
+              ]}
+            >
+              Hover
+            </Text>
+            <BigSecondaryButton
+              label="Sign in with Google"
+              forceState="hover"
+              onPress={() => console.log('Secondary button hover pressed')}
+            />
+          </View>
         </View>
       </View>
 

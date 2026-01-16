@@ -9,12 +9,14 @@ export type MediumDarkButtonProps = {
   onPress?: () => void;
   /** Force a specific state for preview purposes */
   forceState?: MediumDarkButtonState;
+  fullWidth?: boolean;
 };
 
 export function MediumDarkButton({
   label,
   onPress,
   forceState,
+  fullWidth = false,
 }: MediumDarkButtonProps) {
   const { colors } = useTheme();
   const [isHoveredInternal, setIsHoveredInternal] = useState(false);
@@ -46,6 +48,7 @@ export function MediumDarkButton({
       style={[
         styles.container,
         webTransitionStyle,
+        fullWidth && styles.fullWidth,
         {
           backgroundColor: isHovered ? colors.darkButtonHover : colors.darkButton,
         },
@@ -77,6 +80,9 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  fullWidth: {
+    width: '100%',
   },
   label: {
     textAlign: 'center',

@@ -2,7 +2,13 @@ import React from 'react';
 import { View, Text, StyleSheet, Image, ScrollView, Platform, ImageSourcePropType } from 'react-native';
 import { useTheme, textStyles, fontFamilies, shadowToCSS, shadowToNative } from '@/design-system';
 import { useI18n } from '@/i18n';
-import { IconButton, TextButton, MediumDarkButton, MiniButton, LinkPill, ColoredTab } from '@/components';
+import { IconButton } from '@/components/ui/IconButton';
+import { TextButton } from '@/components/ui/TextButton';
+import { MediumDarkButton } from '@/components/ui/MediumDarkButton';
+import { MiniButton } from '@/components/ui/MiniButton';
+import { LinkPill } from '@/components/ui/LinkPill';
+import { ColoredTab } from '@/components/ui/ColoredTab';
+import { useMascotLike } from '@/services/mascot-likes';
 
 export type MascotDetailsVariant = 'available' | 'locked';
 
@@ -19,9 +25,8 @@ export type MascotDetailsProps = {
   models: string[];
   skills: Skill[];
   variant?: MascotDetailsVariant;
-  isFavorite?: boolean;
+  mascotId?: string | null; // Mascot ID for like system
   onClose?: () => void;
-  onFavorite?: () => void;
   onStartChat?: () => void;
   onTryOut?: () => void;
   onUnlock?: () => void;
@@ -36,9 +41,8 @@ export function MascotDetails({
   models,
   skills,
   variant = 'available',
-  isFavorite = false,
+  mascotId,
   onClose,
-  onFavorite,
   onStartChat,
   onTryOut,
   onUnlock,
@@ -47,6 +51,9 @@ export function MascotDetails({
   const { colors } = useTheme();
   const { t } = useI18n();
   const isLocked = variant === 'locked';
+  
+  // Use shared like system if mascotId is provided
+  const { isLiked, likeCount, toggleLike, isToggling } = useMascotLike(mascotId || null);
 
   // Shadow for header
   const headerShadowStyle = Platform.select({
@@ -69,11 +76,27 @@ export function MascotDetails({
       >
         {/* Top Row with Icon Buttons */}
         <View style={styles.topRow}>
-          <IconButton
-            iconName="favourite"
-            isSelected={isFavorite}
-            onPress={onFavorite}
-          />
+          <View style={styles.favoriteContainer}>
+            <IconButton
+              iconName="favourite"
+              isSelected={isLiked}
+              onPress={toggleLike}
+              disabled={isToggling}
+            />
+            {likeCount > 0 && (
+              <Text
+                style={[
+                  styles.likeCount,
+                  {
+                    fontFamily: fontFamilies.figtree.medium,
+                    color: colors.textMuted,
+                  },
+                ]}
+              >
+                {likeCount}
+              </Text>
+            )}
+          </View>
           <IconButton
             iconName="close"
             onPress={onClose}
@@ -118,10 +141,11 @@ export function MascotDetails({
               styles.mascotImage,
               isLocked && styles.mascotImageLocked,
               isLocked && Platform.OS === 'web' && { filter: 'grayscale(100%)' } as any,
+              // On native, use opacity for locked state
+              isLocked && Platform.OS !== 'web' && { opacity: 0.6 },
             ]}
             resizeMode="cover"
           />
-          {isLocked && Platform.OS !== 'web' && <View style={styles.grayscaleOverlay} />}
         </View>
 
         {/* Unlock Button for Locked State */}
@@ -136,103 +160,207 @@ export function MascotDetails({
       </View>
 
       {/* Content Section */}
-      <ScrollView
-        style={[
-          styles.content,
-          {
-            backgroundColor: colors.background,
-            borderColor: colors.outline,
-          },
-        ]}
-        contentContainerStyle={styles.contentInner}
-      >
-        {/* Personality Section */}
-        <View style={styles.section}>
-          <Text
-            style={[
-              styles.sectionTitle,
-              {
-                fontFamily: fontFamilies.figtree.semiBold,
-                color: colors.text,
-              },
-            ]}
-          >
-            {t.mascot.personality}
-          </Text>
-          <View style={styles.tagsRow}>
-            {personality.map((trait, index) => (
-              <ColoredTab
-                key={index}
-                label={trait}
-                forceState="default"
-              />
-            ))}
+      {Platform.OS === 'web' ? (
+        <View
+          style={[
+            styles.content,
+            styles.contentDesktop,
+            {
+              backgroundColor: colors.background,
+              borderColor: colors.outline,
+            },
+          ]}
+        >
+          <View style={styles.contentInner}>
+            {/* Personality Section */}
+            <View style={styles.section}>
+              <Text
+                style={[
+                  styles.sectionTitle,
+                  {
+                    fontFamily: fontFamilies.figtree.semiBold,
+                    color: colors.text,
+                  },
+                ]}
+              >
+                {t.mascot.personality}
+              </Text>
+              <View style={styles.tagsRow}>
+                {personality.map((trait, index) => (
+                  <ColoredTab
+                    key={index}
+                    label={trait}
+                    forceState="default"
+                  />
+                ))}
+              </View>
+            </View>
+
+            {/* Used Models Section */}
+            <View style={styles.section}>
+              <Text
+                style={[
+                  styles.sectionTitle,
+                  {
+                    fontFamily: fontFamilies.figtree.semiBold,
+                    color: colors.text,
+                  },
+                ]}
+              >
+                {t.mascot.usedModels}
+              </Text>
+              <View style={styles.tagsRow}>
+                {models.map((model, index) => (
+                  <ColoredTab
+                    key={index}
+                    label={model}
+                    forceState="default"
+                  />
+                ))}
+              </View>
+            </View>
+
+            {/* Skills Section */}
+            <View style={styles.section}>
+              <Text
+                style={[
+                  styles.sectionTitle,
+                  {
+                    fontFamily: fontFamilies.figtree.semiBold,
+                    color: colors.text,
+                  },
+                ]}
+              >
+                {t.mascot.skills}
+              </Text>
+              <View style={styles.skillsColumn}>
+                {skills.map((skill) => (
+                  <LinkPill
+                    key={skill.id}
+                    label={skill.label}
+                    onPress={() => onSkillPress?.(skill)}
+                  />
+                ))}
+              </View>
+            </View>
+
+            {/* CTA Section */}
+            <View style={styles.ctaContainer}>
+              {isLocked ? (
+                <TextButton
+                  label={t.mascot.tryOut}
+                  onPress={onTryOut}
+                />
+              ) : (
+                <MediumDarkButton
+                  label={t.mascot.startChatting}
+                  onPress={onStartChat}
+                  fullWidth
+                />
+              )}
+            </View>
           </View>
         </View>
-
-        {/* Used Models Section */}
-        <View style={styles.section}>
-          <Text
-            style={[
-              styles.sectionTitle,
-              {
-                fontFamily: fontFamilies.figtree.semiBold,
-                color: colors.text,
-              },
-            ]}
-          >
-            {t.mascot.usedModels}
-          </Text>
-          <View style={styles.tagsRow}>
-            {models.map((model, index) => (
-              <ColoredTab
-                key={index}
-                label={model}
-                forceState="default"
-              />
-            ))}
+      ) : (
+        <ScrollView
+          style={[
+            styles.content,
+            {
+              backgroundColor: colors.background,
+              borderColor: colors.outline,
+            },
+          ]}
+          contentContainerStyle={styles.contentInner}
+        >
+          {/* Personality Section */}
+          <View style={styles.section}>
+            <Text
+              style={[
+                styles.sectionTitle,
+                {
+                  fontFamily: fontFamilies.figtree.semiBold,
+                  color: colors.text,
+                },
+              ]}
+            >
+              {t.mascot.personality}
+            </Text>
+            <View style={styles.tagsRow}>
+              {personality.map((trait, index) => (
+                <ColoredTab
+                  key={index}
+                  label={trait}
+                  forceState="default"
+                />
+              ))}
+            </View>
           </View>
-        </View>
 
-        {/* Skills Section */}
-        <View style={styles.section}>
-          <Text
-            style={[
-              styles.sectionTitle,
-              {
-                fontFamily: fontFamilies.figtree.semiBold,
-                color: colors.text,
-              },
-            ]}
-          >
-            {t.mascot.skills}
-          </Text>
-          <View style={styles.skillsColumn}>
-            {skills.map((skill) => (
-              <LinkPill
-                key={skill.id}
-                label={skill.label}
-                onPress={() => onSkillPress?.(skill)}
-              />
-            ))}
+          {/* Used Models Section */}
+          <View style={styles.section}>
+            <Text
+              style={[
+                styles.sectionTitle,
+                {
+                  fontFamily: fontFamilies.figtree.semiBold,
+                  color: colors.text,
+                },
+              ]}
+            >
+              {t.mascot.usedModels}
+            </Text>
+            <View style={styles.tagsRow}>
+              {models.map((model, index) => (
+                <ColoredTab
+                  key={index}
+                  label={model}
+                  forceState="default"
+                />
+              ))}
+            </View>
           </View>
-        </View>
 
-        {/* CTA Section */}
-        <View style={styles.ctaContainer}>
-          {isLocked ? (
-            <TextButton
-              label={t.mascot.tryOut}
-              onPress={onTryOut}
-            />
-          ) : (
-            <MediumDarkButton
-              label={t.mascot.startChatting}
-              onPress={onStartChat}
-            />
-          )}
-        </View>
-      </ScrollView>
+          {/* Skills Section */}
+          <View style={styles.section}>
+            <Text
+              style={[
+                styles.sectionTitle,
+                {
+                  fontFamily: fontFamilies.figtree.semiBold,
+                  color: colors.text,
+                },
+              ]}
+            >
+              {t.mascot.skills}
+            </Text>
+            <View style={styles.skillsColumn}>
+              {skills.map((skill) => (
+                <LinkPill
+                  key={skill.id}
+                  label={skill.label}
+                  onPress={() => onSkillPress?.(skill)}
+                />
+              ))}
+            </View>
+          </View>
+
+          {/* CTA Section */}
+          <View style={styles.ctaContainer}>
+            {isLocked ? (
+              <TextButton
+                label={t.mascot.tryOut}
+                onPress={onTryOut}
+              />
+            ) : (
+              <MediumDarkButton
+                label={t.mascot.startChatting}
+                onPress={onStartChat}
+                fullWidth
+              />
+            )}
+          </View>
+        </ScrollView>
+      )}
     </View>
   );
 }
@@ -245,7 +373,7 @@ const styles = StyleSheet.create({
   container: {
     width: CARD_WIDTH,
     borderRadius: 16,
-    overflow: 'hidden',
+    overflow: 'visible', // Allow image to be visible on mobile
   },
   header: {
     height: HEADER_HEIGHT,
@@ -253,10 +381,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
-    borderWidth: 1,
+    borderWidth: Platform.OS === 'web' ? 1 : 0, // No border on mobile
     borderBottomWidth: 0,
     alignItems: 'center',
-    overflow: 'hidden',
+    overflow: 'visible', // Allow image to be visible
+    position: 'relative', // Ensure proper positioning context
   },
   topRow: {
     flexDirection: 'row',
@@ -277,32 +406,33 @@ const styles = StyleSheet.create({
   imageContainer: {
     position: 'absolute',
     top: 96,
+    left: (CARD_WIDTH - IMAGE_SIZE) / 2, // Center horizontally
     width: IMAGE_SIZE,
     height: IMAGE_SIZE,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   mascotImage: {
     width: IMAGE_SIZE,
     height: IMAGE_SIZE,
+    borderRadius: 0, // Ensure no border radius issues
   },
   mascotImageLocked: {
     opacity: 1,
-  },
-  grayscaleOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#000000',
-    // Using mix-blend-mode for grayscale on web, opacity overlay on native
-    // Less transparent than on cards (0.3 vs 0.5)
-    ...(Platform.OS === 'web' ? { mixBlendMode: 'color' } : { opacity: 0.3 }),
   },
   unlockButtonContainer: {
     position: 'absolute',
     bottom: 24,
   },
   content: {
-    borderWidth: 1,
+    borderWidth: Platform.OS === 'web' ? 1 : 0, // No border on mobile
     borderTopWidth: 0,
     borderBottomLeftRadius: 16,
     borderBottomRightRadius: 16,
+  },
+  contentDesktop: {
+    maxHeight: 400, // Max height on desktop, content will grow up to this
+    overflow: 'hidden', // Hide overflow instead of scrolling
   },
   contentInner: {
     paddingTop: 24,
@@ -333,6 +463,15 @@ const styles = StyleSheet.create({
   ctaContainer: {
     alignItems: 'center',
     marginTop: 8,
+  },
+  favoriteContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  likeCount: {
+    fontSize: 12,
+    lineHeight: 16,
   },
 });
 

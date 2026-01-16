@@ -21,6 +21,7 @@ interface ChatRequest {
     content: string;
   }>;
   conversationId?: string;
+  skillId?: string; // Optional skill ID to include skill prompt
 }
 
 serve(async (req) => {
@@ -36,25 +37,63 @@ serve(async (req) => {
     const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
     
     // Client for auth verification (uses anon key + user's JWT)
-    const authHeader = req.headers.get('Authorization')!;
-    const supabaseClient = createClient(supabaseUrl, supabaseAnonKey, {
-      global: { headers: { Authorization: authHeader } },
-    });
-
-    // Service client for accessing protected data
-    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
-
-    // Verify user is authenticated
-    const { data: { user }, error: authError } = await supabaseClient.auth.getUser();
-    if (authError || !user) {
+    const authHeader = req.headers.get('Authorization');
+    const apikeyHeader = req.headers.get('apikey');
+    
+    console.log('[Edge Function] Received request');
+    console.log('[Edge Function] Has Authorization header:', !!authHeader);
+    console.log('[Edge Function] Has apikey header:', !!apikeyHeader);
+    
+    if (!authHeader) {
+      console.error('[Edge Function] Missing Authorization header');
       return new Response(
-        JSON.stringify({ error: 'Unauthorized' }),
+        JSON.stringify({ error: 'Missing Authorization header' }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
+    // Extract bearer token
+    const token = authHeader.replace('Bearer', '').trim();
+    if (!token) {
+      console.error('[Edge Function] Authorization header present but no token');
+      return new Response(
+        JSON.stringify({ error: 'Invalid Authorization header' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Service client for accessing protected data and validating JWT
+    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
+
+    // Verify user is authenticated using service role (more reliable in Edge Functions)
+    console.log('[Edge Function] Verifying user authentication...');
+    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
+    
+    if (authError) {
+      console.error('[Edge Function] Auth error:', authError);
+      console.error('[Edge Function] Auth error code:', authError.code);
+      console.error('[Edge Function] Auth error message:', authError.message);
+    }
+    
+    if (!user) {
+      console.error('[Edge Function] No user found');
+    }
+    
+    if (authError || !user) {
+      return new Response(
+        JSON.stringify({ 
+          error: 'Unauthorized', 
+          details: authError?.message,
+          code: authError?.code 
+        }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    
+    console.log('[Edge Function] User authenticated:', user.id);
+
     // Parse request body
-    const { mascotId, messages, conversationId }: ChatRequest = await req.json();
+    const { mascotId, messages, conversationId, skillId }: ChatRequest = await req.json();
 
     if (!mascotId || !messages || messages.length === 0) {
       return new Response(
@@ -63,11 +102,41 @@ serve(async (req) => {
       );
     }
 
+    // Convert simple mascot ID to UUID if needed
+    // Map simple IDs (1-20) to UUIDs
+    const MASCOT_ID_TO_UUID: Record<string, string> = {
+      '1': '11111111-1111-1111-1111-111111111111',
+      '2': '22222222-2222-2222-2222-222222222222',
+      '3': '33333333-3333-3333-3333-333333333333',
+      '4': '44444444-4444-4444-4444-444444444444',
+      '5': '55555555-5555-5555-5555-555555555555',
+      '6': '66666666-6666-6666-6666-666666666666',
+      '7': '77777777-7777-7777-7777-777777777777',
+      '8': '88888888-8888-8888-8888-888888888888',
+      '9': '99999999-9999-9999-9999-999999999999',
+      '10': '10101010-1010-1010-1010-101010101010',
+      '11': '11111111-1111-1111-1111-111111111112',
+      '12': '12121212-1212-1212-1212-121212121212',
+      '13': '13131313-1313-1313-1313-131313131313',
+      '14': '14141414-1414-1414-1414-141414141414',
+      '15': '15151515-1515-1515-1515-151515151515',
+      '16': '16161616-1616-1616-1616-161616161616',
+      '17': '17171717-1717-1717-1717-171717171717',
+      '18': '18181818-1818-1818-1818-181818181818',
+      '19': '19191919-1919-1919-1919-191919191919',
+      '20': '20202020-2020-2020-2020-202020202020',
+    };
+    
+    // Convert simple ID to UUID if needed
+    const mascotUUID = mascotId.includes('-') && mascotId.length === 36 
+      ? mascotId 
+      : (MASCOT_ID_TO_UUID[mascotId] || mascotId);
+
     // Fetch mascot info
     const { data: mascot, error: mascotError } = await supabaseAdmin
       .from('mascots')
       .select('*')
-      .eq('id', mascotId)
+      .eq('id', mascotUUID)
       .single();
 
     if (mascotError || !mascot) {
@@ -81,7 +150,7 @@ serve(async (req) => {
     const { data: promptData, error: promptError } = await supabaseAdmin
       .from('mascot_prompts')
       .select('system_prompt')
-      .eq('mascot_id', mascotId)
+      .eq('mascot_id', mascotUUID)
       .single();
 
     if (promptError || !promptData) {
@@ -89,6 +158,36 @@ serve(async (req) => {
         JSON.stringify({ error: 'Mascot prompt not configured' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
+    }
+
+    // Fetch instructions if available
+    const { data: instructionsData } = await supabaseAdmin
+      .from('mascot_instructions')
+      .select('instructions')
+      .eq('mascot_id', mascotUUID)
+      .single();
+
+    // Fetch skill prompt if skillId is provided
+    let skillPrompt = '';
+    if (skillId) {
+      const { data: skillsData } = await supabaseAdmin
+        .rpc('get_mascot_skills', { p_mascot_id: mascotUUID });
+      
+      if (skillsData) {
+        const skill = skillsData.find((s: any) => s.id === skillId);
+        if (skill?.skill_prompt) {
+          skillPrompt = skill.skill_prompt;
+        }
+      }
+    }
+
+    // Combine system prompt with instructions and skill prompt
+    let combinedSystemPrompt = promptData.system_prompt;
+    if (instructionsData?.instructions) {
+      combinedSystemPrompt = `${combinedSystemPrompt}\n\n---\n\n${instructionsData.instructions}`;
+    }
+    if (skillPrompt) {
+      combinedSystemPrompt = `${combinedSystemPrompt}\n\n---\n\nIMPORTANT: The following skill-specific instructions must be followed precisely and take precedence when relevant:\n\n${skillPrompt}`;
     }
 
     // Check if user has access to this mascot (free or unlocked)
@@ -134,7 +233,7 @@ serve(async (req) => {
       const genAI = new GoogleGenerativeAI(geminiApiKey);
       const model = genAI.getGenerativeModel({ 
         model: mascot.ai_model || 'gemini-1.5-flash',
-        systemInstruction: promptData.system_prompt,
+        systemInstruction: combinedSystemPrompt,
       });
 
       // Convert messages to Gemini format
@@ -191,7 +290,7 @@ serve(async (req) => {
 
       // OpenAI streaming implementation
       const openaiMessages = [
-        { role: 'system', content: promptData.system_prompt },
+        { role: 'system', content: combinedSystemPrompt },
         ...messages.map((msg) => ({ role: msg.role, content: msg.content })),
       ];
 

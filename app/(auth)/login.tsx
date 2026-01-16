@@ -1,8 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
-  TextInput,
   StyleSheet,
   ScrollView,
   Pressable,
@@ -10,13 +9,20 @@ import {
   Image,
   ActivityIndicator,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import { useTheme, fontFamilies, textStyles } from '@/design-system';
 import { useI18n } from '@/i18n';
 import { useAuth } from '@/services/auth';
-import { BigPrimaryButton, TextButton, ColoredTab } from '@/components';
+import { BigPrimaryButton, BigSecondaryButton, TextButton, SegmentedToggle, InputField } from '@/components';
 
 type AuthMode = 'login' | 'signup';
+
+const STORAGE_KEYS = {
+  savedEmail: 'saved_email',
+  savedPassword: 'saved_password',
+  rememberMe: 'remember_me',
+};
 
 export default function LoginScreen() {
   const { colors } = useTheme();
@@ -31,6 +37,31 @@ export default function LoginScreen() {
   const [rememberMe, setRememberMe] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Load saved credentials on mount - run immediately
+  useEffect(() => {
+    const loadSavedCredentials = async () => {
+      try {
+        const [savedEmail, savedPassword, rememberMeValue] = await Promise.all([
+          AsyncStorage.getItem(STORAGE_KEYS.savedEmail),
+          AsyncStorage.getItem(STORAGE_KEYS.savedPassword),
+          AsyncStorage.getItem(STORAGE_KEYS.rememberMe),
+        ]);
+
+        if (rememberMeValue === 'true' && savedEmail && savedPassword) {
+          // Set state immediately
+          setEmail(savedEmail);
+          setPassword(savedPassword);
+          setRememberMe(true);
+        }
+      } catch (err) {
+        console.error('Error loading saved credentials:', err);
+      }
+    };
+
+    // Run immediately, don't wait
+    loadSavedCredentials();
+  }, []);
 
   const isLogin = mode === 'login';
 
@@ -73,6 +104,30 @@ export default function LoginScreen() {
       if (authError) {
         setError(authError.message || t.auth.errors.generic);
       } else {
+        // Save credentials if "Remember Me" is checked
+        if (isLogin && rememberMe) {
+          try {
+            await Promise.all([
+              AsyncStorage.setItem(STORAGE_KEYS.savedEmail, email),
+              AsyncStorage.setItem(STORAGE_KEYS.savedPassword, password),
+              AsyncStorage.setItem(STORAGE_KEYS.rememberMe, 'true'),
+            ]);
+          } catch (err) {
+            console.error('Error saving credentials:', err);
+          }
+        } else if (isLogin && !rememberMe) {
+          // Clear saved credentials if "Remember Me" is unchecked
+          try {
+            await Promise.all([
+              AsyncStorage.removeItem(STORAGE_KEYS.savedEmail),
+              AsyncStorage.removeItem(STORAGE_KEYS.savedPassword),
+              AsyncStorage.removeItem(STORAGE_KEYS.rememberMe),
+            ]);
+          } catch (err) {
+            console.error('Error clearing credentials:', err);
+          }
+        }
+
         // Navigation will be handled by auth state change in layout
         router.replace('/(tabs)');
       }
@@ -147,48 +202,15 @@ export default function LoginScreen() {
       </Text>
 
       {/* Tab Switcher */}
-      <View style={[styles.tabContainer, { borderColor: colors.outline }]}>
-        <Pressable
-          style={[
-            styles.tab,
-            !isLogin && styles.tabActive,
-            !isLogin && { backgroundColor: colors.background },
-          ]}
-          onPress={() => setMode('signup')}
-        >
-          <Text
-            style={[
-              styles.tabText,
-              {
-                fontFamily: fontFamilies.figtree.semiBold,
-                color: !isLogin ? colors.text : colors.textMuted,
-              },
-            ]}
-          >
-            {t.auth.tabs.signup}
-          </Text>
-        </Pressable>
-        <Pressable
-          style={[
-            styles.tab,
-            isLogin && styles.tabActive,
-            isLogin && { backgroundColor: colors.background },
-          ]}
-          onPress={() => setMode('login')}
-        >
-          <Text
-            style={[
-              styles.tabText,
-              {
-                fontFamily: fontFamilies.figtree.semiBold,
-                color: isLogin ? colors.text : colors.textMuted,
-              },
-            ]}
-          >
-            {t.auth.tabs.login}
-          </Text>
-        </Pressable>
-      </View>
+      <SegmentedToggle
+        options={[
+          { key: 'signup', label: t.auth.tabs.signup },
+          { key: 'login', label: t.auth.tabs.login },
+        ]}
+        selectedKey={mode}
+        onChange={(key) => setMode(key as AuthMode)}
+        style={styles.tabContainer}
+      />
 
       {/* Error Message */}
       {error && (
@@ -208,108 +230,44 @@ export default function LoginScreen() {
       )}
 
       {/* Email Input */}
-      <View style={styles.inputGroup}>
-        <Text
-          style={[
-            styles.label,
-            {
-              fontFamily: fontFamilies.figtree.medium,
-              color: colors.text,
-            },
-          ]}
-        >
-          {t.auth.email}
-        </Text>
-        <TextInput
-          style={[
-            styles.input,
-            webInputStyle,
-            {
-              fontFamily: fontFamilies.figtree.regular,
-              color: colors.text,
-              borderColor: colors.outline,
-              backgroundColor: colors.background,
-            },
-          ]}
-          placeholder={t.auth.emailPlaceholder}
-          placeholderTextColor={colors.textMuted}
-          value={email}
-          onChangeText={setEmail}
-          keyboardType="email-address"
-          autoCapitalize="none"
-          autoComplete="email"
-          editable={!isLoading}
-        />
-      </View>
+      <InputField
+        label={t.auth.email}
+        placeholder={t.auth.emailPlaceholder}
+        value={email}
+        onChangeText={setEmail}
+        keyboardType="email-address"
+        autoCapitalize="none"
+        autoComplete="email"
+        textContentType="emailAddress"
+        editable={!isLoading}
+        style={webInputStyle}
+      />
 
       {/* Password Input */}
-      <View style={styles.inputGroup}>
-        <Text
-          style={[
-            styles.label,
-            {
-              fontFamily: fontFamilies.figtree.medium,
-              color: colors.text,
-            },
-          ]}
-        >
-          {t.auth.password}
-        </Text>
-        <TextInput
-          style={[
-            styles.input,
-            webInputStyle,
-            {
-              fontFamily: fontFamilies.figtree.regular,
-              color: colors.text,
-              borderColor: colors.outline,
-              backgroundColor: colors.background,
-            },
-          ]}
-          placeholder={t.auth.passwordPlaceholder}
-          placeholderTextColor={colors.textMuted}
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-          autoComplete={isLogin ? 'current-password' : 'new-password'}
-          editable={!isLoading}
-        />
-      </View>
+      <InputField
+        label={t.auth.password}
+        placeholder={t.auth.passwordPlaceholder}
+        value={password}
+        onChangeText={setPassword}
+        secureTextEntry
+        autoComplete={isLogin ? 'current-password' : 'new-password'}
+        textContentType={isLogin ? 'password' : 'newPassword'}
+        editable={!isLoading}
+        style={webInputStyle}
+      />
 
       {/* Confirm Password (Signup only) */}
       {!isLogin && (
-        <View style={styles.inputGroup}>
-          <Text
-            style={[
-              styles.label,
-              {
-                fontFamily: fontFamilies.figtree.medium,
-                color: colors.text,
-              },
-            ]}
-          >
-            {t.auth.confirmPassword}
-          </Text>
-          <TextInput
-            style={[
-              styles.input,
-              webInputStyle,
-              {
-                fontFamily: fontFamilies.figtree.regular,
-                color: colors.text,
-                borderColor: colors.outline,
-                backgroundColor: colors.background,
-              },
-            ]}
-            placeholder={t.auth.confirmPasswordPlaceholder}
-            placeholderTextColor={colors.textMuted}
-            value={confirmPassword}
-            onChangeText={setConfirmPassword}
-            secureTextEntry
-            autoComplete="new-password"
-            editable={!isLoading}
-          />
-        </View>
+        <InputField
+          label={t.auth.confirmPassword}
+          placeholder={t.auth.confirmPasswordPlaceholder}
+          value={confirmPassword}
+          onChangeText={setConfirmPassword}
+          secureTextEntry
+          autoComplete="new-password"
+          editable={!isLoading}
+          style={webInputStyle}
+        />
       )}
 
       {/* Remember Me & Forgot Password (Login only) */}
@@ -317,7 +275,18 @@ export default function LoginScreen() {
         <View style={styles.optionsRow}>
           <Pressable
             style={styles.checkboxRow}
-            onPress={() => setRememberMe(!rememberMe)}
+            onPress={() => {
+              const newValue = !rememberMe;
+              setRememberMe(newValue);
+              // If unchecking, clear saved credentials
+              if (!newValue) {
+                AsyncStorage.multiRemove([
+                  STORAGE_KEYS.savedEmail,
+                  STORAGE_KEYS.savedPassword,
+                  STORAGE_KEYS.rememberMe,
+                ]).catch((err) => console.error('Error clearing credentials:', err));
+              }
+            }}
           >
             <View
               style={[
@@ -365,30 +334,14 @@ export default function LoginScreen() {
       </View>
 
       {/* Google Sign In */}
-      <Pressable
-        style={[
-          styles.googleButton,
-          {
-            borderColor: colors.outline,
-            backgroundColor: colors.background,
-          },
-        ]}
-        onPress={handleGoogleSignIn}
-        disabled={isLoading}
-      >
-        <Text style={styles.googleIcon}>G</Text>
-        <Text
-          style={[
-            styles.googleText,
-            {
-              fontFamily: fontFamilies.figtree.medium,
-              color: colors.text,
-            },
-          ]}
-        >
-          {isLogin ? t.auth.signInWithGoogle : t.auth.signUpWithGoogle}
-        </Text>
-      </Pressable>
+      <View style={styles.googleButtonContainer}>
+        <BigSecondaryButton
+          label={isLogin ? t.auth.signInWithGoogle : t.auth.signUpWithGoogle}
+          onPress={handleGoogleSignIn}
+          disabled={isLoading}
+          icon={<Text style={styles.googleIcon}>G</Text>}
+        />
+      </View>
 
       {/* Switch Mode */}
       <View style={styles.switchModeContainer}>
@@ -460,29 +413,7 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   tabContainer: {
-    flexDirection: 'row',
-    borderWidth: 1,
-    borderRadius: 8,
-    padding: 4,
     marginBottom: 24,
-    width: '100%',
-  },
-  tab: {
-    flex: 1,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 6,
-    alignItems: 'center',
-  },
-  tabActive: {
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
-  },
-  tabText: {
-    fontSize: 14,
   },
   errorContainer: {
     width: '100%',
@@ -493,22 +424,6 @@ const styles = StyleSheet.create({
   errorText: {
     fontSize: 14,
     textAlign: 'center',
-  },
-  inputGroup: {
-    width: '100%',
-    marginBottom: 16,
-  },
-  label: {
-    fontSize: 14,
-    marginBottom: 6,
-  },
-  input: {
-    width: '100%',
-    height: 44,
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 14,
-    fontSize: 14,
   },
   optionsRow: {
     flexDirection: 'row',
@@ -549,24 +464,14 @@ const styles = StyleSheet.create({
     top: '50%',
     marginTop: -10,
   },
-  googleButton: {
+  googleButtonContainer: {
     width: '100%',
-    height: 44,
-    borderWidth: 1,
-    borderRadius: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
     marginBottom: 24,
   },
   googleIcon: {
     fontSize: 18,
     fontWeight: '700',
-    marginRight: 8,
     color: '#4285F4',
-  },
-  googleText: {
-    fontSize: 14,
   },
   switchModeContainer: {
     flexDirection: 'row',

@@ -1,7 +1,10 @@
 import { View, Text, StyleSheet, ScrollView, Pressable, Platform } from 'react-native';
 import { useTheme, fontFamilies, textStyles } from '@/design-system';
 import { useI18n, LANGUAGES, Language } from '@/i18n';
+import { usePreferences, LLM_OPTIONS, LLMPreference } from '@/services/preferences';
+import { useAuth } from '@/services/auth';
 import { Icon } from '@/components';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 type SettingRowProps = {
   label: string;
@@ -169,16 +172,89 @@ function LanguageOption({ code, name, nativeName, isSelected, onPress }: Languag
   );
 }
 
+type LLMOptionProps = {
+  code: LLMPreference;
+  name: string;
+  description: string;
+  isSelected: boolean;
+  onPress: () => void;
+};
+
+function LLMOption({ code, name, description, isSelected, onPress }: LLMOptionProps) {
+  const { colors, mode } = useTheme();
+
+  // Web-specific transition style
+  const webTransitionStyle = Platform.select({
+    web: {
+      transition: 'all 200ms ease-out',
+    } as unknown as object,
+    default: {},
+  });
+
+  // In dark mode with selected state, use white text since primaryBg is dark
+  const selectedTextColor = mode === 'dark' ? colors.buttonText : colors.primary;
+
+  return (
+    <Pressable
+      onPress={onPress}
+      style={[
+        styles.languageOption,
+        webTransitionStyle,
+        {
+          backgroundColor: isSelected ? colors.primaryBg : colors.background,
+          borderColor: isSelected ? colors.primary : colors.outline,
+        },
+      ]}
+    >
+      <View style={styles.languageTextContainer}>
+        <Text
+          style={[
+            styles.languageName,
+            {
+              fontFamily: fontFamilies.figtree.semiBold,
+              color: isSelected ? selectedTextColor : colors.text,
+            },
+          ]}
+        >
+          {name}
+        </Text>
+        <Text
+          style={[
+            styles.languageNative,
+            {
+              fontFamily: fontFamilies.figtree.regular,
+              color: isSelected && mode === 'dark' ? 'rgba(255,255,255,0.7)' : colors.textMuted,
+            },
+          ]}
+        >
+          {description}
+        </Text>
+      </View>
+      {isSelected && (
+        <View style={[styles.checkIcon, { backgroundColor: mode === 'dark' ? colors.buttonText : colors.primary }]}>
+          <Text style={[styles.checkText, { color: mode === 'dark' ? colors.primary : '#FFFFFF' }]}>✓</Text>
+        </View>
+      )}
+    </Pressable>
+  );
+}
+
 export default function ProfileScreen() {
   const { colors, mode, setMode } = useTheme();
   const { language, setLanguage, t } = useI18n();
+  const { preferredLLM, setPreferredLLM } = usePreferences();
+  const { user, signOut } = useAuth();
+
+  const userName = user?.user_metadata?.full_name || user?.user_metadata?.name || user?.email?.split('@')[0] || 'User';
+  const userEmail = user?.email || '';
 
   return (
-    <ScrollView
-      style={[styles.container, { backgroundColor: colors.background }]}
-      contentContainerStyle={styles.content}
-    >
-      {/* Header */}
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={styles.content}
+      >
+      {/* Header - Moved to top */}
       <View style={styles.header}>
         <Text
           style={[
@@ -203,6 +279,41 @@ export default function ProfileScreen() {
           {t.profile.subtitle}
         </Text>
       </View>
+
+      {/* User Info Section */}
+      {user && (
+        <View style={[styles.userInfoSection, { backgroundColor: colors.surface, borderColor: colors.outline }]}>
+          <View style={[styles.userAvatar, { backgroundColor: colors.primary }]}>
+            <Text style={[styles.userAvatarText, { color: colors.buttonText }]}>
+              {userName.charAt(0).toUpperCase()}
+            </Text>
+          </View>
+          <View style={styles.userInfoText}>
+            <Text
+              style={[
+                styles.userName,
+                {
+                  fontFamily: fontFamilies.figtree.semiBold,
+                  color: colors.text,
+                },
+              ]}
+            >
+              {userName}
+            </Text>
+            <Text
+              style={[
+                styles.userEmail,
+                {
+                  fontFamily: fontFamilies.figtree.regular,
+                  color: colors.textMuted,
+                },
+              ]}
+            >
+              {userEmail}
+            </Text>
+          </View>
+        </View>
+      )}
 
       {/* Appearance Section */}
       <View style={styles.section}>
@@ -258,6 +369,51 @@ export default function ProfileScreen() {
         </View>
       </View>
 
+      {/* AI Provider Section */}
+      <View style={styles.section}>
+        <Text
+          style={[
+            styles.sectionTitle,
+            {
+              fontFamily: fontFamilies.figtree.semiBold,
+              color: colors.text,
+            },
+          ]}
+        >
+          {t.profile.aiProvider}
+        </Text>
+        <View style={styles.languageContainer}>
+          {LLM_OPTIONS.map((option) => {
+            const getName = () => {
+              switch (option.code) {
+                case 'auto': return t.profile.auto;
+                case 'gemini': return t.profile.gemini;
+                case 'openai': return t.profile.openai;
+                default: return option.name;
+              }
+            };
+            const getDesc = () => {
+              switch (option.code) {
+                case 'auto': return t.profile.autoDesc;
+                case 'gemini': return t.profile.geminiDesc;
+                case 'openai': return t.profile.openaiDesc;
+                default: return option.description;
+              }
+            };
+            return (
+              <LLMOption
+                key={option.code}
+                code={option.code}
+                name={getName()}
+                description={getDesc()}
+                isSelected={preferredLLM === option.code}
+                onPress={() => setPreferredLLM(option.code)}
+              />
+            );
+          })}
+        </View>
+      </View>
+
       {/* Account Section */}
       <View style={styles.section}>
         <Text
@@ -278,7 +434,7 @@ export default function ProfileScreen() {
               borderColor: colors.outline,
             },
           ]}
-          onPress={() => console.log('Sign out pressed')}
+          onPress={signOut}
         >
           <Text
             style={[
@@ -308,7 +464,8 @@ export default function ProfileScreen() {
           {t.profile.version} 1.0.0
         </Text>
       </View>
-    </ScrollView>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
@@ -317,12 +474,44 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
-    paddingVertical: 64,
-    paddingBottom: 40,
+    paddingTop: Platform.OS === 'web' ? 64 : 16, // Less top padding on mobile
+    paddingBottom: Platform.OS === 'web' ? 40 : 100, // More bottom padding on mobile for nav bar
+  },
+  userInfoSection: {
+    marginHorizontal: 16,
+    marginBottom: 24,
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  userAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  userAvatarText: {
+    fontSize: 20,
+    fontWeight: '600',
+  },
+  userInfoText: {
+    flex: 1,
+    gap: 4,
+  },
+  userName: {
+    fontSize: 16,
+  },
+  userEmail: {
+    fontSize: 14,
   },
   header: {
     paddingHorizontal: 16,
-    marginBottom: 32,
+    marginBottom: 24,
+    paddingTop: Platform.OS === 'web' ? 0 : 8, // Small top padding on mobile
   },
   title: {
     fontSize: 26,

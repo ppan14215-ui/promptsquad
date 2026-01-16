@@ -33,13 +33,15 @@ export function BigPrimaryButton({
     default: {},
   });
 
-  // Skeuomorphic effect for web
+  // Skeuomorphic effect - web uses CSS, native uses gradient overlay
   const skeuShadowStyle = Platform.select({
     web: {
       boxShadow: skeuToCSS('skeu-primary-m'),
     } as unknown as object,
     default: shadowToNative('md'),
   });
+
+  // Gradient removed - inner shadows don't look good on mobile
 
   return (
     <Pressable
@@ -57,6 +59,7 @@ export function BigPrimaryButton({
         skeuShadowStyle,
       ]}
     >
+      {/* Inner shadow effects removed on mobile - they don't look good */}
       <Text
         style={[
           styles.label,
@@ -82,6 +85,8 @@ const styles = StyleSheet.create({
     borderRadius: 26,
     alignItems: 'center',
     justifyContent: 'center',
+    position: 'relative',
+    overflow: 'hidden',
   },
   label: {
     textAlign: 'center',

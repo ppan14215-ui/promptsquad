@@ -13,6 +13,8 @@ export type IconButtonProps = {
   /** Force a specific state for preview purposes */
   forceState?: IconButtonState;
   size?: number;
+  /** Whether the button is disabled */
+  disabled?: boolean;
 };
 
 export function IconButton({
@@ -21,6 +23,7 @@ export function IconButton({
   isSelected = false,
   forceState,
   size = 16,
+  disabled = false,
 }: IconButtonProps) {
   const { colors } = useTheme();
   const [isHoveredInternal, setIsHoveredInternal] = useState(false);
@@ -51,16 +54,24 @@ export function IconButton({
     default: {},
   });
 
+  const handlePress = () => {
+    if (!disabled && onPress) {
+      onPress();
+    }
+  };
+
   return (
     <Pressable
-      onPress={onPress}
-      onHoverIn={() => !forceState && setIsHoveredInternal(true)}
+      onPress={handlePress}
+      disabled={disabled}
+      onHoverIn={() => !forceState && !disabled && setIsHoveredInternal(true)}
       onHoverOut={() => !forceState && setIsHoveredInternal(false)}
       style={[
         styles.container,
         webTransitionStyle,
         {
           backgroundColor: isHovered ? colors.background : 'transparent',
+          opacity: disabled ? 0.5 : 1,
         },
         isHovered && innerBorderStyle,
       ]}

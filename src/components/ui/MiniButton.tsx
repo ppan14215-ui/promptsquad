@@ -30,13 +30,15 @@ export function MiniButton({
     default: {},
   });
 
-  // Skeuomorphic effect for web
+  // Skeuomorphic effect - web uses CSS, native uses gradient overlay
   const skeuShadowStyle = Platform.select({
     web: {
       boxShadow: skeuToCSS('skeu-primary-xs'),
     } as unknown as object,
     default: shadowToNative('md'),
   });
+
+  // Gradient removed - inner shadows don't look good on mobile
 
   return (
     <Pressable
@@ -52,6 +54,7 @@ export function MiniButton({
         skeuShadowStyle,
       ]}
     >
+      {/* Inner shadow effects removed on mobile - they don't look good */}
       <Text
         style={[
           styles.label,
@@ -78,6 +81,8 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
+    position: 'relative',
+    overflow: 'hidden',
   },
   label: {
     textAlign: 'center',
