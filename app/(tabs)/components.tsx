@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ScrollView, View, Text, StyleSheet } from 'react-native';
 import { useTheme, textStyles, fontFamilies } from '@/design-system';
-import { MascotCard, MascotCardState, CreateCustomCard, CreateCustomCardState, MiniButton, MiniButtonState, BigPrimaryButton, BigPrimaryButtonState, MediumDarkButton, MediumDarkButtonState, TextButton, TextButtonState, LinkPill, LinkPillState, ColoredTab, ColoredTabState, IconButton, IconButtonState, MascotDetails, MascotDetailsVariant, SegmentedToggle, InputField, ChatInputBox, BigSecondaryButton } from '@/components';
+import { MascotCard, MascotCardState, CreateCustomCard, CreateCustomCardState, MiniButton, MiniButtonState, BigPrimaryButton, BigPrimaryButtonState, MediumDarkButton, MediumDarkButtonState, TextButton, TextButtonState, LinkPill, LinkPillState, ColoredTab, ColoredTabState, IconButton, IconButtonState, MascotDetails, MascotDetailsVariant, SegmentedToggle, InputField, ChatInputBox, BigSecondaryButton, HomeHeader, MascotCarousel, ChatHeader } from '@/components';
 
 // Sample mascot for component preview
 const SAMPLE_MASCOT = {
@@ -11,6 +11,51 @@ const SAMPLE_MASCOT = {
   image: require('../../assets/mascots/Bear.png'),
   grayscaleImage: require('../../assets/mascots/Bear-grayscale.png'),
 };
+
+const SAMPLE_CAROUSEL_MASCOTS = [
+  {
+    id: '1',
+    name: 'Analyst Bear',
+    subtitle: 'Great at research',
+    image: require('../../assets/mascots/Bear.png'),
+    color: 'yellow',
+  },
+  {
+    id: '2',
+    name: 'Writer Fox',
+    subtitle: 'Best at writing',
+    image: require('../../assets/mascots/fox.png'),
+    color: 'orange',
+  },
+  {
+    id: '3',
+    name: 'UX Panda',
+    subtitle: 'Principal UX skills',
+    image: require('../../assets/mascots/panda.png'),
+    color: 'green',
+  },
+  {
+    id: '4',
+    name: 'Advice Zebra',
+    subtitle: 'Here to support',
+    image: require('../../assets/mascots/zebra.png'),
+    color: 'pink',
+  },
+  {
+    id: '5',
+    name: 'Teacher Owl',
+    subtitle: 'Lets teach our kids',
+    image: require('../../assets/mascots/owl.png'),
+    color: 'purple',
+  },
+];
+
+const CHAT_TABS = [
+  { key: 'chat', label: 'Chat' },
+  { key: 'sources', label: 'Sources' },
+  { key: 'skills', label: 'Skills' },
+  { key: 'instructions', label: 'Instructions' },
+];
 
 const CARD_STATES: { state: MascotCardState; label: string }[] = [
   { state: 'default', label: 'Default' },
@@ -90,6 +135,9 @@ export default function ComponentsScreen() {
   const [webSearchEnabled, setWebSearchEnabled] = useState(false);
   const [deepThinkingEnabled, setDeepThinkingEnabled] = useState(false);
   const [chatLLM, setChatLLM] = useState<'auto' | 'openai' | 'gemini' | 'perplexity'>('auto');
+  const [carouselIndex, setCarouselIndex] = useState(2);
+  const [activeChatTab, setActiveChatTab] = useState('chat');
+  const [isChatLiked, setIsChatLiked] = useState(false);
 
   return (
     <ScrollView
@@ -118,6 +166,55 @@ export default function ComponentsScreen() {
       >
         Global component library
       </Text>
+
+      {/* Home Header Section */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Home Header</Text>
+        <HomeHeader
+          userName="Julian"
+          questionPrompt="What should we analyze?"
+          skills={SAMPLE_MASCOT_DETAILS.skills}
+          onSkillPress={() => {}}
+          skillsLoading={false}
+          isDesktop={false}
+        />
+      </View>
+
+      {/* Mascot Carousel Section */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Mascot Carousel</Text>
+        <MascotCarousel
+          mascots={SAMPLE_CAROUSEL_MASCOTS}
+          selectedIndex={carouselIndex}
+          onMascotPress={(_, index) => setCarouselIndex(index)}
+          onPrev={() =>
+            setCarouselIndex((prev) => (prev > 0 ? prev - 1 : SAMPLE_CAROUSEL_MASCOTS.length - 1))
+          }
+          onNext={() =>
+            setCarouselIndex((prev) => (prev < SAMPLE_CAROUSEL_MASCOTS.length - 1 ? prev + 1 : 0))
+          }
+          isDesktop={false}
+        />
+      </View>
+
+      {/* Chat Header Section */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Chat Header</Text>
+        <ChatHeader
+          mascotName="Analyst Bear"
+          mascotSubtitle="Great at research"
+          mascotImage={require('../../assets/mascots/Bear.png')}
+          isLiked={isChatLiked}
+          likeCount={12}
+          onBack={() => {}}
+          onToggleLike={() => setIsChatLiked((prev) => !prev)}
+          tabs={CHAT_TABS}
+          activeTab={activeChatTab}
+          onTabChange={setActiveChatTab}
+          isToggling={false}
+          insets={{ top: 0 }}
+        />
+      </View>
 
       {/* MascotCard Section */}
       <View style={styles.section}>

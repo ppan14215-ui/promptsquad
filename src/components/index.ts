@@ -11,13 +11,20 @@ export * from './ui/ColoredTab';
 export * from './ui/SegmentedToggle';
 export * from './ui/InputField';
 export * from './ui/ChatInputBox';
+export * from './ui/HomeHeader';
+
+// Chat Components
+export * from './chat/ChatHeader';
+export * from './chat/ChatHistory';
 
 // Mascot Components
 export * from './mascot/MascotCard';
 export * from './mascot/CreateCustomCard';
 export * from './mascot/MascotDetails';
 export * from './mascot/SkillPreview';
+export * from './mascot/MascotCarousel';
 
 // Admin Components
 export * from './admin/SkillEditor';
 export * from './admin/InstructionsEditor';
+export * from './admin/MascotEditor';

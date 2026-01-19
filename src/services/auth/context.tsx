@@ -23,11 +23,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     // Get initial session (this will parse OAuth callback URL hash/query params)
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      setIsLoading(false);
-    });
+    supabase.auth.getSession()
+      .then(({ data: { session }, error }) => {
+        if (error) {
+          console.error('[AuthProvider] Error getting session:', error);
+        }
+        setSession(session);
+        setUser(session?.user ?? null);
+        setIsLoading(false);
+      })
+      .catch((error) => {
+        console.error('[AuthProvider] Failed to get session:', error);
+        setSession(null);
+        setUser(null);
+        setIsLoading(false); // Always set loading to false, even on error
+      });
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {

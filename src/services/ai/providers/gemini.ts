@@ -45,8 +45,10 @@ export async function chatWithGemini(
 
   const client = getClient();
   const deepConfig = deepThinking ? AI_CONFIG.gemini.deepThinking : undefined;
+  // Use pro model when deep thinking is enabled
+  const effectiveModel = deepThinking ? AI_CONFIG.gemini.deepThinkingModel : model;
   const generativeModel = client.getGenerativeModel({ 
-    model,
+    model: effectiveModel,
     systemInstruction: systemPrompt,
     ...(deepConfig ? { generationConfig: deepConfig } : {}),
   });
@@ -92,8 +94,10 @@ export async function streamChatWithGemini(
 
   const client = getClient();
   const deepConfig = deepThinking ? AI_CONFIG.gemini.deepThinking : undefined;
+  // Use pro model when deep thinking is enabled
+  const effectiveModel = deepThinking ? AI_CONFIG.gemini.deepThinkingModel : model;
   const generativeModel = client.getGenerativeModel({ 
-    model,
+    model: effectiveModel,
     systemInstruction: systemPrompt,
     ...(deepConfig ? { generationConfig: deepConfig } : {}),
   });

@@ -21,11 +21,13 @@ const SPEECH_RECOGNITION_AVAILABLE = Platform.OS === 'web';
 import { useTheme, fontFamilies, textStyles, shadowToCSS, shadowToNative } from '@/design-system';
 import { useI18n } from '@/i18n';
 import { usePreferences, selectBestProvider, TaskCategory, LLMPreference } from '@/services/preferences';
-import { Icon, IconButton, ColoredTab, LinkPill, ChatInputBox, SkillPreview } from '@/components';
-import { streamChat, ChatMessage, AI_CONFIG } from '@/services/ai';
+import { ChatHeader, LinkPill, ChatInputBox, SkillPreview, ChatHistory } from '@/components';
+import { secureChatStream, ChatMessage as SecureChatMessage } from '@/services/ai/secure-chat';
+import type { ChatMessage, AI_CONFIG } from '@/services/ai';
 import type { WebSource } from '@/services/ai';
-import { useMascotSkills, useMascotInstructions, MascotSkill, getCombinedPrompt } from '@/services/admin';
+import { useMascotSkills, useMascotInstructions, MascotSkill, getCombinedPrompt, useIsAdmin } from '@/services/admin';
 import { useMascotLike } from '@/services/mascot-likes';
+import { createConversation, saveMessage, generateConversationTitle, useConversationMessages } from '@/services/chat-history';
 
 // Message types
 type MessageRole = 'user' | 'assistant';
@@ -35,11 +37,12 @@ type Message = {
   role: MessageRole;
   content: string;
   model?: string;
+  provider?: 'openai' | 'gemini'; // Provider used for this message
   isThinking?: boolean;
 };
 
 // Chat tabs
-type ChatTab = 'chat' | 'sources' | 'skills' | 'instructions';
+type ChatTab = 'chat' | 'sources' | 'skills' | 'instructions' | 'history';
 
 // Local mascot images
 const mascotImages: Record<string, ImageSourcePropType> = {
@@ -353,11 +356,14 @@ Be technical and precise. Use code blocks and markdown formatting. Provide clear
 };
 
 export default function ChatScreen() {
-  const { mascotId, questionPrompt, initialMessage, skillId } = useLocalSearchParams<{ 
+  const { mascotId, questionPrompt, initialMessage, skillId, deepThinking, llm, conversationId: urlConversationId } = useLocalSearchParams<{ 
     mascotId: string;
     questionPrompt?: string;
     initialMessage?: string;
     skillId?: string; // ID of skill selected from home
+    deepThinking?: string; // 'true' or 'false' from home screen
+    llm?: LLMPreference; // LLM preference from home screen
+    conversationId?: string; // Existing conversation ID
   }>();
   const router = useRouter();
   const { colors } = useTheme();
@@ -366,7 +372,18 @@ export default function ChatScreen() {
 
   const mascot = MASCOT_DATA[mascotId || '1'] || MASCOT_DATA['1'];
   const mascotImage = mascotImages[mascot.image] || mascotImages.bear; // Fallback to bear if image not found
+  const headerSubtitle =
+    mascot.greeting
+      .split('\n')[0]
+      .replace('Hi, there I am analyst bear. ', '')
+      .replace("Hey! I'm Writer Fox, ", '')
+      .replace("Hello! I'm UX Panda, ", '')
+      .replace("Hi there! I'm Advice Zebra, ", '') ||
+    'Your AI assistant';
   const { preferredLLM } = usePreferences();
+
+  // Check if user is admin
+  const { isAdmin } = useIsAdmin();
 
   // Fetch skills and instructions from database
   const { skills: dbSkills, isLoading: skillsLoading } = useMascotSkills(mascotId || '1');
@@ -379,12 +396,69 @@ export default function ChatScreen() {
   const [activeSkillId, setActiveSkillId] = useState<string | null>(skillId || null);
   const activeSkill = dbSkills.find((s) => s.id === activeSkillId);
 
+  // Conversation management
+  const [currentConversationId, setCurrentConversationId] = useState<string | null>(urlConversationId || null);
+  const [hasSavedFirstMessage, setHasSavedFirstMessage] = useState(false);
+  const [titleGenerationQueued, setTitleGenerationQueued] = useState(false);
+
   // Track if we've processed the initial message from home screen
   const hasProcessedInitialMessage = useRef(false);
 
-
   // Determine the initial assistant message
   const initialAssistantMessage = questionPrompt || mascot.greeting;
+
+  // Load existing conversation messages if conversationId is provided
+  const { messages: dbMessages, isLoading: isLoadingMessages } = useConversationMessages(currentConversationId);
+  
+  // Load existing messages when conversation is loaded
+  useEffect(() => {
+    if (currentConversationId && dbMessages.length > 0) {
+      // Convert database messages to Message format
+      const loadedMessages: Message[] = dbMessages
+        .filter((m) => m.role !== 'system')
+        .map((m) => ({
+          id: m.id,
+          role: m.role as MessageRole,
+          content: m.content,
+          model: m.model || undefined,
+        }));
+      
+      // Always replace messages when conversation is loaded (even if messages exist)
+      // This ensures clicking a conversation from history shows the full conversation
+      if (loadedMessages.length > 0) {
+        setMessages(loadedMessages);
+        setHasSavedFirstMessage(true); // Mark as saved since we loaded existing messages
+        setTitleGenerationQueued(true); // Don't regenerate title for existing conversations
+      } else {
+        // If conversation exists but has no messages, start fresh
+        setMessages([
+          {
+            id: '1',
+            role: 'assistant',
+            content: initialAssistantMessage,
+          },
+        ]);
+      }
+    } else if (urlConversationId && !currentConversationId) {
+      // If URL has conversationId but we haven't loaded it yet, set it
+      setCurrentConversationId(urlConversationId);
+    } else if (!currentConversationId && !urlConversationId && messages.length <= 1) {
+      // No conversation - start with initial message (only if we don't have messages yet)
+      // This prevents overwriting messages when switching tabs
+      const hasOnlyInitialMessage = messages.length === 1 && messages[0]?.role === 'assistant' && messages[0]?.id === '1';
+      if (hasOnlyInitialMessage) {
+        // Already has initial message, don't overwrite
+      } else if (messages.length === 0) {
+        setMessages([
+          {
+            id: '1',
+            role: 'assistant',
+            content: initialAssistantMessage,
+          },
+        ]);
+      }
+    }
+  }, [currentConversationId, dbMessages, urlConversationId, initialAssistantMessage]);
 
   const [activeTab, setActiveTab] = useState<ChatTab>('chat');
   const [inputText, setInputText] = useState('');
@@ -399,12 +473,12 @@ export default function ChatScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [streamingContent, setStreamingContent] = useState('');
   const [isRecording, setIsRecording] = useState(false);
-  const [chatLLM, setChatLLM] = useState<LLMPreference>('auto');
+  const [chatLLM, setChatLLM] = useState<LLMPreference>(llm || 'auto');
   const [showLLMPicker, setShowLLMPicker] = useState(false);
   const [webSearchEnabled, setWebSearchEnabled] = useState(false);
   const [autoScroll, setAutoScroll] = useState(true);
   const [showWebSearchTooltip, setShowWebSearchTooltip] = useState(false);
-  const [deepThinkingEnabled, setDeepThinkingEnabled] = useState(false);
+  const [deepThinkingEnabled, setDeepThinkingEnabled] = useState(deepThinking === 'true');
   const [showDeepThinkingTooltip, setShowDeepThinkingTooltip] = useState(false);
   const [showSkills, setShowSkills] = useState(true);
   const [webSources, setWebSources] = useState<WebSource[]>([]);
@@ -418,13 +492,25 @@ export default function ChatScreen() {
   }, []);
 
   // Core function to send a message (used by handleSend and auto-send from home)
-  const sendMessage = useCallback(async (messageContent: string) => {
+  // When a skill is clicked, messageContent will be the skill LABEL
+  // User sees the skill label, but LLM receives the full skill prompt
+  const sendMessage = useCallback(async (messageContent: string, isSkillLabel: boolean = false) => {
     if (!messageContent.trim() || isLoading) return;
 
+    // If this is a skill label, we need to send the full skill prompt to LLM
+    // but display the label to the user
+    let actualMessageContentForLLM = messageContent.trim();
+    
+    if (isSkillLabel && activeSkill?.skill_prompt) {
+      // This is a skill click - send full prompt to LLM
+      actualMessageContentForLLM = activeSkill.skill_prompt;
+    }
+
+    // Display the label to user (what they clicked)
     const userMessage: Message = {
       id: Date.now().toString(),
       role: 'user',
-      content: messageContent.trim(),
+      content: messageContent.trim(), // User always sees the label or their message
     };
 
     const assistantMessageId = (Date.now() + 1).toString();
@@ -447,10 +533,21 @@ export default function ChatScreen() {
         setWebSearchError(null);
       }
 
-      // Build chat history for AI - include current messages plus new user message
-      const currentMessages = [...messages, userMessage];
+      // Check if messageContent is the skill prompt (when clicking a skill)
+      const isSkillPrompt = activeSkill?.skill_prompt && 
+        messageContent.trim() === activeSkill.skill_prompt.trim();
+      
+      // Build chat history for AI
+      // CRITICAL: If this is a skill prompt, send the FULL prompt to LLM, not the label
+      const actualMessageContentForLLM = isSkillPrompt 
+        ? messageContent.trim() // Send full skill prompt
+        : messageContent.trim(); // Regular message
+      
+      const currentMessages = [...messages];
 
-      // Get the mascot's system prompt (with instructions and active skill)
+      // Get the mascot's system prompt (instructions)
+      // IMPORTANT: When a skill is active, add it to the system prompt so the LLM continues following it
+      // The skill prompt is also sent as the user message for the first interaction
       const mascotData = MASCOT_DATA[mascotId || '1'];
       let systemPrompt = mascotData?.systemPrompt || 'You are a helpful AI assistant.';
       
@@ -459,9 +556,10 @@ export default function ChatScreen() {
         systemPrompt = `${systemPrompt}\n\n---\n\n${dbInstructions}`;
       }
       
-      // Add active skill prompt if available
+      // Add active skill prompt to system prompt so it continues to be followed
+      // This ensures step-by-step prompts work correctly throughout the conversation
       if (activeSkill?.skill_prompt) {
-        systemPrompt = `${systemPrompt}\n\n---\n\nIMPORTANT: The following skill-specific instructions must be followed precisely and take precedence when relevant:\n\n${activeSkill.skill_prompt}`;
+        systemPrompt = `${systemPrompt}\n\n---\n\nCRITICAL: Follow these skill-specific instructions throughout this entire conversation:\n\n${activeSkill.skill_prompt}\n\nThese instructions define how you should behave and what questions you should ask. Continue following them for all subsequent messages, maintaining the step-by-step process they specify.`;
       }
 
       // Convert to ChatMessage format with system prompt
@@ -473,28 +571,105 @@ export default function ChatScreen() {
             role: m.role as 'system' | 'user' | 'assistant',
             content: m.content,
           })),
+        { role: 'user', content: actualMessageContentForLLM }, // Send full skill prompt to LLM
       ];
 
       let fullContent = '';
 
-      // Select the best provider based on mascot's task category and user preference
-      const taskCategory = mascotData?.taskCategory as TaskCategory || 'conversation';
-      const selectedProvider = selectBestProvider(preferredLLM, taskCategory);
+      // Convert chat messages to secure chat format (no system messages)
+      const secureMessages: SecureChatMessage[] = chatHistory
+        .filter((m) => m.role !== 'system')
+        .map((m) => ({
+          role: m.role as 'user' | 'assistant',
+          content: m.content,
+        }));
       
-      const response = await streamChat(
-        chatHistory,
+      // Convert chatLLM to provider override ('openai' | 'gemini' | undefined for auto)
+      // If 'auto', don't pass provider (let system choose based on mascot config or default)
+      // If 'perplexity', treat as 'auto' for now (not supported in Edge Function yet)
+      const providerOverride: 'openai' | 'gemini' | undefined = 
+        chatLLM === 'openai' || chatLLM === 'gemini' ? chatLLM : undefined;
+
+      // Log which provider we're using
+      console.log('[Chat] Sending message with provider override:', providerOverride || 'auto (system chooses)');
+      console.log('[Chat] Current chatLLM setting:', chatLLM);
+
+      // Create or use existing conversation
+      let conversationId = currentConversationId;
+      if (!conversationId) {
+        const newConversation = await createConversation(mascotId || '1');
+        conversationId = newConversation.id;
+        setCurrentConversationId(conversationId);
+      }
+
+      // Save user message to database
+      if (conversationId) {
+        try {
+          await saveMessage(conversationId, 'user', actualMessageContentForLLM);
+          setHasSavedFirstMessage(true);
+        } catch (error) {
+          console.error('[Chat] Error saving user message:', error);
+        }
+      }
+
+      // Use secure chat stream through Supabase Edge Function (avoids CORS)
+      const response = await secureChatStream(
+        mascotId || '1',
+        secureMessages,
         (chunk) => {
           fullContent += chunk;
           setStreamingContent(fullContent);
           // Auto-scroll while streaming
           scrollViewRef.current?.scrollToEnd({ animated: false });
         },
-        selectedProvider // Use the best provider for this mascot's task category
+        conversationId || undefined, // Pass conversationId to Edge Function
+        activeSkillId || undefined, // skillId
+        providerOverride, // provider override (undefined = system chooses)
+        deepThinkingEnabled // Deep Thinking mode (uses pro models)
       );
 
       const assistantContent = response.content;
 
-      // Add the complete message
+      // Use the provider from the response (Edge Function tells us what was actually used)
+      const actualProvider: 'openai' | 'gemini' | undefined = response.provider || 
+        (providerOverride || // Fallback to user override if response doesn't include provider
+         (response.model?.toLowerCase().includes('gpt') ? 'openai' : 
+          response.model?.toLowerCase().includes('gemini') ? 'gemini' : 
+          undefined));
+
+      console.log('[Chat] Response received - Model:', response.model, 'Provider:', actualProvider, '(requested:', providerOverride || 'auto', ')');
+
+      // Save assistant message to database
+      if (conversationId) {
+        try {
+          await saveMessage(conversationId, 'assistant', assistantContent, response.model);
+        } catch (error) {
+          console.error('[Chat] Error saving assistant message:', error);
+        }
+
+        // Generate title after first few messages (2-3 exchanges)
+        // Only generate once per conversation
+        if (!titleGenerationQueued && messages.length >= 1 && conversationId) {
+          setTitleGenerationQueued(true);
+          // Generate title asynchronously (don't block UI)
+          setTimeout(async () => {
+            try {
+              const conversationMessages = [
+                ...messages.slice(-2), // Previous messages
+                { role: 'user' as const, content: actualMessageContentForLLM },
+                { role: 'assistant' as const, content: assistantContent },
+              ];
+              if (conversationId) {
+                await generateConversationTitle(conversationId, conversationMessages);
+              }
+            } catch (error) {
+              console.error('[Chat] Error generating conversation title:', error);
+            }
+          }, 1000);
+        }
+      }
+
+      // Add the complete message with provider info
       setMessages((prev) => [
         ...prev,
         {
@@ -502,6 +677,7 @@ export default function ChatScreen() {
           role: 'assistant',
           content: assistantContent,
           model: response.model,
+          provider: actualProvider, // Store which provider was used
         },
       ]);
       setStreamingContent('');
@@ -544,18 +720,28 @@ export default function ChatScreen() {
     } finally {
       setIsLoading(false);
     }
-  }, [isLoading, messages, mascotId, formatSourcesForMessage]);
+  }, [isLoading, messages, mascotId, formatSourcesForMessage, chatLLM, activeSkill, dbInstructions, activeSkillId]);
 
   // Auto-send initial message from home screen
+  // IMPORTANT: If skillId is provided, send the skill label
+  // User sees the skill label, but LLM receives the full skill prompt (handled in sendMessage)
   useEffect(() => {
     if (initialMessage && !hasProcessedInitialMessage.current) {
       hasProcessedInitialMessage.current = true;
       // Small delay to ensure the UI is ready
-      setTimeout(() => {
-        sendMessage(initialMessage);
+      setTimeout(async () => {
+        // If we have a skillId, send the skill label
+        // sendMessage will detect it's a skill and send the full prompt to LLM
+        if (skillId && activeSkillId && activeSkill) {
+          // Send the skill label (user sees this), but LLM gets full prompt
+          sendMessage(activeSkill.skill_label, true); // true = this is a skill label
+        } else {
+          // No skill selected, send the initial message as-is
+          sendMessage(initialMessage);
+        }
       }, 300);
     }
-  }, [initialMessage, sendMessage]);
+  }, [initialMessage, sendMessage, skillId, activeSkillId, activeSkill]);
 
   // Track keyboard state to fix padding issues
   useEffect(() => {
@@ -589,17 +775,59 @@ export default function ChatScreen() {
 
   // Speech recognition is only available on web
   // On native platforms (iOS/Android), voice input is disabled to avoid errors
-  const handleVoiceInput = async () => {
-    // Only available on web
+  const handleVoiceInput = useCallback(() => {
     if (!SPEECH_RECOGNITION_AVAILABLE) {
       console.warn('Speech recognition is only available on web');
       return;
     }
 
-    // Web speech recognition would be handled here
-    // For now, this is a placeholder - web speech recognition needs Web Speech API
-    console.warn('Web speech recognition not yet implemented');
-  };
+    // Check for Web Speech API support
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      console.warn('Web Speech API not supported in this browser');
+      alert('Voice input is not supported in your browser. Please use Chrome, Edge, or Safari.');
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.lang = 'en-US'; // Can be made configurable based on user language preference
+
+    recognition.onstart = () => {
+      setIsRecording(true);
+      console.log('Voice recognition started...');
+    };
+
+    recognition.onresult = (event: any) => {
+      const transcript = event.results[0][0].transcript;
+      setInputText(transcript);
+      console.log('Voice input:', transcript);
+      setIsRecording(false);
+    };
+
+    recognition.onerror = (event: any) => {
+      console.error('Speech recognition error:', event.error);
+      setIsRecording(false);
+      if (event.error === 'not-allowed') {
+        alert('Microphone permission denied. Please allow microphone access to use voice input.');
+      } else if (event.error === 'no-speech') {
+        alert('No speech detected. Please try again.');
+      }
+    };
+
+    recognition.onend = () => {
+      setIsRecording(false);
+      console.log('Voice recognition ended.');
+    };
+
+    try {
+      recognition.start();
+    } catch (error) {
+      console.error('Error starting speech recognition:', error);
+      setIsRecording(false);
+    }
+  }, []);
 
   const handleSend = async () => {
     if (!inputText.trim() || isLoading) return;
@@ -609,25 +837,38 @@ export default function ChatScreen() {
   };
 
   const handleSkillPress = async (skill: MascotSkill | string) => {
-    // Send the skill directly to AI
+    // When a skill is clicked, send the FULL skill prompt as the user message
+    // User sees the skill label, but LLM receives the complete skill instructions
     if (isLoading) return;
     // Dismiss keyboard if visible
     Keyboard.dismiss();
 
     // Handle both database skill objects and legacy string skills
     const skillLabel = typeof skill === 'string' ? skill : skill.skill_label;
-    const skillPrompt = typeof skill === 'string' ? null : skill.skill_prompt;
     const skillIdToActivate = typeof skill === 'string' ? null : skill.id;
+    
+    // CRITICAL: Get the skill prompt from the skill object or from dbSkills
+    // Sometimes the skill object passed in might not have the full prompt
+    let skillPrompt = typeof skill === 'string' ? null : skill.skill_prompt;
+    
+    // If we don't have the prompt from the skill object, try to get it from dbSkills
+    if (!skillPrompt && skillIdToActivate) {
+      const fullSkill = dbSkills.find((s) => s.id === skillIdToActivate);
+      skillPrompt = fullSkill?.skill_prompt || null;
+    }
 
     // Set active skill for future messages
     if (skillIdToActivate) {
       setActiveSkillId(skillIdToActivate);
     }
 
+    // CRITICAL: User sees the skill label, but LLM receives the FULL skill prompt
+    // Send the skill label as the message (user will see it)
+    // But when sending to LLM, we'll replace it with the full skill prompt
     const userMessage: Message = {
       id: Date.now().toString(),
       role: 'user',
-      content: skillLabel,
+      content: skillLabel, // User sees the skill label
     };
 
     const assistantMessageId = (Date.now() + 1).toString();
@@ -649,7 +890,10 @@ export default function ChatScreen() {
         setWebSearchError(null);
       }
 
-      // Get the mascot's system prompt (with instructions and skill prompt)
+      // Get the mascot's system prompt (instructions only)
+      // IMPORTANT: The skill prompt is sent as the FIRST user message
+      // But we should also add it to the system prompt so the LLM continues following it
+      // throughout the conversation
       const mascotData = MASCOT_DATA[mascotId || '1'];
       let systemPrompt = mascotData?.systemPrompt || 'You are a helpful AI assistant.';
       
@@ -658,12 +902,25 @@ export default function ChatScreen() {
         systemPrompt = `${systemPrompt}\n\n---\n\n${dbInstructions}`;
       }
       
-      // Add skill prompt if available
+      // Add skill prompt to system prompt so the LLM continues following it in subsequent messages
+      // The skill prompt is also sent as the first user message to initiate the conversation
       if (skillPrompt) {
-        systemPrompt = `${systemPrompt}\n\n---\n\nIMPORTANT: The following skill-specific instructions must be followed precisely and take precedence when relevant:\n\n${skillPrompt}`;
+        systemPrompt = `${systemPrompt}\n\n---\n\nCRITICAL: Follow these skill-specific instructions throughout this entire conversation:\n\n${skillPrompt}\n\nThese instructions define how you should behave and what questions you should ask. Continue following them for all subsequent messages.`;
       }
 
       // Convert to ChatMessage format with system prompt
+      // CRITICAL: If skill was clicked, send the FULL skill prompt as user message
+      // User sees skillLabel in UI, but LLM receives skillPrompt
+      const actualMessageContentForLLM = skillPrompt || skillLabel;
+      
+      console.log('[Chat] Skill clicked - Label:', skillLabel);
+      console.log('[Chat] Skill clicked - Prompt exists:', !!skillPrompt);
+      console.log('[Chat] Skill clicked - Sending to LLM:', skillPrompt ? skillPrompt.substring(0, 100) + '...' : skillLabel);
+      
+      if (!skillPrompt && skillIdToActivate) {
+        console.error('[Chat] ERROR: Skill clicked but skillPrompt is null! Skill ID:', skillIdToActivate);
+      }
+
       const chatHistory: ChatMessage[] = [
         { role: 'system', content: systemPrompt },
         ...messages
@@ -672,28 +929,75 @@ export default function ChatScreen() {
             role: m.role as 'system' | 'user' | 'assistant',
             content: m.content,
           })),
-        { role: 'user', content: skillLabel },
+        { role: 'user', content: actualMessageContentForLLM }, // Send FULL skill prompt to LLM (user sees label)
       ];
 
       let fullContent = '';
 
-      // Select the best provider based on mascot's task category and user preference
-      const taskCategory = mascotData?.taskCategory as TaskCategory || 'conversation';
-      const selectedProvider = selectBestProvider(preferredLLM, taskCategory);
+      // Convert chatLLM to provider override ('openai' | 'gemini' | undefined for auto)
+      // If 'auto', don't pass provider (let system choose based on mascot config or default)
+      // If 'perplexity', treat as 'auto' for now (not supported in Edge Function yet)
+      const providerOverride: 'openai' | 'gemini' | undefined = 
+        chatLLM === 'openai' || chatLLM === 'gemini' ? chatLLM : undefined;
+
+      console.log('[Chat] Skill press - Provider override:', providerOverride || 'auto (system chooses)');
       
-      const response = await streamChat(
-        chatHistory,
+      // Convert chat messages to secure chat format (no system messages)
+      const secureMessages: SecureChatMessage[] = chatHistory
+        .filter((m) => m.role !== 'system')
+        .map((m) => ({
+          role: m.role as 'user' | 'assistant',
+          content: m.content,
+        }));
+      
+      // Create or use existing conversation
+      let conversationId = currentConversationId;
+      if (!conversationId) {
+        const newConversation = await createConversation(mascotId || '1');
+        conversationId = newConversation.id;
+        setCurrentConversationId(conversationId);
+      }
+
+      // Save user message to database (save skill prompt, not label)
+      if (conversationId) {
+        try {
+          await saveMessage(conversationId, 'user', actualMessageContentForLLM);
+          setHasSavedFirstMessage(true);
+        } catch (error) {
+          console.error('[Chat] Error saving user message:', error);
+        }
+      }
+
+      // Use secure chat stream through Supabase Edge Function (avoids CORS)
+      // CRITICAL: Even though skill prompt is in the user message, we still pass skillId
+      // as a fallback in case the prompt wasn't properly extracted above
+      // The Edge Function can use this to fetch the prompt if needed
+      const response = await secureChatStream(
+        mascotId || '1',
+        secureMessages,
         (chunk: string) => {
           fullContent += chunk;
           setStreamingContent(fullContent);
           scrollViewRef.current?.scrollToEnd({ animated: false });
         },
-        selectedProvider // Use the best provider for this mascot's task category
+        conversationId, // Pass conversationId to Edge Function
+        skillIdToActivate || undefined, // skillId - pass it as backup (though prompt is in user message)
+        providerOverride, // provider override (undefined = system chooses)
+        deepThinkingEnabled // Deep Thinking mode (uses pro models)
       );
 
       const assistantContent = response.content;
 
-      // Add the complete message
+      // Use the provider from the response (Edge Function tells us what was actually used)
+      const actualProvider: 'openai' | 'gemini' | undefined = response.provider || 
+        (providerOverride || // Fallback to user override if response doesn't include provider
+         (response.model?.toLowerCase().includes('gpt') ? 'openai' : 
+          response.model?.toLowerCase().includes('gemini') ? 'gemini' : 
+          undefined));
+
+      console.log('[Chat] Skill response - Model:', response.model, 'Provider:', actualProvider, '(requested:', providerOverride || 'auto', ')');
+
+      // Add the complete message with provider info
       setMessages((prev) => [
         ...prev,
         {
@@ -701,6 +1005,7 @@ export default function ChatScreen() {
           role: 'assistant',
           content: assistantContent,
           model: response.model,
+          provider: actualProvider, // Store which provider was used
         },
       ]);
       setStreamingContent('');
@@ -758,6 +1063,7 @@ export default function ChatScreen() {
     { key: 'sources', label: t.chat.tabs.sources },
     { key: 'skills', label: 'Skills' },
     { key: 'instructions', label: t.chat.tabs.instructions },
+    { key: 'history', label: 'History' },
   ];
 
   // Markdown styles for assistant messages (Gemini-inspired)
@@ -890,102 +1196,20 @@ export default function ChatScreen() {
 
   const content = (
     <>
-      {/* Header - includes safe area padding */}
-      <View
-        style={[
-          styles.header,
-          {
-            backgroundColor: colors.surface,
-            borderBottomColor: colors.outline,
-            // Only add padding top on native for status bar
-            paddingTop: Platform.OS !== 'web' ? Math.max(insets.top, 8) + 8 : 16,
-          },
-        ]}
-      >
-        {/* Mascot image - absolutely positioned, overlaps content */}
-        <Image
-          source={mascotImage}
-          style={styles.headerMascotImage}
-          resizeMode="cover"
-        />
-
-        {/* First row: Back button (143px) + Text + Favorite */}
-        <View style={styles.headerRow}>
-          {/* Back button container - 143px wide to reserve space for mascot */}
-          <View style={styles.headerBackContainer}>
-            <IconButton
-              iconName="arrow-left"
-              onPress={handleBack}
-            />
-          </View>
-
-          {/* Mascot name and subtitle */}
-          <View style={styles.headerTextContainer}>
-            <Text
-              style={[
-                styles.headerMascotName,
-                {
-                  fontFamily: textStyles.cardTitle.fontFamily,
-                  fontSize: 18,
-                  letterSpacing: 0.36,
-                  lineHeight: 23,
-                  color: colors.text,
-                },
-              ]}
-            >
-              {mascot.name}
-            </Text>
-            <Text
-              style={[
-                styles.headerMascotSubtitle,
-                {
-                  fontFamily: fontFamilies.figtree.medium,
-                  fontSize: 11,
-                  letterSpacing: 0.5,
-                  color: colors.textMuted,
-                },
-              ]}
-            >
-              {mascot.greeting.split('\n')[0].replace('Hi, there I am analyst bear. ', '').replace('Hey! I\'m Writer Fox, ', '').replace('Hello! I\'m UX Panda, ', '').replace('Hi there! I\'m Advice Zebra, ', '') || 'Your AI assistant'}
-            </Text>
-          </View>
-
-          {/* Favorite button with like count */}
-        <View style={styles.favoriteContainer}>
-          <IconButton
-            iconName="favourite"
-            isSelected={isLiked}
-            onPress={toggleLike}
-            disabled={isToggling}
-          />
-          {likeCount > 0 && (
-            <Text
-              style={[
-                styles.likeCount,
-                {
-                  fontFamily: fontFamilies.figtree.medium,
-                  color: colors.textMuted,
-                },
-              ]}
-            >
-              {likeCount}
-            </Text>
-          )}
-        </View>
-        </View>
-
-        {/* Tabs row - pl-150 to align with text above */}
-        <View style={styles.tabsContainer}>
-          {tabs.map((tab) => (
-            <ColoredTab
-              key={tab.key}
-              label={tab.label}
-              isActive={activeTab === tab.key}
-              onPress={() => setActiveTab(tab.key)}
-            />
-          ))}
-        </View>
-      </View>
+      <ChatHeader
+        mascotName={mascot.name}
+        mascotSubtitle={headerSubtitle}
+        mascotImage={mascotImage}
+        isLiked={isLiked}
+        likeCount={likeCount}
+        onBack={handleBack}
+        onToggleLike={toggleLike}
+        tabs={tabs}
+        activeTab={activeTab}
+        onTabChange={(tab) => setActiveTab(tab as ChatTab)}
+        isToggling={isToggling}
+        insets={insets}
+      />
 
       {activeTab === 'skills' ? (
         <ScrollView
@@ -1110,6 +1334,36 @@ export default function ChatScreen() {
             </Pressable>
           ))}
         </ScrollView>
+      ) : activeTab === 'history' ? (
+        <ChatHistory
+          mascotId={mascotId}
+          onConversationPress={(conversationId) => {
+            // Switch to the selected conversation
+            // This will trigger the useEffect to load messages
+            setCurrentConversationId(conversationId);
+            // Clear current messages so they get replaced when loaded
+            setMessages([]);
+            // Switch to chat tab to view the conversation
+            setActiveTab('chat');
+            // Update URL params for deep linking
+            router.setParams({ conversationId });
+          }}
+          onNewChat={() => {
+            // Start a new conversation
+            setCurrentConversationId(null);
+            setTitleGenerationQueued(false);
+            setMessages([
+              {
+                id: '1',
+                role: 'assistant',
+                content: initialAssistantMessage,
+              },
+            ]);
+            setActiveTab('chat');
+            // Clear URL params
+            router.setParams({ conversationId: undefined });
+          }}
+        />
       ) : (
         <ScrollView
           ref={scrollViewRef}
@@ -1163,7 +1417,7 @@ export default function ChatScreen() {
                   >
                     {message.content}
                   </Markdown>
-                  {message.model && (
+                  {(message.model || message.provider) && (
                     <View style={[
                       styles.modelLabelContainer,
                       { borderTopColor: colors.outline + '40' }, // 40 = 25% opacity in hex
@@ -1177,7 +1431,9 @@ export default function ChatScreen() {
                           },
                         ]}
                       >
-                        {message.model}
+                        {message.provider ? 
+                          `${message.provider === 'openai' ? 'OpenAI' : 'Gemini'} ${message.model ? `(${message.model})` : ''}`.trim() :
+                          message.model || 'Unknown'}
                       </Text>
                     </View>
                   )}
@@ -1262,10 +1518,9 @@ export default function ChatScreen() {
           showLLMPicker={true}
           chatLLM={chatLLM}
           onLLMChange={setChatLLM}
-          webSearchEnabled={webSearchEnabled}
-          onWebSearchToggle={() => setWebSearchEnabled((prev) => !prev)}
           deepThinkingEnabled={deepThinkingEnabled}
           onDeepThinkingToggle={() => setDeepThinkingEnabled((prev) => !prev)}
+          isAdmin={isAdmin}
           isRecording={isRecording}
           onVoicePress={SPEECH_RECOGNITION_AVAILABLE ? handleVoiceInput : undefined}
           maxWidth={CHAT_MAX_WIDTH}

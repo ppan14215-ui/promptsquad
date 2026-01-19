@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -15,6 +15,7 @@ import {
   SkillPreview,
   SkillEditor,
   InstructionsEditor,
+  MascotEditor,
 } from '@/components';
 import {
   useIsAdmin,
@@ -22,6 +23,7 @@ import {
   useMascotSkills,
   useMascotInstructions,
   MascotSkill,
+  updateMascot,
 } from '@/services/admin';
 import { useAuth } from '@/services/auth';
 
@@ -34,6 +36,7 @@ export default function SkillsScreen() {
   const [selectedMascotId, setSelectedMascotId] = useState<string | null>(null);
   const [skillEditorVisible, setSkillEditorVisible] = useState(false);
   const [instructionsEditorVisible, setInstructionsEditorVisible] = useState(false);
+  const [mascotEditorVisible, setMascotEditorVisible] = useState(false);
   const [editingSkill, setEditingSkill] = useState<MascotSkill | null>(null);
 
   // Get skills and instructions for selected mascot
@@ -41,12 +44,21 @@ export default function SkillsScreen() {
     skills,
     isLoading: isSkillsLoading,
     refetch: refetchSkills,
+    error: skillsError,
   } = useMascotSkills(selectedMascotId);
   const {
     instructions,
     isLoading: isInstructionsLoading,
     refetch: refetchInstructions,
   } = useMascotInstructions(selectedMascotId);
+
+  // Log skills changes for debugging
+  React.useEffect(() => {
+    console.log('[SkillsScreen] Skills updated:', skills.length, 'skills for mascot', selectedMascotId);
+    if (skills.length > 0) {
+      console.log('[SkillsScreen] Skills:', skills.map(s => ({ id: s.id, label: s.skill_label, active: s.is_active })));
+    }
+  }, [skills, selectedMascotId]);
 
   const selectedMascot = mascots.find((m) => m.id === selectedMascotId);
 
@@ -67,12 +79,50 @@ export default function SkillsScreen() {
     setSkillEditorVisible(true);
   };
 
-  const handleSkillSaved = () => {
-    refetchSkills();
+  // Use a ref to track skills for debugging
+  const skillsRef = useRef(skills);
+  useEffect(() => {
+    skillsRef.current = skills;
+  }, [skills]);
+
+  const handleSkillSaved = async () => {
+    console.log('[SkillsScreen] Skill saved, refreshing skills list...');
+    console.log('[SkillsScreen] Current skills count before refetch:', skillsRef.current.length);
+    
+    try {
+      // Add a small delay to ensure database commit is complete
+      await new Promise(resolve => setTimeout(resolve, 200));
+      
+      // Force refetch - this should update the skills state
+      await refetchSkills();
+      
+      // Wait a bit for state to update, then log
+      setTimeout(() => {
+        console.log('[SkillsScreen] Skills list refreshed. New count:', skillsRef.current.length);
+        if (skillsRef.current.length > 0) {
+          console.log('[SkillsScreen] Skills:', skillsRef.current.map(s => s.skill_label));
+        }
+      }, 300);
+    } catch (error) {
+      console.error('[SkillsScreen] Error refreshing skills list:', error);
+      console.error('[SkillsScreen] Skills error details:', error);
+    }
   };
 
   const handleInstructionsSaved = () => {
     refetchInstructions();
+  };
+
+  const handleMascotSaved = async (name: string, subtitle: string) => {
+    if (!selectedMascotId) return;
+    try {
+      await updateMascot(selectedMascotId, { name, subtitle });
+      // Refresh mascots list to show updated name
+      window.location.reload(); // Simple refresh for now
+    } catch (error) {
+      console.error('Error updating mascot:', error);
+      throw error;
+    }
   };
 
   // Loading state
@@ -187,6 +237,69 @@ export default function SkillsScreen() {
       <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
         {selectedMascot && (
           <>
+            {/* Mascot Details Section */}
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <Text
+                  style={[
+                    styles.sectionTitle,
+                    { fontFamily: fontFamilies.semibold, color: colors.text },
+                  ]}
+                >
+                  Mascot Details
+                </Text>
+                <Pressable
+                  onPress={() => setMascotEditorVisible(true)}
+                  style={[styles.editButton, { backgroundColor: colors.surface }]}
+                >
+                  <Icon name="edit" size={18} color={colors.primary} />
+                  <Text
+                    style={[
+                      styles.editButtonText,
+                      { fontFamily: fontFamilies.medium, color: colors.primary },
+                    ]}
+                  >
+                    Edit
+                  </Text>
+                </Pressable>
+              </View>
+              <View
+                style={[
+                  styles.mascotDetailsBox,
+                  { backgroundColor: colors.surface, borderColor: colors.outline },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.mascotName,
+                    { fontFamily: fontFamilies.semibold, color: colors.text },
+                  ]}
+                >
+                  {selectedMascot.name}
+                </Text>
+                {selectedMascot.subtitle && (
+                  <Text
+                    style={[
+                      styles.mascotSubtitle,
+                      { fontFamily: fontFamilies.regular, color: colors.textMuted },
+                    ]}
+                  >
+                    {selectedMascot.subtitle}
+                  </Text>
+                )}
+                <View style={styles.mascotMeta}>
+                  <Text
+                    style={[
+                      styles.mascotMetaText,
+                      { fontFamily: fontFamilies.regular, color: colors.textMuted },
+                    ]}
+                  >
+                    ID: {selectedMascot.id} • Color: {selectedMascot.color}
+                  </Text>
+                </View>
+              </View>
+            </View>
+
             {/* Instructions Section */}
             <View style={styles.section}>
               <View style={styles.sectionHeader}>
@@ -330,6 +443,18 @@ export default function SkillsScreen() {
         mascotName={selectedMascot?.name}
         instructions={instructions}
       />
+
+      {/* Mascot Editor Modal */}
+      {selectedMascot && (
+        <MascotEditor
+          visible={mascotEditorVisible}
+          mascotId={selectedMascot.id}
+          currentName={selectedMascot.name}
+          currentSubtitle={selectedMascot.subtitle}
+          onClose={() => setMascotEditorVisible(false)}
+          onSave={handleMascotSaved}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -478,6 +603,27 @@ const styles = StyleSheet.create({
     opacity: 0.8,
   },
   editHint: {
+    fontSize: 12,
+  },
+  mascotDetailsBox: {
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    gap: 8,
+  },
+  mascotName: {
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  mascotSubtitle: {
+    fontSize: 14,
+    marginTop: 4,
+  },
+  mascotMeta: {
+    marginTop: 8,
+    paddingTop: 8,
+  },
+  mascotMetaText: {
     fontSize: 12,
   },
 });

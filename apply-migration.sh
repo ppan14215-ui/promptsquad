@@ -1,0 +1,25 @@
+#!/bin/bash
+
+# Script to apply the new mascot migration to your Supabase database
+
+echo "🚀 Applying mascot migration to Supabase..."
+echo ""
+echo "⚠️  IMPORTANT: You need to apply this migration to your database."
+echo ""
+echo "Options:"
+echo ""
+echo "1. Via Supabase CLI (if installed):"
+echo "   supabase db push"
+echo ""
+echo "2. Via Supabase Dashboard (Manual):"
+echo "   a. Go to: https://supabase.com/dashboard"
+echo "   b. Select your project"
+echo "   c. Go to: SQL Editor"
+echo "   d. Copy the contents of: supabase/migrations/008_seed_all_20_mascots.sql"
+echo "   e. Paste and run the SQL"
+echo ""
+echo "3. Quick check - Run this SQL to see current mascot count:"
+echo "   SELECT COUNT(*) as total_mascots FROM mascots;"
+echo ""
+echo "📝 After applying the migration, you should have 20 mascots total."
+echo ""

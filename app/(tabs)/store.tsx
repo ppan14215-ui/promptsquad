@@ -1,13 +1,15 @@
 import { View, StyleSheet, ScrollView, Text, Modal, Pressable, Platform, useWindowDimensions, TouchableWithoutFeedback } from 'react-native';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { MascotCard, TextButton, BigPrimaryButton, CreateCustomCard, MascotDetails, Skill } from '@/components';
 import { useTheme, textStyles, fontFamilies } from '@/design-system';
 import { useI18n } from '@/i18n';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useIsAdmin } from '@/services/admin';
+import { useIsAdmin, useMascots, MascotBasic, useMascotSkills, MascotSkill } from '@/services/admin';
+import { getMascotImageSource, getMascotGrayscaleImageSource } from '@/services/admin/mascot-images';
 import { useSubscription } from '@/services/subscription';
 import { useMascotLikeCounts } from '@/services/mascot-likes';
+import React from 'react';
 
 const DESKTOP_BREAKPOINT = 768;
 const CONTENT_MAX_WIDTH = 720;
@@ -429,48 +431,95 @@ export default function StoreScreen() {
   const { isSubscribed } = useSubscription();
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const [selectedMascot, setSelectedMascot] = useState<Mascot | null>(null);
+  const [selectedMascotId, setSelectedMascotId] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<'default' | 'most-liked'>('default');
   
-  // Fetch like counts for all mascots
-  const mascotIds = SAMPLE_MASCOTS.map(m => m.id);
+  // Fetch mascots from database with fallback to hardcoded
+  const { mascots: dbMascots, isLoading: isLoadingMascots, error: mascotsError } = useMascots();
+  
+  // Convert database mascots to Mascot type with fallback to hardcoded
+  const allMascots: Mascot[] = useMemo(() => {
+    if (dbMascots.length > 0) {
+      // Convert database mascots to Mascot type
+      return dbMascots.map((m: MascotBasic) => {
+        const imageSource = getMascotImageSource(m.image_url || null) || mascotImages.bear;
+        const grayscaleSource = getMascotGrayscaleImageSource(m.image_url || null);
+        // Find matching hardcoded mascot for fallback data
+        const hardcodedMascot = SAMPLE_MASCOTS.find((hm) => hm.id === m.id);
+        return {
+          id: m.id,
+          name: m.name,
+          subtitle: m.subtitle || '',
+          image: imageSource,
+          grayscaleImage: grayscaleSource || undefined,
+          color: (m.color || 'yellow') as MascotColor,
+          personality: hardcodedMascot?.personality || [],
+          models: hardcodedMascot?.models || [],
+          skills: hardcodedMascot?.skills || [],
+          isLocked: !m.is_free && !isAdmin && !isSubscribed, // Determine lock status
+        };
+      });
+    }
+    // Fallback to hardcoded data
+    return SAMPLE_MASCOTS.map((m) => ({
+      ...m,
+      isLocked: !['1', '2', '3', '4'].includes(m.id) && !isAdmin && !isSubscribed,
+    }));
+  }, [dbMascots, isAdmin, isSubscribed]);
+  
+  // Fetch like counts for all mascots using their IDs
+  const mascotIds = allMascots.map(m => m.id);
   const { likeCounts } = useMascotLikeCounts(mascotIds);
 
   const isDesktop = width >= DESKTOP_BREAKPOINT;
 
+  // Get selected mascot from list
+  const selectedMascot = selectedMascotId ? allMascots.find(m => m.id === selectedMascotId) : null;
+  
   // For admin, all mascots are unlocked (purchased state)
+  // For regular users, check isLocked property (already set in allMascots)
   const getMascotLockStatus = (mascot: Mascot) => {
     if (isAdmin) return false; // Never locked for admin
-    return mascot.isLocked;
+    if (isSubscribed) return false; // Never locked for subscribers
+    return mascot.isLocked || false;
   };
 
   // Open mascot details if navigated from home with openMascotId
   useEffect(() => {
-    if (openMascotId) {
-      const mascot = SAMPLE_MASCOTS.find(m => m.id === openMascotId);
+    if (openMascotId && allMascots.length > 0) {
+      // Try to find by UUID first (database), then by simple ID (fallback)
+      const mascot = allMascots.find(m => m.id === openMascotId);
       if (mascot) {
-        setSelectedMascot(mascot);
+        setSelectedMascotId(mascot.id);
       }
     }
-  }, [openMascotId]);
+  }, [openMascotId, allMascots]);
 
   // Sort mascots based on selected sort option
-  const displayedMascots = [...SAMPLE_MASCOTS].sort((a, b) => {
+  const displayedMascots = [...allMascots].sort((a, b) => {
     if (sortBy === 'most-liked') {
       const likesA = likeCounts[a.id] || 0;
       const likesB = likeCounts[b.id] || 0;
       return likesB - likesA; // Descending order (most liked first)
     }
-    // Default: maintain original order
-    return 0;
+    // Default: maintain sort_order from database if available
+    if (dbMascots.length > 0) {
+      const aDb = dbMascots.find(m => m.id === a.id);
+      const bDb = dbMascots.find(m => m.id === b.id);
+      const aOrder = (aDb as any)?.sort_order ?? 999;
+      const bOrder = (bDb as any)?.sort_order ?? 999;
+      return aOrder - bOrder;
+    }
+    // Fallback: maintain original order (by id)
+    return parseInt(a.id) - parseInt(b.id);
   });
 
-  const handleMascotPress = (mascot: Mascot) => {
-    setSelectedMascot(mascot);
+  const handleMascotPress = (mascotId: string) => {
+    setSelectedMascotId(mascotId);
   };
 
   const handleCloseModal = () => {
-    setSelectedMascot(null);
+    setSelectedMascotId(null);
   };
 
 
@@ -494,8 +543,71 @@ export default function StoreScreen() {
 
   const handleSkillPress = (skill: Skill) => {
     console.log(`Skill pressed: ${skill.label}`);
-    // TODO: Navigate to chat with skill pre-selected
+    if (!selectedMascotId) return;
+    handleCloseModal();
+    router.push(`/chat/${selectedMascotId}?skillId=${skill.id}`);
   };
+
+  // Component to fetch and display mascot details with all data
+  const MascotDetailsWithData = React.memo(function MascotDetailsWithData({ 
+    mascot, 
+    onClose, 
+    onStartChat, 
+    onTryOut, 
+    onUnlock, 
+    onSkillPress,
+    getMascotLockStatus 
+  }: { 
+    mascot: Mascot; 
+    onClose: () => void; 
+    onStartChat: () => void; 
+    onTryOut: () => void; 
+    onUnlock: () => void; 
+    onSkillPress: (skill: Skill) => void;
+    getMascotLockStatus: (mascot: Mascot | MascotBasic) => boolean;
+  }) {
+    // Try to fetch from database if using database mascots
+    const dbMascot = dbMascots.find(m => m.id === mascot.id);
+    const { skills: dbSkills } = useMascotSkills(mascot.id);
+    
+    // Use database skills if available, otherwise use hardcoded
+    const displaySkills: Skill[] = React.useMemo(() => {
+      if (dbSkills && dbSkills.length > 0) {
+        return dbSkills.map((skill: MascotSkill) => ({
+          id: skill.id,
+          label: skill.skill_label,
+        }));
+      }
+      // Fallback to hardcoded skills
+      return mascot.skills || [];
+    }, [dbSkills, mascot.skills]);
+    
+    // Use database personality/models if available, otherwise use hardcoded
+    const personality = mascot.personality && mascot.personality.length > 0 
+      ? mascot.personality 
+      : ['Helpful', 'Friendly', 'Knowledgeable'];
+    const models = mascot.models && mascot.models.length > 0 
+      ? mascot.models 
+      : ['Gemini', 'GPT-4o'];
+    
+    return (
+      <MascotDetails
+        name={mascot.name}
+        subtitle={mascot.subtitle}
+        imageSource={mascot.image}
+        personality={personality}
+        models={models}
+        skills={displaySkills}
+        variant={getMascotLockStatus(mascot) ? 'locked' : 'available'}
+        mascotId={mascot.id}
+        onClose={onClose}
+        onStartChat={onStartChat}
+        onTryOut={onTryOut}
+        onUnlock={onUnlock}
+        onSkillPress={onSkillPress}
+      />
+    );
+  });
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
@@ -580,30 +692,36 @@ export default function StoreScreen() {
             </View>
           </View>
 
-          {/* Mascot Grid - show all mascots */}
-          <View style={styles.grid}>
-            {displayedMascots.map((mascot) => (
-              <MascotCard
-                key={mascot.id}
-                id={mascot.id}
-                name={mascot.name}
-                subtitle={mascot.subtitle}
-                imageSource={mascot.image}
-                grayscaleImageSource={mascot.grayscaleImage || undefined}
-                colorVariant={mascot.color}
-                isLocked={getMascotLockStatus(mascot)}
-                onPress={() => handleMascotPress(mascot)}
-              />
-            ))}
-            {/* Create Custom Card at the end - only for pro users */}
-            {(isSubscribed || isAdmin) && (
-              <CreateCustomCard
-                onPress={() => console.log('Create custom pressed')}
-              />
-            )}
-          </View>
-
-
+          {/* Mascot Grid - show all mascots from database or fallback */}
+          {isLoadingMascots && dbMascots.length === 0 ? (
+            <View style={styles.loadingContainer}>
+              <Text style={[styles.loadingText, { color: colors.textMuted }]}>Loading mascots...</Text>
+            </View>
+          ) : (
+            <View style={styles.grid}>
+              {displayedMascots.map((mascot) => {
+                return (
+                  <MascotCard
+                    key={mascot.id}
+                    id={mascot.id}
+                    name={mascot.name}
+                    subtitle={mascot.subtitle}
+                    imageSource={mascot.image}
+                    grayscaleImageSource={mascot.grayscaleImage || undefined}
+                    colorVariant={mascot.color}
+                    isLocked={getMascotLockStatus(mascot)}
+                    onPress={() => handleMascotPress(mascot.id)}
+                  />
+                );
+              })}
+              {/* Create Custom Card at the end - only for pro users */}
+              {(isSubscribed || isAdmin) && (
+                <CreateCustomCard
+                  onPress={() => console.log('Create custom pressed')}
+                />
+              )}
+            </View>
+          )}
         </View>
       </ScrollView>
 
@@ -619,7 +737,7 @@ export default function StoreScreen() {
 
       {/* Mascot Details Modal */}
       <Modal
-        visible={selectedMascot !== null}
+        visible={selectedMascotId !== null}
         transparent
         animationType="fade"
         onRequestClose={handleCloseModal}
@@ -633,20 +751,14 @@ export default function StoreScreen() {
             style={styles.modalContent}
           >
             {selectedMascot && (
-              <MascotDetails
-                name={selectedMascot.name}
-                subtitle={selectedMascot.subtitle}
-                imageSource={selectedMascot.image}
-                personality={selectedMascot.personality}
-                models={selectedMascot.models}
-                skills={selectedMascot.skills}
-                variant={getMascotLockStatus(selectedMascot) ? 'locked' : 'available'}
-                mascotId={selectedMascot.id}
+              <MascotDetailsWithData
+                mascot={selectedMascot}
                 onClose={handleCloseModal}
                 onStartChat={handleStartChat}
                 onTryOut={handleTryOut}
                 onUnlock={handleUnlock}
                 onSkillPress={handleSkillPress}
+                getMascotLockStatus={getMascotLockStatus}
               />
             )}
           </Pressable>
@@ -747,6 +859,14 @@ const styles = StyleSheet.create({
     borderColor: 'transparent',
     shadowColor: 'transparent',
     elevation: 0,
+  },
+  loadingContainer: {
+    padding: 24,
+    alignItems: 'center',
+  },
+  loadingText: {
+    fontSize: 16,
+    marginTop: 8,
   },
 });
 

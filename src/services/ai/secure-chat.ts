@@ -11,6 +11,7 @@ export type ChatMessage = {
 export type SecureChatResponse = {
   content: string;
   model: string;
+  provider?: 'openai' | 'gemini'; // Provider that was actually used
 };
 
 /**
@@ -27,7 +28,9 @@ export async function secureChatStream(
   messages: ChatMessage[],
   onChunk: (chunk: string) => void,
   conversationId?: string,
-  skillId?: string
+  skillId?: string,
+  provider?: 'openai' | 'gemini', // Optional AI provider override
+  deepThinking?: boolean // Optional Deep Thinking mode (uses pro models)
 ): Promise<SecureChatResponse> {
   // Get the current session for auth
   const { data: { session }, error: sessionError } = await supabase.auth.getSession();
@@ -53,8 +56,38 @@ export async function secureChatStream(
   console.log('[SecureChat] Making request to:', `${supabaseUrl}/functions/v1/chat`);
   console.log('[SecureChat] Has access token:', !!session.access_token);
   console.log('[SecureChat] Has apikey:', !!supabaseAnonKey);
+  console.log('[SecureChat] Provider override parameter:', provider, '(type:', typeof provider, ')');
 
   // Use fetch for streaming support
+  // Explicitly include provider only if it's defined (not undefined or null)
+  const requestBody: any = {
+    mascotId,
+    messages,
+  };
+  
+  if (conversationId) {
+    requestBody.conversationId = conversationId;
+  }
+  
+  if (skillId) {
+    requestBody.skillId = skillId;
+  }
+  
+  if (provider && (provider === 'openai' || provider === 'gemini')) {
+    requestBody.provider = provider;
+    console.log('[SecureChat] Including provider in request:', provider);
+  } else {
+    console.log('[SecureChat] No provider override (system will choose)');
+  }
+  
+  if (deepThinking !== undefined) {
+    requestBody.deepThinking = deepThinking;
+    console.log('[SecureChat] Deep Thinking mode:', deepThinking);
+  }
+  
+  console.log('[SecureChat] Request body keys:', Object.keys(requestBody));
+  console.log('[SecureChat] Request body provider value:', requestBody.provider || 'not included');
+  
   const response = await fetch(`${supabaseUrl}/functions/v1/chat`, {
     method: 'POST',
     headers: {
@@ -62,12 +95,7 @@ export async function secureChatStream(
       'Content-Type': 'application/json',
       'apikey': supabaseAnonKey,
     },
-    body: JSON.stringify({
-      mascotId,
-      messages,
-      conversationId,
-      skillId,
-    }),
+    body: JSON.stringify(requestBody),
   });
 
   if (!response.ok) {
@@ -104,6 +132,7 @@ export async function secureChatStream(
   const decoder = new TextDecoder();
   let fullContent = '';
   let model = '';
+  let actualProvider: 'openai' | 'gemini' | undefined = undefined;
 
   while (true) {
     const { done, value } = await reader.read();
@@ -122,6 +151,8 @@ export async function secureChatStream(
         
         if (data.done) {
           model = data.model || 'unknown';
+          actualProvider = data.provider || undefined; // Get provider from Edge Function response
+          console.log('[SecureChat] Stream complete - Model:', model, 'Provider:', actualProvider);
         } else if (data.content) {
           fullContent += data.content;
           onChunk(data.content);
@@ -134,7 +165,7 @@ export async function secureChatStream(
     }
   }
 
-  return { content: fullContent, model };
+  return { content: fullContent, model, provider: actualProvider };
 }
 
 /**
@@ -144,7 +175,9 @@ export async function secureChat(
   mascotId: string,
   messages: ChatMessage[],
   conversationId?: string,
-  skillId?: string
+  skillId?: string,
+  provider?: 'openai' | 'gemini',
+  deepThinking?: boolean
 ): Promise<SecureChatResponse> {
   let fullContent = '';
   let model = '';
@@ -156,7 +189,9 @@ export async function secureChat(
       fullContent += chunk;
     },
     conversationId,
-    skillId
+    skillId,
+    provider,
+    deepThinking
   );
 
   return response;

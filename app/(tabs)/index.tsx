@@ -1,11 +1,12 @@
 import { View, StyleSheet, Text, Pressable, Platform, Image, useWindowDimensions, Modal, ActivityIndicator, Keyboard, LayoutAnimation, KeyboardAvoidingView } from 'react-native';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Icon, Skill, ChatInputBox, MascotDetails, LinkPill } from '@/components';
+import { Icon, Skill, ChatInputBox, MascotDetails, LinkPill, HomeHeader, MascotCarousel } from '@/components';
 import { useTheme, fontFamilies } from '@/design-system';
 import { useAuth } from '@/services/auth';
-import { useMascotSkills, MascotSkill, useIsAdmin } from '@/services/admin';
+import { useMascotSkills, MascotSkill, useIsAdmin, useMascots, MascotBasic } from '@/services/admin';
+import { getMascotImageSource, getMascotGrayscaleImageSource } from '@/services/admin/mascot-images';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // Local mascot images
@@ -394,7 +395,43 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const [selectedIndex, setSelectedIndex] = useState(2); // Start with Panda selected (index 2)
   const [message, setMessage] = useState('');
+  const [deepThinkingEnabled, setDeepThinkingEnabled] = useState(false);
+  const [chatLLM, setChatLLM] = useState<'auto' | 'openai' | 'gemini' | 'perplexity'>('auto');
+  const [selectedMascotDetails, setSelectedMascotDetails] = useState<OwnedMascot | null>(null);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+
+  const isDesktop = width >= DESKTOP_BREAKPOINT;
   
+  // Fetch mascots from database
+  const { mascots: dbMascots, isLoading: isLoadingMascots, error: mascotsError } = useMascots();
+
+  // Convert database mascots to OwnedMascot type with fallback to hardcoded
+  const availableMascots = useMemo(() => {
+    if (dbMascots.length > 0) {
+      // Convert database mascots to OwnedMascot type
+      return dbMascots
+        .filter((m) => isAdmin || m.is_free) // Filter: all for admin, only free for regular users
+        .map((m: MascotBasic) => {
+          const imageSource = getMascotImageSource(m.image_url || null) || mascotImages.bear;
+          // Find matching hardcoded mascot for fallback questionPrompt
+          const hardcodedMascot = ALL_MASCOTS.find((hm) => hm.id === m.id);
+          return {
+            id: m.id,
+            name: m.name,
+            subtitle: m.subtitle || '',
+            image: imageSource,
+            color: (m.color || 'yellow') as MascotColor,
+            questionPrompt: m.question_prompt || hardcodedMascot?.questionPrompt || 'How can I help you?',
+            personality: hardcodedMascot?.personality || [],
+            models: hardcodedMascot?.models || [],
+            skills: hardcodedMascot?.skills || [], // Include hardcoded skills as fallback
+          } as OwnedMascot;
+        });
+    }
+    // Fallback to hardcoded data
+    return isAdmin ? ALL_MASCOTS : FREE_MASCOTS;
+  }, [dbMascots, isAdmin]);
+
   // Storage key for last selected mascot
   const LAST_MASCOT_KEY = 'lastSelectedMascotId';
   
@@ -403,25 +440,18 @@ export default function HomeScreen() {
     const loadLastMascot = async () => {
       try {
         const lastMascotId = await AsyncStorage.getItem(LAST_MASCOT_KEY);
-        if (lastMascotId) {
-          // Wait for availableMascots to be determined
-          const mascots = isAdmin ? ALL_MASCOTS : FREE_MASCOTS;
-          const index = mascots.findIndex(m => m.id === lastMascotId);
+        if (lastMascotId && availableMascots.length > 0) {
+          const index = availableMascots.findIndex(m => m.id === lastMascotId);
           if (index !== -1) {
             setSelectedIndex(index);
           }
         }
       } catch (error) {
-        console.error('Error loading last mascot:', error);
+        // Handle error silently
       }
     };
     loadLastMascot();
-  }, [isAdmin]); // Re-run when admin status changes
-  const [webSearchEnabled, setWebSearchEnabled] = useState(false);
-  const [deepThinkingEnabled, setDeepThinkingEnabled] = useState(false);
-  const [chatLLM, setChatLLM] = useState<'auto' | 'openai' | 'gemini' | 'perplexity'>('auto');
-  const [selectedMascotDetails, setSelectedMascotDetails] = useState<OwnedMascot | null>(null);
-  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  }, [isAdmin, availableMascots.length]); // Re-run when admin status or available mascots change
 
   // Listen for keyboard events on mobile
   useEffect(() => {
@@ -448,31 +478,24 @@ export default function HomeScreen() {
     };
   }, []);
 
-  const isDesktop = width >= DESKTOP_BREAKPOINT;
-  
-  // Admin gets all mascots, normal users get free tier only
-  const availableMascots = isAdmin ? ALL_MASCOTS : FREE_MASCOTS;
   const selectedMascot = availableMascots[selectedIndex] || availableMascots[0];
 
   // Fetch skills from database for the selected mascot
   const { skills: dbSkills, isLoading: skillsLoading } = useMascotSkills(selectedMascot.id);
 
   // Use DB skills if available, otherwise fall back to hardcoded
-  const displaySkills = dbSkills.length > 0 
-    ? dbSkills.map((s) => ({ id: s.id, label: s.skill_label }))
-    : selectedMascot.skills;
-
-  // Responsive sizes
-  const selectedSize = isDesktop ? 192 : 96;
-  const neighborSize = isDesktop ? 96 : 48;
-  const selectedImageSize = isDesktop ? 128 : 64;
-  const neighborImageSize = isDesktop ? 64 : 32;
-  const selectedNameSize = isDesktop ? 18 : 9;
-  const selectedSubtitleSize = isDesktop ? 11 : 5.5;
-  const neighborNameSize = isDesktop ? 9 : 4.5;
-  const neighborSubtitleSize = isDesktop ? 5.5 : 2.75;
-  const selectedBorderRadius = isDesktop ? 16 : 8;
-  const neighborBorderRadius = 8;
+  const displaySkills = useMemo(() => {
+    if (dbSkills.length > 0) {
+      return dbSkills.map((s) => ({ id: s.id, label: s.skill_label }));
+    }
+    // Fallback to hardcoded skills if available
+    if (selectedMascot.skills && selectedMascot.skills.length > 0) {
+      return selectedMascot.skills;
+    }
+    // Final fallback: find from ALL_MASCOTS
+    const hardcodedMascot = ALL_MASCOTS.find((m) => m.id === selectedMascot.id);
+    return hardcodedMascot?.skills || [];
+  }, [dbSkills, selectedMascot.id, selectedMascot.skills]);
 
   const userName = user?.user_metadata?.full_name?.split(' ')[0] || 
                    user?.user_metadata?.name?.split(' ')[0] || 
@@ -530,7 +553,6 @@ export default function HomeScreen() {
       params: { 
         questionPrompt: selectedMascot.questionPrompt,
         initialMessage: message,
-        webSearch: webSearchEnabled ? 'true' : 'false',
         deepThinking: deepThinkingEnabled ? 'true' : 'false',
         llm: chatLLM,
       },
@@ -554,24 +576,6 @@ export default function HomeScreen() {
     }
   };
 
-  // Get visible mascots (2 before, current, 2 after)
-  const getVisibleMascots = () => {
-    const result = [];
-    for (let i = -2; i <= 2; i++) {
-      let index = selectedIndex + i;
-      if (index < 0) index = availableMascots.length + index;
-      if (index >= availableMascots.length) index = index - availableMascots.length;
-      result.push({ mascot: availableMascots[index], position: i, actualIndex: index });
-    }
-    return result;
-  };
-
-  const getMascotOpacity = (position: number) => {
-    if (position === 0) return 1;
-    if (Math.abs(position) === 1) return 0.5;
-    return 0.1;
-  };
-
   // Wrapper component - use KeyboardAvoidingView on both platforms
   // iOS: 'padding' behavior works best
   // Android: 'height' behavior works with adjustResize manifest setting
@@ -584,186 +588,55 @@ export default function HomeScreen() {
         behavior={wrapperBehavior}
         keyboardVerticalOffset={0}
       >
-      {/* Header Section - shrinks when keyboard is visible on mobile */}
-      <View style={[
-        styles.headerSection, 
-        isDesktop && styles.headerSectionDesktop,
-        keyboardVisible && styles.headerSectionKeyboard,
-        !isDesktop && !keyboardVisible && styles.headerSectionMobile,
-      ]}>
-        <View style={[styles.headerContent, isDesktop && styles.headerContentDesktop]}>
-          {/* Show greeting unless keyboard is visible */}
-          {!keyboardVisible && (
-            <View style={styles.header}>
-              <Text
-                style={[
-                  styles.greeting,
-                  {
-                    fontFamily: fontFamilies.figtree.semiBold,
-                    color: colors.textMuted,
-                  },
-                ]}
-              >
-                Hallo {userName}
-              </Text>
-              <Text
-                style={[
-                  styles.questionPrompt,
-                  {
-                    fontFamily: fontFamilies.figtree.semiBold,
-                    color: colors.text,
-                  },
-                ]}
-              >
-                {selectedMascot.questionPrompt}
-              </Text>
-            </View>
-          )}
+        {/* Top Section: Header + Skills (Pinned to Top) */}
+        <HomeHeader
+          userName={userName}
+          questionPrompt={selectedMascot.questionPrompt}
+          skills={displaySkills}
+          onSkillPress={handleSkillPress}
+          keyboardVisible={keyboardVisible}
+          skillsLoading={skillsLoading}
+          isDesktop={isDesktop}
+        />
 
-          {/* Skill Pills - hide when keyboard is visible to save space */}
-          {!keyboardVisible && (
-            <View style={styles.skillPills}>
-              {skillsLoading ? (
-                <ActivityIndicator size="small" color={colors.primary} />
-              ) : (
-                displaySkills.map((skill) => (
-                  <LinkPill
-                    key={skill.id}
-                    label={skill.label}
-                    onPress={() => handleSkillPress(skill)}
-                  />
-                ))
-              )}
-            </View>
-          )}
-        </View>
-      </View>
+        {/* Spacer to push carousel and input to bottom */}
+        <View style={styles.spacer} />
 
-      {/* Bottom Section: Carousel + Input */}
-      <View style={[styles.bottomSection, isDesktop && styles.bottomSectionDesktop]}>
-        {/* Mascot Carousel */}
-        <View style={styles.carouselSection}>
-          <View style={styles.carousel}>
-            {getVisibleMascots().map(({ mascot, position, actualIndex }) => {
-              const isSelected = position === 0;
-              const size = isSelected ? selectedSize : neighborSize;
-              const imageSize = isSelected ? selectedImageSize : neighborImageSize;
-              const nameSize = isSelected ? selectedNameSize : neighborNameSize;
-              const subtitleSize = isSelected ? selectedSubtitleSize : neighborSubtitleSize;
-              const borderRadius = isSelected ? selectedBorderRadius : neighborBorderRadius;
-              const opacity = getMascotOpacity(position);
-              
-              // Adjust padding based on size
-              const paddingTop = isDesktop ? (isSelected ? 24 : 12) : (isSelected ? 12 : 6);
-              const paddingHorizontal = isDesktop ? (isSelected ? 24 : 12) : (isSelected ? 12 : 6);
-              
-              return (
-                <View key={`${mascot.id}-${position}`} style={[styles.mascotWrapper, { alignItems: 'flex-end' }]}>
-                  {/* Left arrow - only show before selected */}
-                  {position === 0 && (
-                    <Pressable style={[styles.arrowButton, { marginBottom: isDesktop ? 80 : 32 }]} onPress={handlePrevMascot}>
-                      <Icon name="arrow-left" size={16} color={colors.textMuted} />
-                    </Pressable>
-                  )}
-                  
-                  <Pressable
-                    style={[
-                      styles.mascotCard,
-                      {
-                        width: size,
-                        height: size,
-                        opacity,
-                        borderColor: isSelected ? COLOR_MAP[mascot.color] : colors.outline,
-                        borderWidth: isSelected ? 2 : 0.25,
-                        borderRadius,
-                        backgroundColor: colors.background,
-                        paddingTop,
-                        paddingHorizontal,
-                      },
-                    ]}
-                    onPress={() => handleMascotCardPress(mascot, actualIndex, isSelected)}
-                  >
-                    <View style={styles.mascotTextContainer}>
-                      <Text
-                        style={[
-                          styles.mascotName,
-                          {
-                            fontFamily: fontFamilies.abyssinicaSil.regular,
-                            color: colors.text,
-                            fontSize: nameSize,
-                            lineHeight: nameSize * 1.28,
-                            letterSpacing: nameSize * 0.02,
-                          },
-                        ]}
-                        numberOfLines={1}
-                      >
-                        {mascot.name}
-                      </Text>
-                      <Text
-                        style={[
-                          styles.mascotSubtitle,
-                          {
-                            fontFamily: fontFamilies.figtree.medium,
-                            color: colors.textMuted,
-                            fontSize: subtitleSize,
-                            letterSpacing: isSelected ? 0.5 : 0.25,
-                          },
-                        ]}
-                        numberOfLines={1}
-                      >
-                        {mascot.subtitle}
-                      </Text>
-                    </View>
-                    <Image
-                      source={mascot.image}
-                      style={[
-                        styles.mascotImage,
-                        {
-                          width: imageSize,
-                          height: imageSize,
-                          left: (size - imageSize) / 2,
-                        },
-                      ]}
-                      resizeMode="contain"
-                    />
-                  </Pressable>
+        {/* Bottom Section: Carousel + Input (Pinned to Bottom) */}
+        <View style={styles.bottomSection}>
+          <MascotCarousel
+            mascots={availableMascots}
+            selectedIndex={selectedIndex}
+            onMascotPress={handleMascotCardPress}
+            onPrev={handlePrevMascot}
+            onNext={handleNextMascot}
+            isDesktop={isDesktop}
+            scale={0.75}
+          />
 
-                  {/* Right arrow - only show after selected */}
-                  {position === 0 && (
-                    <Pressable style={[styles.arrowButton, { marginBottom: isDesktop ? 80 : 32 }]} onPress={handleNextMascot}>
-                      <Icon name="arrow-right" size={16} color={colors.textMuted} />
-                    </Pressable>
-                  )}
-                </View>
-              );
-            })}
+          {/* Chat Input - sits right below carousel */}
+          <View style={[
+            styles.inputSection, 
+            isDesktop && styles.inputSectionDesktop,
+            { paddingBottom: Platform.OS !== 'web' ? Math.max(16, insets.bottom) : 24 },
+          ]}>
+            <ChatInputBox
+              value={message}
+              onChangeText={setMessage}
+              onSend={handleSendMessage}
+              placeholder="Write a message"
+              mascotColor={COLOR_MAP[selectedMascot.color]}
+              showLLMPicker={true}
+              chatLLM={chatLLM}
+              onLLMChange={setChatLLM}
+              deepThinkingEnabled={deepThinkingEnabled}
+              onDeepThinkingToggle={() => setDeepThinkingEnabled(!deepThinkingEnabled)}
+              isAdmin={isAdmin}
+              onVoicePress={Platform.OS === 'web' ? () => console.log('Voice input pressed') : undefined}
+              maxWidth={678}
+            />
           </View>
         </View>
-
-        {/* Chat Input */}
-        <View style={[
-          styles.inputSection, 
-          isDesktop && styles.inputSectionDesktop,
-          { paddingBottom: Platform.OS !== 'web' ? Math.max(16, insets.bottom) : 24 },
-        ]}>
-          <ChatInputBox
-            value={message}
-            onChangeText={setMessage}
-            onSend={handleSendMessage}
-            placeholder="Write a message"
-            mascotColor={COLOR_MAP[selectedMascot.color]}
-            showLLMPicker={true}
-            chatLLM={chatLLM}
-            onLLMChange={setChatLLM}
-            webSearchEnabled={webSearchEnabled}
-            onWebSearchToggle={() => setWebSearchEnabled(!webSearchEnabled)}
-            deepThinkingEnabled={deepThinkingEnabled}
-            onDeepThinkingToggle={() => setDeepThinkingEnabled(!deepThinkingEnabled)}
-            onVoicePress={Platform.OS === 'web' ? () => console.log('Voice input pressed') : undefined}
-            maxWidth={678}
-          />
-        </View>
-      </View>
       </KeyboardAvoidingView>
 
       {/* Mascot Details Modal */}
@@ -878,8 +751,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
   },
+  spacer: {
+    flex: 1,
+  },
   bottomSection: {
-    gap: 24,
+    alignItems: 'center',
+    gap: 16,
+    paddingTop: 16,
   },
   bottomSectionDesktop: {
     alignItems: 'center',
@@ -923,7 +801,7 @@ const styles = StyleSheet.create({
   },
   inputSection: {
     paddingHorizontal: 16,
-    paddingBottom: 24,
+    paddingTop: 16,
     width: '100%',
     alignItems: 'center',
   },

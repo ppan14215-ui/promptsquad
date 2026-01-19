@@ -27,6 +27,8 @@ type ChatInputBoxProps = {
   onWebSearchToggle?: () => void;
   deepThinkingEnabled?: boolean;
   onDeepThinkingToggle?: () => void;
+  // Admin-only features
+  isAdmin?: boolean;
   // Voice
   isRecording?: boolean;
   onVoicePress?: () => void;
@@ -48,6 +50,7 @@ export function ChatInputBox({
   onWebSearchToggle,
   deepThinkingEnabled = false,
   onDeepThinkingToggle,
+  isAdmin = false,
   isRecording = false,
   onVoicePress,
   maxWidth = 720,
@@ -150,7 +153,7 @@ export function ChatInputBox({
                   },
                 ]}
               >
-                {chatLLM === 'auto' ? 'Auto' : chatLLM === 'gemini' ? 'Gemini' : chatLLM === 'perplexity' ? 'Perplexity' : 'GPT'}
+                {chatLLM === 'auto' ? 'Auto' : chatLLM === 'gemini' ? 'Gemini' : chatLLM === 'perplexity' ? 'Perplexity' : chatLLM === 'openai' ? 'GPT' : 'Auto'}
               </Text>
             </Pressable>
 
@@ -208,39 +211,8 @@ export function ChatInputBox({
         )}
 
         <View style={styles.buttonsContainer}>
-          {/* Web search toggle */}
-          {onWebSearchToggle && (
-            <View style={styles.tooltipWrapper}>
-              {showWebSearchTooltip && (
-                <View style={[styles.tooltip, { backgroundColor: colors.darkButtonHover }]}>
-                  <Text style={[styles.tooltipText, { color: colors.buttonText, fontFamily: fontFamilies.figtree.medium }]}>
-                    Web search (Perplexity)
-                  </Text>
-                </View>
-              )}
-              <Pressable
-                style={[
-                  styles.iconButton,
-                  webSearchEnabled && { backgroundColor: colors.primaryBg },
-                ]}
-                onPress={onWebSearchToggle}
-                disabled={disabled}
-                {...(Platform.OS === 'web' && {
-                  onHoverIn: () => setShowWebSearchTooltip(true),
-                  onHoverOut: () => setShowWebSearchTooltip(false),
-                })}
-              >
-                <Icon
-                  name="globe"
-                  size={18}
-                  color={webSearchEnabled ? colors.primary : colors.icon}
-                />
-              </Pressable>
-            </View>
-          )}
-
-          {/* Deep thinking toggle */}
-          {onDeepThinkingToggle && (
+          {/* Deep thinking toggle - only for admins */}
+          {isAdmin && onDeepThinkingToggle && (
             <View style={styles.tooltipWrapper}>
               {showDeepThinkingTooltip && (
                 <View style={[styles.tooltip, { backgroundColor: colors.darkButtonHover }]}>

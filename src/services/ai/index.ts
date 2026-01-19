@@ -112,17 +112,28 @@ export async function streamChat(
     let citations: WebSource[] | undefined;
 
     if (provider === 'openai') {
-      model = options?.model || AI_CONFIG.openai.defaultModel;
+      // When deep thinking is enabled, use pro model; otherwise use provided model or default
+      const defaultModel = options?.deepThinking ? AI_CONFIG.openai.deepThinkingModel : AI_CONFIG.openai.defaultModel;
+      model = options?.model || defaultModel;
       content = await streamChatWithOpenAI(toOpenAIMessages(messages), onChunk, model, options?.deepThinking);
+      // Return the actual model used (pro model if deep thinking)
+      model = options?.deepThinking ? AI_CONFIG.openai.deepThinkingModel : model;
     } else if (provider === 'perplexity') {
-      model = options?.model || AI_CONFIG.perplexity.defaultModel;
+      const defaultModel = options?.deepThinking ? AI_CONFIG.perplexity.deepThinkingModel : AI_CONFIG.perplexity.defaultModel;
+      model = options?.model || defaultModel;
       const response = await streamChatWithPerplexity(toPerplexityMessages(messages), onChunk, model, options?.deepThinking);
       content = response.content;
       citations = response.citations;
+      // Return the actual model used (pro model if deep thinking)
+      model = options?.deepThinking ? AI_CONFIG.perplexity.deepThinkingModel : model;
     } else {
-      model = options?.model || AI_CONFIG.gemini.defaultModel;
+      // When deep thinking is enabled, use pro model; otherwise use provided model or default
+      const defaultModel = options?.deepThinking ? AI_CONFIG.gemini.deepThinkingModel : AI_CONFIG.gemini.defaultModel;
+      model = options?.model || defaultModel;
       const { messages: geminiMessages, systemPrompt } = toGeminiMessages(messages);
       content = await streamChatWithGemini(geminiMessages, onChunk, systemPrompt, model, options?.deepThinking);
+      // Return the actual model used (pro model if deep thinking)
+      model = options?.deepThinking ? AI_CONFIG.gemini.deepThinkingModel : model;
     }
 
     return { content, model, provider, citations };

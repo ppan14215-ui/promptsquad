@@ -29,10 +29,12 @@ export async function chatWithOpenAI(
 
   const client = getClient();
   const deepConfig = deepThinking ? AI_CONFIG.openai.deepThinking : undefined;
+  // Use pro model when deep thinking is enabled
+  const effectiveModel = deepThinking ? AI_CONFIG.openai.deepThinkingModel : model;
   
   try {
     const response = await client.chat.completions.create({
-      model,
+      model: effectiveModel,
       messages,
       max_tokens: deepConfig?.maxTokens ?? 2048,
       temperature: deepConfig?.temperature ?? 0.7,
@@ -63,10 +65,12 @@ export async function streamChatWithOpenAI(
 
   const client = getClient();
   const deepConfig = deepThinking ? AI_CONFIG.openai.deepThinking : undefined;
+  // Use pro model when deep thinking is enabled
+  const effectiveModel = deepThinking ? AI_CONFIG.openai.deepThinkingModel : model;
   
   try {
     const stream = await client.chat.completions.create({
-      model,
+      model: effectiveModel,
       messages,
       max_tokens: deepConfig?.maxTokens ?? 2048,
       temperature: deepConfig?.temperature ?? 0.7,

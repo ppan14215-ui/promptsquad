@@ -9,6 +9,7 @@ import {
   Platform,
   KeyboardAvoidingView,
   Pressable,
+  ActivityIndicator,
 } from 'react-native';
 import { useTheme, fontFamilies, shadowToCSS, shadowToNative } from '@/design-system';
 import { BigPrimaryButton } from '@/components/ui/BigPrimaryButton';
@@ -85,11 +86,20 @@ export function SkillEditor({
           parseInt(sortOrder, 10) || 0
         );
       }
+      console.log('[SkillEditor] Skill saved successfully, calling onSave callback');
       onSave();
       onClose();
     } catch (err: any) {
-      console.error('Error saving skill:', err);
-      setError(err.message || 'Failed to save skill');
+      console.error('[SkillEditor] Error saving skill:', err);
+      console.error('[SkillEditor] Error details:', {
+        message: err.message,
+        code: err.code,
+        details: err.details,
+        hint: err.hint,
+        stack: err.stack,
+      });
+      setError(err.message || 'Failed to save skill. Please check the console for details.');
+      // Don't close modal on error so user can see the error and try again
     } finally {
       setIsLoading(false);
     }
@@ -258,7 +268,19 @@ export function SkillEditor({
           {/* Error Message */}
           {error && (
             <View style={[styles.errorContainer, { backgroundColor: '#FFEBEE' }]}>
-              <Text style={[styles.errorText, { color: '#C62828' }]}>{error}</Text>
+              <Text style={[styles.errorText, { color: '#C62828', fontFamily: fontFamilies.medium }]}>
+                Error: {error}
+              </Text>
+            </View>
+          )}
+          
+          {/* Loading Indicator */}
+          {isLoading && (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="small" color={colors.primary} />
+              <Text style={[styles.loadingText, { fontFamily: fontFamilies.regular, color: colors.textMuted }]}>
+                {isEditing ? 'Updating skill...' : 'Creating skill...'}
+              </Text>
             </View>
           )}
         </ScrollView>
