@@ -14,6 +14,7 @@ export type Conversation = {
   title: string | null;
   is_archived: boolean;
   is_pinned: boolean;
+  is_trial_counted: boolean;
   created_at: string;
   updated_at: string;
 };
@@ -29,6 +30,28 @@ export type ConversationMessage = {
 };
 
 /**
+ * Get a single conversation by ID
+ */
+export async function getConversation(conversationId: string): Promise<Conversation | null> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.user) return null;
+
+  const { data, error } = await supabase
+    .from('conversations')
+    .select('id, user_id, mascot_id, title, is_archived, is_pinned, is_trial_counted, created_at, updated_at')
+    .eq('id', conversationId)
+    .eq('user_id', session.user.id)
+    .maybeSingle();
+
+  if (error) {
+    logger.error('Error fetching conversation:', error);
+    return null;
+  }
+
+  return data as any as Conversation;
+}
+
+/**
  * Create a new conversation
  */
 export async function createConversation(
@@ -36,7 +59,7 @@ export async function createConversation(
   initialTitle?: string
 ): Promise<Conversation> {
   const { data: { session } } = await supabase.auth.getSession();
-  
+
   if (!session?.user) {
     throw new Error('Not authenticated');
   }
@@ -108,7 +131,7 @@ export async function saveMessage(
  */
 export async function getConversations(mascotId?: string): Promise<Conversation[]> {
   const { data: { session } } = await supabase.auth.getSession();
-  
+
   if (!session?.user) {
     return [];
   }
@@ -117,7 +140,7 @@ export async function getConversations(mascotId?: string): Promise<Conversation[
   // If is_pinned doesn't exist, it will just be undefined and we'll default it to false
   let query = supabase
     .from('conversations')
-    .select('id, user_id, mascot_id, title, is_archived, is_pinned, created_at, updated_at')
+    .select('id, user_id, mascot_id, title, is_archived, is_pinned, is_trial_counted, created_at, updated_at')
     .eq('user_id', session.user.id)
     .eq('is_archived', false)
     .order('updated_at', { ascending: false });
@@ -139,11 +162,11 @@ export async function getConversations(mascotId?: string): Promise<Conversation[
         .eq('user_id', session.user.id)
         .eq('is_archived', false)
         .order('updated_at', { ascending: false });
-      
+
       if (mascotId) {
         fallbackQuery.eq('mascot_id', mascotId);
       }
-      
+
       const { data: fallbackData, error: fallbackError } = await fallbackQuery;
       if (fallbackError) {
         logger.error('Error fetching conversations (fallback):', fallbackError);
@@ -156,11 +179,11 @@ export async function getConversations(mascotId?: string): Promise<Conversation[
   }
 
   // Ensure is_pinned exists (default to false if migration not applied)
-  const conversations = (data || []).map((conv: any) => ({ 
-    ...conv, 
-    is_pinned: conv.is_pinned ?? false 
+  const conversations = (data || []).map((conv: any) => ({
+    ...conv,
+    is_pinned: conv.is_pinned ?? false
   })) as Conversation[];
-  
+
   // Sort by pinned status client-side (pinned first, then by updated_at)
   conversations.sort((a, b) => {
     if (a.is_pinned && !b.is_pinned) return -1;
@@ -168,7 +191,7 @@ export async function getConversations(mascotId?: string): Promise<Conversation[
     // Both have same pinned status, sort by updated_at (already sorted by DB, but ensure consistency)
     return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
   });
-  
+
   return conversations;
 }
 
@@ -177,7 +200,7 @@ export async function getConversations(mascotId?: string): Promise<Conversation[
  */
 export async function deleteConversation(conversationId: string): Promise<void> {
   const { data: { session } } = await supabase.auth.getSession();
-  
+
   if (!session?.user) {
     throw new Error('Not authenticated');
   }
@@ -240,7 +263,7 @@ export async function deleteConversation(conversationId: string): Promise<void> 
  */
 export async function togglePinConversation(conversationId: string, isPinned: boolean): Promise<void> {
   const { data: { session } } = await supabase.auth.getSession();
-  
+
   if (!session?.user) {
     throw new Error('Not authenticated');
   }
@@ -310,14 +333,14 @@ Generate only the title, nothing else:`;
         .single());
       actualMascotId = ((convData as any)?.mascot_id as string | undefined) || '1'; // Fallback to '1' if not found
     }
-    
+
     if (!actualMascotId) {
       actualMascotId = '1'; // Final fallback
     }
-    
+
     // Use secureChat to get AI-generated title
     const { secureChat } = await import('@/services/ai/secure-chat');
-    
+
     // Use the conversation's mascot for title generation (not a default)
     // This ensures the title matches the mascot's personality
     const response = await secureChat(
@@ -332,7 +355,7 @@ Generate only the title, nothing else:`;
     );
 
     let title = response.content.trim();
-    
+
     // Clean up the title (remove quotes, limit length)
     title = title.replace(/^["']|["']$/g, '').trim();
     if (title.length > 60) {

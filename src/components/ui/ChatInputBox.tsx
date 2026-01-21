@@ -6,9 +6,11 @@ import {
   Pressable,
   Platform,
   Text,
+  Image,
 } from 'react-native';
 import { useTheme, fontFamilies, shadowToCSS, shadowToNative, textStyles } from '@/design-system';
 import { Icon } from './Icon';
+import * as ImagePicker from 'expo-image-picker';
 import { LLM_OPTIONS, LLMPreference } from '@/services/preferences';
 
 export type ChatInputBoxRef = {
@@ -18,7 +20,7 @@ export type ChatInputBoxRef = {
 type ChatInputBoxProps = {
   value: string;
   onChangeText: (text: string) => void;
-  onSend: () => void;
+  onSend: (text: string, attachment?: { uri: string; base64?: string; mimeType?: string }) => void;
   placeholder?: string;
   disabled?: boolean;
   mascotColor?: string;
@@ -64,6 +66,7 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
   const [showWebSearchTooltip, setShowWebSearchTooltip] = useState(false);
   const [showDeepThinkingTooltip, setShowDeepThinkingTooltip] = useState(false);
   const [inputHeight, setInputHeight] = useState(48); // Start with min height
+  const [attachedImage, setAttachedImage] = useState<{ uri: string; base64?: string; mimeType?: string } | null>(null);
   const inputRef = useRef<TextInput>(null);
 
   // Expose focus method to parent component
@@ -76,7 +79,46 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
     },
   }));
 
-  const isSendDisabled = disabled || !value.trim();
+  const isSendDisabled = disabled || (!value.trim() && !attachedImage);
+
+  const handlePickImage = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: false, // Disabled to avoid crop UI issues on mobile
+        aspect: [4, 3],
+        quality: 0.5,
+        base64: true,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        console.log('[ChatInput] Image selected:', result.assets[0].mimeType);
+        setAttachedImage({
+          uri: result.assets[0].uri,
+          base64: result.assets[0].base64 ?? undefined,
+          mimeType: result.assets[0].mimeType ?? 'image/jpeg',
+        });
+        // On web, focus doesn't always work immediately after file picker closes
+        setTimeout(() => inputRef.current?.focus(), 500);
+      }
+    } catch (error) {
+      console.error('Error picking image:', error);
+    }
+  };
+
+  const clearAttachment = () => {
+    setAttachedImage(null);
+  };
+
+  const handleSend = () => {
+    // If we have an image but no text, we can still send
+    if (attachedImage || value.trim()) {
+      onSend(value, attachedImage || undefined);
+      setAttachedImage(null);
+      // Reset height is handled by effect on value change, but if value was empty:
+      if (!value.trim()) setInputHeight(MIN_INPUT_HEIGHT);
+    }
+  };
 
   // Min and max heights for the input
   const MIN_INPUT_HEIGHT = 48;
@@ -98,9 +140,12 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
 
   const handleKeyPress = (e: any) => {
     // Send on Enter (without Shift for new line)
+    // Only if not disabled (has text or image)
     if (e.nativeEvent.key === 'Enter' && !e.nativeEvent.shiftKey) {
       e.preventDefault();
-      onSend();
+      if (!isSendDisabled) {
+        handleSend();
+      }
     }
   };
 
@@ -113,9 +158,22 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
           borderColor: colors.outline,
           maxWidth,
         },
-        Platform.OS === 'web' && ({ boxShadow: shadowToCSS('lg') } as unknown as object),
       ]}
     >
+      {/* Image Preview */}
+      {attachedImage && (
+        <View style={styles.previewContainer}>
+          <Image
+            source={{ uri: attachedImage.uri }}
+            style={styles.previewImage}
+            resizeMode="cover"
+          />
+          <Pressable style={styles.removePreviewButton} onPress={clearAttachment}>
+            <Icon name="close" size={12} color="#FFFFFF" />
+          </Pressable>
+        </View>
+      )}
+
       <TextInput
         ref={inputRef}
         style={[
@@ -144,13 +202,13 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
 
       {/* Bottom row: LLM picker on left, buttons on right */}
       <View style={styles.bottomRow}>
-        {/* LLM Picker */}
+        {/* Left Side: LLM Picker */}
         {showLLMPickerProp && onLLMChange && (
           <View style={styles.llmPickerContainer}>
             <Pressable
               style={[
                 styles.llmPickerButton,
-                { 
+                {
                   backgroundColor: colors.background,
                   borderColor: colors.outline,
                 },
@@ -178,6 +236,8 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
                   {
                     backgroundColor: colors.background,
                     borderColor: colors.outline,
+                    left: 0, // Align left since it's on the left side now
+                    right: 'auto', // Reset right
                   },
                   Platform.OS === 'web' && ({ boxShadow: shadowToCSS('md') } as unknown as object),
                 ]}
@@ -223,74 +283,87 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
           </View>
         )}
 
-        <View style={styles.buttonsContainer}>
-          {/* Deep thinking toggle - only for admins */}
-          {isAdmin && onDeepThinkingToggle && (
-            <View style={styles.tooltipWrapper}>
-              {showDeepThinkingTooltip && (
-                <View style={[styles.tooltip, { backgroundColor: colors.darkButtonHover }]}>
-                  <Text style={[styles.tooltipText, { color: colors.buttonText, fontFamily: fontFamilies.figtree.medium }]}>
-                    Deep thinking
-                  </Text>
-                </View>
-              )}
+        {/* Right Side: Add Image, Deep Thinking, Voice, Send */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          {/* Add Image Button */}
+          <Pressable
+            style={styles.iconButton}
+            onPress={handlePickImage}
+            disabled={disabled}
+          >
+            <Icon name="add" size={20} color={colors.icon} />
+          </Pressable>
+
+          {/* Buttons Container */}
+          <View style={styles.buttonsContainer}>
+            {/* Deep thinking toggle - only for admins */}
+            {isAdmin && onDeepThinkingToggle && (
+              <View style={styles.tooltipWrapper}>
+                {showDeepThinkingTooltip && (
+                  <View style={[styles.tooltip, { backgroundColor: colors.darkButtonHover }]}>
+                    <Text style={[styles.tooltipText, { color: colors.buttonText, fontFamily: fontFamilies.figtree.medium }]}>
+                      Deep thinking
+                    </Text>
+                  </View>
+                )}
+                <Pressable
+                  style={[
+                    styles.iconButton,
+                    deepThinkingEnabled && { backgroundColor: colors.primaryBg },
+                  ]}
+                  onPress={onDeepThinkingToggle}
+                  disabled={disabled}
+                  {...(Platform.OS === 'web' && {
+                    onHoverIn: () => setShowDeepThinkingTooltip(true),
+                    onHoverOut: () => setShowDeepThinkingTooltip(false),
+                  })}
+                >
+                  <Icon
+                    name="idea"
+                    size={18}
+                    color={deepThinkingEnabled ? colors.primary : colors.icon}
+                  />
+                </Pressable>
+              </View>
+            )}
+
+            {/* Voice input button - Hidden for now as it's unstable */}
+            {/* {onVoicePress && (
               <Pressable
                 style={[
                   styles.iconButton,
-                  deepThinkingEnabled && { backgroundColor: colors.primaryBg },
+                  isRecording && { backgroundColor: colors.red + '20' },
                 ]}
-                onPress={onDeepThinkingToggle}
+                onPress={onVoicePress}
                 disabled={disabled}
-                {...(Platform.OS === 'web' && {
-                  onHoverIn: () => setShowDeepThinkingTooltip(true),
-                  onHoverOut: () => setShowDeepThinkingTooltip(false),
-                })}
               >
                 <Icon
-                  name="idea"
+                  name={isRecording ? 'stop' : 'mic'}
                   size={18}
-                  color={deepThinkingEnabled ? colors.primary : colors.icon}
+                  color={isRecording ? colors.red : colors.icon}
                 />
               </Pressable>
-            </View>
-          )}
+            )} */}
 
-          {/* Voice input button */}
-          {onVoicePress && (
+            {/* Send button - colored bubble */}
             <Pressable
               style={[
-                styles.iconButton,
-                isRecording && { backgroundColor: colors.red + '20' },
+                styles.sendButton,
+                {
+                  backgroundColor: mascotColor,
+                  opacity: isSendDisabled ? 0.4 : 1, // Lower opacity when disabled
+                },
               ]}
-              onPress={onVoicePress}
-              disabled={disabled}
+              onPress={handleSend}
+              disabled={isSendDisabled}
             >
               <Icon
-                name={isRecording ? 'stop' : 'mic'}
-                size={18}
-                color={isRecording ? colors.red : colors.icon}
+                name="send"
+                size={16}
+                color="#FFFFFF"
               />
             </Pressable>
-          )}
-          
-          {/* Send button - colored bubble */}
-          <Pressable
-            style={[
-              styles.sendButton,
-              { 
-                backgroundColor: mascotColor,
-                opacity: isSendDisabled ? 0.4 : 1, // Lower opacity when disabled
-              },
-            ]}
-            onPress={onSend}
-            disabled={isSendDisabled}
-          >
-            <Icon
-              name="send"
-              size={16}
-              color="#FFFFFF"
-            />
-          </Pressable>
+          </View>
         </View>
       </View>
     </View>
@@ -305,15 +378,15 @@ const styles = StyleSheet.create({
     width: '100%',
     // Softer shadow on mobile, full shadow on web
     // On web, use boxShadow (CSS), on native use shadow properties
-    ...(Platform.OS === 'web' 
+    ...(Platform.OS === 'web'
       ? ({ boxShadow: shadowToCSS('lg') } as any)
       : {
-          shadowColor: '#0A0D12',
-          shadowOffset: { width: 0, height: 1 },
-          shadowOpacity: 0.03, // Even softer on mobile
-          shadowRadius: 3, // Slightly larger radius for softer blur
-          elevation: 1, // Lower elevation for Android
-        }),
+        shadowColor: '#0A0D12',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.03, // Even softer on mobile
+        shadowRadius: 3, // Slightly larger radius for softer blur
+        elevation: 1, // Lower elevation for Android
+      }),
   },
   input: {
     fontSize: 16,
@@ -378,7 +451,10 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 8,
     zIndex: 20,
-    whiteSpace: 'nowrap',
+    ...Platform.select({
+      web: { whiteSpace: 'nowrap' } as any,
+      default: {}
+    }),
   },
   tooltipText: {
     fontSize: 12,
@@ -390,5 +466,33 @@ const styles = StyleSheet.create({
   sendButton: {
     padding: 10,
     borderRadius: 99,
+  },
+  previewContainer: {
+    position: 'relative',
+    marginHorizontal: 16,
+    marginTop: 16,
+    marginBottom: 4,
+    width: 60,
+    height: 60,
+  },
+  previewImage: {
+    width: 60,
+    height: 60,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.1)',
+  },
+  removePreviewButton: {
+    position: 'absolute',
+    top: -6,
+    right: -6,
+    backgroundColor: '#000000',
+    borderRadius: 10,
+    width: 20,
+    height: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#FFFFFF',
   },
 });

@@ -16,6 +16,7 @@ interface ChatRequest {
   skillId?: string;
   provider?: 'openai' | 'gemini';
   deepThinking?: boolean;
+  image?: { mimeType: string; base64: string };
 }
 
 serve(async (req: Request) => {
@@ -84,7 +85,7 @@ serve(async (req: Request) => {
 
     // Parse request body
     const body: ChatRequest = await req.json();
-    const { mascotId, messages, skillId, provider, deepThinking } = body;
+    const { mascotId, messages, skillId, provider, deepThinking, image } = body;
 
     if (!mascotId || !messages || messages.length === 0) {
       return new Response(
@@ -163,7 +164,24 @@ serve(async (req: Request) => {
     if (useProvider === 'openai' && openaiApiKey) {
       const openaiMessages = [
         { role: 'system', content: systemPrompt },
-        ...messages.map(m => ({ role: m.role, content: m.content })),
+        ...messages.map((m, index) => {
+          // If this is the last message and we have an image, attach it
+          if (index === messages.length - 1 && image) {
+            return {
+              role: m.role,
+              content: [
+                { type: 'text', text: m.content },
+                {
+                  type: 'image_url',
+                  image_url: {
+                    url: `data:${image.mimeType};base64,${image.base64}`
+                  }
+                }
+              ]
+            };
+          }
+          return { role: m.role, content: m.content };
+        }),
       ];
 
       const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -267,7 +285,19 @@ serve(async (req: Request) => {
     }
 
     const chat = model.startChat({ history: geminiHistory });
-    const result = await chat.sendMessageStream(lastMessage.content);
+
+    // Prepare message with potential image
+    let messageParts: any = [{ text: lastMessage.content }];
+    if (image) {
+      messageParts.push({
+        inlineData: {
+          mimeType: image.mimeType,
+          data: image.base64
+        }
+      });
+    }
+
+    const result = await chat.sendMessageStream(messageParts);
 
     const stream = new ReadableStream({
       async start(controller) {

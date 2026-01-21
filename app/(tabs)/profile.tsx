@@ -4,6 +4,7 @@ import { useTheme, fontFamilies, textStyles } from '@/design-system';
 import { useI18n, LANGUAGES, Language } from '@/i18n';
 import { usePreferences, LLM_OPTIONS, LLMPreference } from '@/services/preferences';
 import { useAuth } from '@/services/auth';
+import { useIsAdmin } from '@/services/admin';
 import { Icon } from '@/components';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -157,7 +158,7 @@ function LanguageOption({ code, name, nativeName, isSelected, onPress }: Languag
             styles.languageNative,
             {
               fontFamily: fontFamilies.figtree.regular,
-              color: isSelected && mode === 'dark' ? 'rgba(255,255,255,0.7)' : colors.textMuted,
+              color: isSelected && mode === 'dark' ? 'rgba(255,255,255,0.7)' : colors.text,
             },
           ]}
         >
@@ -224,7 +225,7 @@ function LLMOption({ code, name, description, isSelected, onPress }: LLMOptionPr
             styles.languageNative,
             {
               fontFamily: fontFamilies.figtree.regular,
-              color: isSelected && mode === 'dark' ? 'rgba(255,255,255,0.7)' : colors.textMuted,
+              color: isSelected && mode === 'dark' ? 'rgba(255,255,255,0.7)' : colors.text,
             },
           ]}
         >
@@ -246,6 +247,7 @@ export default function ProfileScreen() {
   const { language, setLanguage, t } = useI18n();
   const { preferredLLM, setPreferredLLM } = usePreferences();
   const { user, signOut } = useAuth();
+  const { isAdmin } = useIsAdmin();
 
   const userName = user?.user_metadata?.full_name || user?.user_metadata?.name || user?.email?.split('@')[0] || 'User';
   const userEmail = user?.email || '';
@@ -256,222 +258,222 @@ export default function ProfileScreen() {
         style={{ flex: 1 }}
         contentContainerStyle={styles.content}
       >
-      {/* Header - Moved to top */}
-      <View style={styles.header}>
-        <Text
-          style={[
-            styles.title,
-            {
-              fontFamily: fontFamilies.figtree.semiBold,
-              color: colors.text,
-            },
-          ]}
-        >
-          {t.profile.title}
-        </Text>
-        <Text
-          style={[
-            styles.subtitle,
-            {
-              fontFamily: fontFamilies.figtree.regular,
-              color: colors.textMuted,
-            },
-          ]}
-        >
-          {t.profile.subtitle}
-        </Text>
-      </View>
-
-      {/* User Info Section */}
-      {user && (
-        <View style={[styles.userInfoSection, { backgroundColor: colors.surface, borderColor: colors.outline }]}>
-          <View style={[styles.userAvatar, { backgroundColor: colors.primary }]}>
-            <Text style={[styles.userAvatarText, { color: colors.buttonText }]}>
-              {userName.charAt(0).toUpperCase()}
-            </Text>
-          </View>
-          <View style={styles.userInfoText}>
-            <Text
-              style={[
-                styles.userName,
-                {
-                  fontFamily: fontFamilies.figtree.semiBold,
-                  color: colors.text,
-                },
-              ]}
-            >
-              {userName}
-            </Text>
-            <Text
-              style={[
-                styles.userEmail,
-                {
-                  fontFamily: fontFamilies.figtree.regular,
-                  color: colors.textMuted,
-                },
-              ]}
-            >
-              {userEmail}
-            </Text>
-          </View>
-        </View>
-      )}
-
-      {/* Appearance Section */}
-      <View style={styles.section}>
-        <Text
-          style={[
-            styles.sectionTitle,
-            {
-              fontFamily: fontFamilies.figtree.semiBold,
-              color: colors.text,
-            },
-          ]}
-        >
-          {t.profile.appearance}
-        </Text>
-        <View style={styles.toggleContainer}>
-          <ToggleButton
-            label={t.profile.lightMode}
-            isActive={mode === 'light'}
-            onPress={() => setMode('light')}
-          />
-          <ToggleButton
-            label={t.profile.darkMode}
-            isActive={mode === 'dark'}
-            onPress={() => setMode('dark')}
-          />
-        </View>
-      </View>
-
-      {/* Language Section */}
-      <View style={styles.section}>
-        <Text
-          style={[
-            styles.sectionTitle,
-            {
-              fontFamily: fontFamilies.figtree.semiBold,
-              color: colors.text,
-            },
-          ]}
-        >
-          {t.profile.language}
-        </Text>
-        <View style={styles.languageContainer}>
-          {LANGUAGES.map((lang) => (
-            <LanguageOption
-              key={lang.code}
-              code={lang.code}
-              name={lang.name}
-              nativeName={lang.nativeName}
-              isSelected={language === lang.code}
-              onPress={() => setLanguage(lang.code)}
-            />
-          ))}
-        </View>
-      </View>
-
-      {/* AI Provider Section */}
-      <View style={styles.section}>
-        <Text
-          style={[
-            styles.sectionTitle,
-            {
-              fontFamily: fontFamilies.figtree.semiBold,
-              color: colors.text,
-            },
-          ]}
-        >
-          {t.profile.aiProvider}
-        </Text>
-        <View style={styles.languageContainer}>
-          {LLM_OPTIONS.map((option) => {
-            const getName = () => {
-              switch (option.code) {
-                case 'auto': return t.profile.auto;
-                case 'gemini': return t.profile.gemini;
-                case 'openai': return t.profile.openai;
-                default: return option.name;
-              }
-            };
-            const getDesc = () => {
-              switch (option.code) {
-                case 'auto': return t.profile.autoDesc;
-                case 'gemini': return t.profile.geminiDesc;
-                case 'openai': return t.profile.openaiDesc;
-                default: return option.description;
-              }
-            };
-            return (
-              <LLMOption
-                key={option.code}
-                code={option.code}
-                name={getName()}
-                description={getDesc()}
-                isSelected={preferredLLM === option.code}
-                onPress={() => setPreferredLLM(option.code)}
-              />
-            );
-          })}
-        </View>
-      </View>
-
-      {/* Account Section */}
-      <View style={styles.section}>
-        <Text
-          style={[
-            styles.sectionTitle,
-            {
-              fontFamily: fontFamilies.figtree.semiBold,
-              color: colors.text,
-            },
-          ]}
-        >
-          {t.profile.account}
-        </Text>
-        <SettingRow
-          label="Choose Mascots"
-          onPress={() => router.push('/(onboarding)/select-mascots')}
-          showCheckmark={false}
-        />
-        <Pressable
-          style={[
-            styles.signOutButton,
-            {
-              borderColor: colors.outline,
-              marginTop: 8,
-            },
-          ]}
-          onPress={signOut}
-        >
+        {/* Header - Moved to top */}
+        <View style={styles.header}>
           <Text
             style={[
-              styles.signOutText,
+              styles.title,
               {
                 fontFamily: fontFamilies.figtree.semiBold,
-                color: colors.red,
+                color: colors.text,
               },
             ]}
           >
-            {t.profile.signOut}
+            {t.profile.title}
           </Text>
-        </Pressable>
-      </View>
+          <Text
+            style={[
+              styles.subtitle,
+              {
+                fontFamily: fontFamilies.figtree.regular,
+                color: colors.textMuted,
+              },
+            ]}
+          >
+            {t.profile.subtitle}
+          </Text>
+        </View>
 
-      {/* Version */}
-      <View style={styles.versionContainer}>
-        <Text
-          style={[
-            styles.versionText,
-            {
-              fontFamily: fontFamilies.figtree.regular,
-              color: colors.textMuted,
-            },
-          ]}
-        >
-          {t.profile.version} 1.0.0
-        </Text>
-      </View>
+        {/* User Info Section */}
+        {user && (
+          <View style={[styles.userInfoSection, { backgroundColor: colors.surface, borderColor: colors.outline }]}>
+            <View style={[styles.userAvatar, { backgroundColor: colors.primary }]}>
+              <Text style={[styles.userAvatarText, { color: colors.buttonText }]}>
+                {userName.charAt(0).toUpperCase()}
+              </Text>
+            </View>
+            <View style={styles.userInfoText}>
+              <Text
+                style={[
+                  styles.userName,
+                  {
+                    fontFamily: fontFamilies.figtree.semiBold,
+                    color: colors.text,
+                  },
+                ]}
+              >
+                {userName}
+              </Text>
+              <Text
+                style={[
+                  styles.userEmail,
+                  {
+                    fontFamily: fontFamilies.figtree.regular,
+                    color: colors.textMuted,
+                  },
+                ]}
+              >
+                {userEmail}
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {/* Appearance Section */}
+        <View style={styles.section}>
+          <Text
+            style={[
+              styles.sectionTitle,
+              {
+                fontFamily: fontFamilies.figtree.semiBold,
+                color: colors.text,
+              },
+            ]}
+          >
+            {t.profile.appearance}
+          </Text>
+          <View style={styles.toggleContainer}>
+            <ToggleButton
+              label={t.profile.lightMode}
+              isActive={mode === 'light'}
+              onPress={() => setMode('light')}
+            />
+            <ToggleButton
+              label={t.profile.darkMode}
+              isActive={mode === 'dark'}
+              onPress={() => setMode('dark')}
+            />
+          </View>
+        </View>
+
+        {/* Language Section */}
+        <View style={styles.section}>
+          <Text
+            style={[
+              styles.sectionTitle,
+              {
+                fontFamily: fontFamilies.figtree.semiBold,
+                color: colors.text,
+              },
+            ]}
+          >
+            {t.profile.language}
+          </Text>
+          <View style={styles.languageContainer}>
+            {LANGUAGES.map((lang) => (
+              <LanguageOption
+                key={lang.code}
+                code={lang.code}
+                name={lang.name}
+                nativeName={lang.nativeName}
+                isSelected={language === lang.code}
+                onPress={() => setLanguage(lang.code)}
+              />
+            ))}
+          </View>
+        </View>
+
+        {/* AI Provider Section */}
+        <View style={styles.section}>
+          <Text
+            style={[
+              styles.sectionTitle,
+              {
+                fontFamily: fontFamilies.figtree.semiBold,
+                color: colors.text,
+              },
+            ]}
+          >
+            {t.profile.aiProvider}
+          </Text>
+          <View style={styles.languageContainer}>
+            {LLM_OPTIONS.map((option) => {
+              const getName = () => {
+                switch (option.code) {
+                  case 'auto': return t.profile.auto;
+                  case 'gemini': return t.profile.gemini;
+                  case 'openai': return t.profile.openai;
+                  default: return option.name;
+                }
+              };
+              const getDesc = () => {
+                switch (option.code) {
+                  case 'auto': return t.profile.autoDesc;
+                  case 'gemini': return t.profile.geminiDesc;
+                  case 'openai': return t.profile.openaiDesc;
+                  default: return option.description;
+                }
+              };
+              return (
+                <LLMOption
+                  key={option.code}
+                  code={option.code}
+                  name={getName()}
+                  description={getDesc()}
+                  isSelected={preferredLLM === option.code}
+                  onPress={() => setPreferredLLM(option.code)}
+                />
+              );
+            })}
+          </View>
+        </View>
+
+        {/* Account Section */}
+        <View style={styles.section}>
+          <Text
+            style={[
+              styles.sectionTitle,
+              {
+                fontFamily: fontFamilies.figtree.semiBold,
+                color: colors.text,
+              },
+            ]}
+          >
+            {t.profile.account}
+          </Text>
+          <SettingRow
+            label="Choose Mascots"
+            onPress={() => router.push('/(onboarding)/select-mascots')}
+            showCheckmark={false}
+          />
+          <Pressable
+            style={[
+              styles.signOutButton,
+              {
+                borderColor: colors.outline,
+                marginTop: 8,
+              },
+            ]}
+            onPress={signOut}
+          >
+            <Text
+              style={[
+                styles.signOutText,
+                {
+                  fontFamily: fontFamilies.figtree.semiBold,
+                  color: colors.red,
+                },
+              ]}
+            >
+              {t.profile.signOut}
+            </Text>
+          </Pressable>
+        </View>
+
+        {/* Version */}
+        <View style={styles.versionContainer}>
+          <Text
+            style={[
+              styles.versionText,
+              {
+                fontFamily: fontFamilies.figtree.regular,
+                color: colors.textMuted,
+              },
+            ]}
+          >
+            {t.profile.version} 1.0.0
+          </Text>
+        </View>
       </ScrollView>
     </SafeAreaView>
   );

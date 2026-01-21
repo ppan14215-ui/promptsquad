@@ -402,7 +402,7 @@ export default function HomeScreen() {
   const [keyboardVisible, setKeyboardVisible] = useState(false);
 
   const isDesktop = width >= DESKTOP_BREAKPOINT;
-  
+
   // Fetch mascots from database
   const { mascots: dbMascots, isLoading: isLoadingMascots, error: mascotsError } = useMascots();
   const { unlockedMascotIds, isLoading: isLoadingUnlocked } = useUnlockedMascots();
@@ -411,7 +411,7 @@ export default function HomeScreen() {
   // Filter to only show unlocked mascots (or all for admin)
   const availableMascots = useMemo(() => {
     let convertedMascots: OwnedMascot[] = [];
-    
+
     if (dbMascots.length > 0) {
       // Convert database mascots to OwnedMascot type
       convertedMascots = dbMascots
@@ -435,23 +435,23 @@ export default function HomeScreen() {
       // Fallback to hardcoded data
       convertedMascots = isAdmin ? ALL_MASCOTS : FREE_MASCOTS;
     }
-    
+
     // For admin, show all mascots
     if (isAdmin) {
       return convertedMascots;
     }
-    
+
     // For regular users, only show unlocked mascots
     if (isLoadingUnlocked) {
       return [];
     }
-    
+
     return convertedMascots.filter(m => unlockedMascotIds.includes(m.id));
   }, [dbMascots, isAdmin, unlockedMascotIds, isLoadingUnlocked]);
 
   // Storage key for last selected mascot
   const LAST_MASCOT_KEY = 'lastSelectedMascotId';
-  
+
   // Load last selected mascot on mount
   useEffect(() => {
     const loadLastMascot = async () => {
@@ -503,7 +503,7 @@ export default function HomeScreen() {
   // Use DB skills if available, otherwise fall back to hardcoded
   const displaySkills = useMemo(() => {
     if (!selectedMascot) return [];
-    
+
     if (dbSkills.length > 0) {
       return dbSkills.map((s) => ({ id: s.id, label: s.skill_label }));
     }
@@ -516,10 +516,10 @@ export default function HomeScreen() {
     return hardcodedMascot?.skills || [];
   }, [dbSkills, selectedMascot?.id, selectedMascot?.skills]);
 
-  const userName = user?.user_metadata?.full_name?.split(' ')[0] || 
-                   user?.user_metadata?.name?.split(' ')[0] || 
-                   user?.email?.split('@')[0] || 
-                   'Julian';
+  const userName = user?.user_metadata?.full_name?.split(' ')[0] ||
+    user?.user_metadata?.name?.split(' ')[0] ||
+    user?.email?.split('@')[0] ||
+    'Julian';
 
   const handlePrevMascot = async () => {
     const newIndex = selectedIndex > 0 ? selectedIndex - 1 : availableMascots.length - 1;
@@ -546,14 +546,14 @@ export default function HomeScreen() {
   const handleSkillPress = (skill: Skill) => {
     // Check if this is a database skill (has UUID-like ID)
     const isDbSkill = skill.id && skill.id.includes('-') && skill.id.length > 10;
-    
+
     // Navigate to chat with:
     // - questionPrompt: mascot's question (shown as first assistant message)
     // - initialMessage: the skill label (auto-sent as user's first message)
     // - skillId: if from database, pass the skill ID for combined prompting
     router.push({
       pathname: `/chat/${selectedMascot.id}`,
-      params: { 
+      params: {
         questionPrompt: selectedMascot.questionPrompt,
         initialMessage: skill.label,
         ...(isDbSkill && { skillId: skill.id }),
@@ -561,17 +561,25 @@ export default function HomeScreen() {
     });
   };
 
-  const handleSendMessage = () => {
-    if (!message.trim()) return;
+  const handleSendMessage = (text?: string, attachment?: { uri: string; base64?: string; mimeType?: string }) => {
+    const textToSend = typeof text === 'string' ? text : message;
+    if (!textToSend.trim() && !attachment) return;
+
     // Navigate to chat with:
     // - questionPrompt: mascot's question (shown as first assistant message)
     // - initialMessage: user's typed message (auto-sent)
+    // - initialAttachment: user's attachment (auto-sent)
     // - webSearch, deepThinking, chatLLM: carry over settings
     router.push({
       pathname: `/chat/${selectedMascot.id}`,
-      params: { 
+      params: {
         questionPrompt: selectedMascot.questionPrompt,
-        initialMessage: message,
+        initialMessage: textToSend,
+        ...(attachment && {
+          initialAttachmentUri: attachment.uri,
+          initialAttachmentMime: attachment.mimeType,
+          initialAttachmentBase64: attachment.base64
+        }),
         deepThinking: deepThinkingEnabled ? 'true' : 'false',
         llm: chatLLM,
       },
@@ -628,7 +636,7 @@ export default function HomeScreen() {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
-      <KeyboardAvoidingView 
+      <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={wrapperBehavior}
         keyboardVerticalOffset={0}
@@ -667,15 +675,15 @@ export default function HomeScreen() {
 
           {/* Chat Input - sits right below carousel */}
           <View style={[
-            styles.inputSection, 
+            styles.inputSection,
             isDesktop && styles.inputSectionDesktop,
             { paddingBottom: Platform.OS !== 'web' ? Math.max(16, insets.bottom) : 24 },
           ]}>
             <ChatInputBox
               value={message}
               onChangeText={setMessage}
-              onSend={handleSendMessage}
-              placeholder="Write a message"
+              onSend={(text, attachment) => handleSendMessage(text, attachment)}
+              placeholder="Ask anything..."
               mascotColor={COLOR_MAP[selectedMascot.color]}
               showLLMPicker={true}
               chatLLM={chatLLM}
@@ -683,8 +691,8 @@ export default function HomeScreen() {
               deepThinkingEnabled={deepThinkingEnabled}
               onDeepThinkingToggle={() => setDeepThinkingEnabled(!deepThinkingEnabled)}
               isAdmin={isAdmin}
-              onVoicePress={Platform.OS === 'web' ? () => console.log('Voice input pressed') : undefined}
-              maxWidth={678}
+              onVoicePress={() => console.log('Voice input not implemented on home screen')}
+              maxWidth={800} // Slightly wider on home screen
             />
           </View>
         </View>
@@ -697,11 +705,11 @@ export default function HomeScreen() {
         animationType="fade"
         onRequestClose={() => setSelectedMascotDetails(null)}
       >
-        <Pressable 
-          style={styles.modalOverlay} 
+        <Pressable
+          style={styles.modalOverlay}
           onPress={() => setSelectedMascotDetails(null)}
         >
-          <Pressable 
+          <Pressable
             onPress={(e) => e.stopPropagation()}
             style={styles.modalContent}
           >
@@ -712,14 +720,17 @@ export default function HomeScreen() {
                 imageSource={selectedMascotDetails.image}
                 personality={selectedMascotDetails.personality}
                 models={selectedMascotDetails.models}
-                skills={selectedMascotDetails.skills}
+                // Use displaySkills if this is the currently selected mascot (which has dynamic skills loaded)
+                // Otherwise use the mascot's own skills (fallback/static)
+                skills={selectedMascotDetails.id === selectedMascot?.id ? displaySkills : selectedMascotDetails.skills}
                 variant="available"
+                mascotId={selectedMascotDetails.id}
                 onClose={() => setSelectedMascotDetails(null)}
                 onStartChat={() => {
                   setSelectedMascotDetails(null);
                   router.push({
                     pathname: `/chat/${selectedMascotDetails.id}`,
-                    params: { 
+                    params: {
                       questionPrompt: selectedMascotDetails.questionPrompt,
                     },
                   });
@@ -728,7 +739,7 @@ export default function HomeScreen() {
                   setSelectedMascotDetails(null);
                   router.push({
                     pathname: `/chat/${selectedMascotDetails.id}`,
-                    params: { 
+                    params: {
                       questionPrompt: selectedMascotDetails.questionPrompt,
                     },
                   });
@@ -738,7 +749,7 @@ export default function HomeScreen() {
                   setSelectedMascotDetails(null);
                   router.push({
                     pathname: `/chat/${selectedMascotDetails.id}`,
-                    params: { 
+                    params: {
                       questionPrompt: selectedMascotDetails.questionPrompt,
                       initialMessage: skill.label,
                     },

@@ -21,7 +21,8 @@ export async function secureChatStream(
   conversationId?: string,
   skillId?: string,
   provider?: 'openai' | 'gemini',
-  deepThinking?: boolean
+  deepThinking?: boolean,
+  image?: { mimeType: string; base64: string }
 ): Promise<SecureChatResponse> {
   // Get fresh session (getUser refreshes token if needed)
   const { data: { user: currentUser }, error: userError } = await supabase.auth.getUser();
@@ -58,6 +59,7 @@ export async function secureChatStream(
   if (skillId) requestBody.skillId = skillId;
   if (provider) requestBody.provider = provider;
   if (deepThinking !== undefined) requestBody.deepThinking = deepThinking;
+  if (image) requestBody.image = image;
 
   console.log('[SecureChat] Sending request to Edge Function:', {
     url: `${supabaseUrl}/functions/v1/chat`,
@@ -65,6 +67,7 @@ export async function secureChatStream(
     tokenLength: session.access_token?.length,
     mascotId,
     conversationId,
+    hasImage: !!image,
   });
 
   // Debug: Decode token to check issuer
@@ -133,9 +136,40 @@ export async function secureChatStream(
   }
 
   // Handle SSE stream
+  // Handle SSE stream
   const reader = response.body?.getReader();
+
+  // Fallback for environments without streaming support (e.g. standard React Native without polyfills)
   if (!reader) {
-    throw new Error('No response body');
+    console.warn('[SecureChat] No response body stream available, falling back to buffered text');
+    try {
+      const text = await response.text();
+      const lines = text.split('\n').filter((line) => line.startsWith('data: '));
+      let fullContent = '';
+      let model = '';
+      let actualProvider: 'openai' | 'gemini' | undefined = undefined;
+
+      for (const line of lines) {
+        try {
+          const data = JSON.parse(line.slice(6));
+          if (data.error) throw new Error(data.error);
+          if (data.done) {
+            model = data.model || 'unknown';
+            actualProvider = data.provider || undefined;
+          } else if (data.content) {
+            fullContent += data.content;
+            onChunk(data.content);
+          }
+        } catch (e) {
+          if (e instanceof SyntaxError) continue;
+          throw e; // Re-throw actual errors
+        }
+      }
+      return { content: fullContent, model, provider: actualProvider };
+    } catch (e: any) {
+      console.error('[SecureChat] Fallback failed:', e);
+      throw new Error(`No response body and fallback failed: ${e.message}`);
+    }
   }
 
   const decoder = new TextDecoder();
@@ -184,7 +218,8 @@ export async function secureChat(
   conversationId?: string,
   skillId?: string,
   provider?: 'openai' | 'gemini',
-  deepThinking?: boolean
+  deepThinking?: boolean,
+  image?: { mimeType: string; base64: string }
 ): Promise<SecureChatResponse> {
   let fullContent = '';
 
@@ -197,8 +232,10 @@ export async function secureChat(
     conversationId,
     skillId,
     provider,
-    deepThinking
+    deepThinking,
+    image
   );
 
   return response;
 }
+

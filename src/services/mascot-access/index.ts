@@ -34,7 +34,7 @@ export async function getUnlockedMascots(): Promise<string[]> {
     return [];
   }
 
-  return data?.map((m) => m.mascot_id) || [];
+  return (data as any[])?.map((m) => m.mascot_id) || [];
 }
 
 /**
@@ -81,7 +81,7 @@ export async function unlockMascots(mascotIds: string[]): Promise<{ error: Error
 
   const { data: insertData, error: insertError } = await supabase
     .from('user_mascots')
-    .insert(records)
+    .insert(records as any)
     .select();
 
   if (insertError) {
@@ -93,15 +93,15 @@ export async function unlockMascots(mascotIds: string[]): Promise<{ error: Error
   logger.debug('unlockMascots: Successfully inserted mascots:', insertData);
 
   // Mark onboarding as completed (use upsert in case profile doesn't exist)
-  const { error: updateError } = await supabase
-    .from('profiles')
-    .upsert({ 
-      id: user.id, 
+  const { error: updateError } = await (supabase
+    .from('profiles') as any)
+    .upsert({
+      id: user.id,
       onboarding_completed: true,
       updated_at: new Date().toISOString()
-    }, { 
-      onConflict: 'id' 
-    });
+    }, {
+      onConflict: 'id'
+    } as any);
 
   if (updateError) {
     logger.error('Error updating onboarding status:', updateError);
@@ -147,7 +147,7 @@ export async function hasCompletedOnboarding(): Promise<boolean> {
       return unlocked.length > 0;
     }
 
-    return data?.onboarding_completed || false;
+    return (data as any)?.onboarding_completed || false;
   } catch (err) {
     logger.error('Error in hasCompletedOnboarding:', err);
     // Fallback: check if user has any unlocked mascots
@@ -204,7 +204,7 @@ export async function getTrialUsage(mascotId: string): Promise<TrialUsage> {
     .select('conversation_count')
     .eq('user_id', user.id)
     .eq('mascot_id', mascotId)
-    .single();
+    .maybeSingle();
 
   if (error) {
     // If no record exists, return 0
@@ -215,7 +215,7 @@ export async function getTrialUsage(mascotId: string): Promise<TrialUsage> {
     return { conversationCount: 0, limitReached: false };
   }
 
-  const conversationCount = data?.conversation_count || 0;
+  const conversationCount = (data as any)?.conversation_count || 0;
   return {
     conversationCount,
     limitReached: conversationCount >= TRIAL_LIMIT,
@@ -225,7 +225,7 @@ export async function getTrialUsage(mascotId: string): Promise<TrialUsage> {
 /**
  * Increment trial usage for a mascot (called when starting a new conversation)
  */
-export async function incrementTrialUsage(mascotId: string): Promise<{ error: Error | null; usage: TrialUsage | null }> {
+export async function incrementTrialUsage(mascotId: string, conversationId?: string): Promise<{ error: Error | null; usage: TrialUsage | null }> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) {
     return { error: new Error('User not authenticated'), usage: null };
@@ -233,14 +233,15 @@ export async function incrementTrialUsage(mascotId: string): Promise<{ error: Er
 
   const { data, error } = await supabase.rpc('increment_trial_usage', {
     p_mascot_id: mascotId,
-  });
+    p_conversation_id: conversationId,
+  } as any);
 
   if (error) {
     logger.error('Error incrementing trial usage:', error);
     return { error: new Error(error.message), usage: null };
   }
 
-  if (!data || data.length === 0) {
+  if (!data || (data as any).length === 0) {
     return { error: new Error('No data returned from increment_trial_usage'), usage: null };
   }
 
@@ -248,8 +249,8 @@ export async function incrementTrialUsage(mascotId: string): Promise<{ error: Er
   return {
     error: null,
     usage: {
-      conversationCount: result.conversation_count,
-      limitReached: result.limit_reached,
+      conversationCount: (result as any).conversation_count,
+      limitReached: (result as any).limit_reached,
     },
   };
 }
@@ -264,14 +265,14 @@ export async function canUseMascot(mascotId: string): Promise<{
   trialLimit?: number;
 }> {
   const isUnlocked = await isMascotUnlocked(mascotId);
-  
+
   if (isUnlocked) {
     return { canUse: true, reason: 'unlocked' };
   }
 
   // Check trial usage
   const trialUsage = await getTrialUsage(mascotId);
-  
+
   if (trialUsage.limitReached) {
     return {
       canUse: false,

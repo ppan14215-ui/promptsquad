@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, Image, Pressable, StyleSheet } from 'react-native';
+import { View, Text, Image, Pressable, StyleSheet, PanResponder, Animated } from 'react-native';
 import { useTheme, fontFamilies } from '@/design-system';
 import { Icon } from '@/components';
 import type { MascotColorVariant } from './MascotCard';
@@ -46,15 +46,41 @@ export function MascotCarousel({
 }: MascotCarouselProps) {
   const { colors } = useTheme();
 
-  const selectedSize = (isDesktop ? 192 : 96) * scale;
-  const neighborSize = (isDesktop ? 96 : 48) * scale;
-  const selectedImageSize = (isDesktop ? 128 : 64) * scale;
-  const neighborImageSize = (isDesktop ? 64 : 32) * scale;
-  const selectedNameSize = (isDesktop ? 18 : 9) * scale;
-  const selectedSubtitleSize = (isDesktop ? 11 : 5.5) * scale;
-  const neighborNameSize = (isDesktop ? 9 : 4.5) * scale;
-  const neighborSubtitleSize = (isDesktop ? 5.5 : 2.75) * scale;
-  const selectedBorderRadius = (isDesktop ? 16 : 8) * scale;
+  // Threshold in pixels for a swipe to be recognized
+  const SWIPE_THRESHOLD = 50;
+
+  // PanResponder to handle swipe gestures
+  const panResponder = React.useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onPanResponderRelease: (e, gestureState) => {
+        // Horizontal swipe detection
+        if (Math.abs(gestureState.dx) > SWIPE_THRESHOLD) {
+          if (gestureState.dx > 0) {
+            // Swipe Right -> Show Previous
+            onPrev();
+          } else {
+            // Swipe Left -> Show Next
+            onNext();
+          }
+        }
+      },
+      // Allow vertical scroll to leak through
+      onMoveShouldSetPanResponder: (e, gestureState) => {
+        return Math.abs(gestureState.dx) > Math.abs(gestureState.dy) && Math.abs(gestureState.dx) > 10;
+      },
+    })
+  ).current;
+
+  const selectedSize = (isDesktop ? 192 : 144) * scale; // Increased from 96 to 144
+  const neighborSize = (isDesktop ? 96 : 72) * scale; // Increased from 48 to 72
+  const selectedImageSize = (isDesktop ? 128 : 96) * scale; // Increased from 64 to 96
+  const neighborImageSize = (isDesktop ? 64 : 48) * scale; // Increased from 32 to 48
+  const selectedNameSize = (isDesktop ? 18 : 14) * scale; // Increased from 9 to 14
+  const selectedSubtitleSize = (isDesktop ? 11 : 8) * scale; // Increased from 5.5 to 8
+  const neighborNameSize = (isDesktop ? 9 : 7) * scale; // Increased from 4.5 to 7
+  const neighborSubtitleSize = (isDesktop ? 5.5 : 4) * scale; // Increased from 2.75 to 4
+  const selectedBorderRadius = (isDesktop ? 16 : 12) * scale; // Increased from 8 to 12
   const neighborBorderRadius = 8 * scale;
 
   const getVisibleMascots = () => {
@@ -75,7 +101,10 @@ export function MascotCarousel({
   };
 
   return (
-    <View style={styles.carouselSection}>
+    <View
+      style={styles.carouselSection}
+      {...panResponder.panHandlers}
+    >
       <View style={styles.carousel}>
         {getVisibleMascots().map(({ mascot, position, actualIndex }) => {
           const isSelected = position === 0;

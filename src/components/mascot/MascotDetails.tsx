@@ -1,5 +1,5 @@
-import React from 'react';
-import { View, Text, StyleSheet, Image, ScrollView, Platform, ImageSourcePropType } from 'react-native';
+import React, { useMemo } from 'react';
+import { View, Text, StyleSheet, Image, ScrollView, Platform, ImageSourcePropType, ActivityIndicator } from 'react-native';
 import { useTheme, textStyles, fontFamilies, shadowToCSS, shadowToNative } from '@/design-system';
 import { useI18n } from '@/i18n';
 import { IconButton } from '@/components/ui/IconButton';
@@ -9,6 +9,7 @@ import { MiniButton } from '@/components/ui/MiniButton';
 import { LinkPill } from '@/components/ui/LinkPill';
 import { ColoredTab } from '@/components/ui/ColoredTab';
 import { useMascotLike } from '@/services/mascot-likes';
+// import { useMascotSkills } from '@/services/admin';
 
 export type MascotDetailsVariant = 'available' | 'locked';
 
@@ -53,9 +54,13 @@ export function MascotDetails({
   const { colors } = useTheme();
   const { t } = useI18n();
   const isLocked = variant === 'locked';
-  
+
   // Use shared like system if mascotId is provided
   const { isLiked, likeCount, toggleLike, isToggling } = useMascotLike(mascotId || null);
+
+  // Use passed skills directly
+  const displaySkills = skills;
+  const isLoadingSkills = false;
 
   // Shadow for header
   const headerShadowStyle = Platform.select({
@@ -235,13 +240,23 @@ export function MascotDetails({
             {t.mascot.skills}
           </Text>
           <View style={styles.skillsRow}>
-            {skills.map((skill) => (
-              <LinkPill
-                key={skill.id}
-                label={skill.label}
-                onPress={() => onSkillPress?.(skill)}
-              />
-            ))}
+            {isLoadingSkills && displaySkills.length === 0 ? (
+              <ActivityIndicator size="small" color={colors.primary} />
+            ) : (
+              displaySkills.map((skill) => (
+                <LinkPill
+                  key={skill.id}
+                  label={skill.label}
+                  onPress={() => onSkillPress?.(skill)}
+                />
+              ))
+            )}
+            {/* Show message if no skills found */}
+            {!isLoadingSkills && displaySkills.length === 0 && (
+              <Text style={{ color: colors.textMuted, fontSize: 13 }}>
+                No skills available
+              </Text>
+            )}
           </View>
         </View>
 

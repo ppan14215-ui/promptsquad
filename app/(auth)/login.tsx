@@ -336,7 +336,13 @@ export default function LoginScreen() {
           label={isLogin ? t.auth.signInWithGoogle : t.auth.signUpWithGoogle}
           onPress={handleGoogleSignIn}
           disabled={isLoading}
-          icon={<Text style={styles.googleIcon}>G</Text>}
+          icon={
+            <Image
+              source={require('@/assets/images/google-logo.png')}
+              style={{ width: 20, height: 20 }}
+              resizeMode="contain"
+            />
+          }
         />
       </View>
 

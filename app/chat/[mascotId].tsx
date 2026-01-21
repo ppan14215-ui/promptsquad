@@ -1,11 +1,11 @@
 import React, { useState, useRef, useMemo, useEffect, useCallback } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  ScrollView, 
-  Pressable, 
-  Image, 
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  Pressable,
+  Image,
   Platform,
   Keyboard,
   ImageSourcePropType,
@@ -28,7 +28,7 @@ import { secureChatStream } from '@/services/ai/secure-chat';
 import type { ChatMessage, AI_CONFIG, WebSource, SecureChatMessage } from '@/services/ai';
 import { useMascotSkills, useMascotPersonality, MascotSkill, getCombinedPrompt, useIsAdmin, updatePersonality, resetPersonalityToDefault } from '@/services/admin';
 import { useMascotLike } from '@/services/mascot-likes';
-import { createConversation, saveMessage, generateConversationTitle, useConversationMessages } from '@/services/chat-history';
+import { createConversation, saveMessage, generateConversationTitle, useConversationMessages, deleteConversation, getConversation } from '@/services/chat-history';
 import { useMascotAccess, incrementTrialUsage } from '@/services/mascot-access';
 
 // Message types
@@ -41,6 +41,11 @@ type Message = {
   model?: string;
   provider?: 'openai' | 'gemini'; // Provider used for this message
   isThinking?: boolean;
+  attachment?: {
+    uri: string;
+    mimeType?: string;
+    base64?: string;
+  };
 };
 
 // Chat tabs
@@ -66,18 +71,18 @@ const mascotImages: Record<string, ImageSourcePropType> = {
 };
 
 // Mascot data (simplified - in real app this would come from a store/API)
-const MASCOT_DATA: Record<string, { 
-  name: string; 
-  image: string; 
+const MASCOT_DATA: Record<string, {
+  name: string;
+  image: string;
   color: string;
   greeting: string;
   skills: string[];
   systemPrompt: string;
   taskCategory: TaskCategory; // Used for auto-selecting the best AI provider
 }> = {
-  '1': { 
-    name: 'Analyst Bear', 
-    image: 'bear', 
+  '1': {
+    name: 'Analyst Bear',
+    image: 'bear',
     color: '#EDB440',
     greeting: 'Hi, there I am analyst bear. I am great at all kinds of analysis.\nWhat can I help you with?',
     skills: ['Stock analysis', 'Competitive analysis', 'Market analysis'],
@@ -89,9 +94,9 @@ const MASCOT_DATA: Record<string, {
 Always provide structured, well-reasoned analysis. Use markdown formatting for better readability (headers, bullet points, bold for emphasis). Be friendly but professional. Keep responses concise but comprehensive.`,
     taskCategory: 'analysis', // OpenAI excels at data analysis
   },
-  '2': { 
-    name: 'Writer Fox', 
-    image: 'fox', 
+  '2': {
+    name: 'Writer Fox',
+    image: 'fox',
     color: '#ED7437',  // Orange
     greeting: 'Hey! I\'m Writer Fox, your creative writing companion.\nWhat would you like me to write for you?',
     skills: ['Blog posts', 'Email drafts', 'Social media'],
@@ -103,9 +108,9 @@ Always provide structured, well-reasoned analysis. Use markdown formatting for b
 Write with flair and personality. Use markdown formatting when appropriate. Be creative but adapt your tone to the user's needs. Keep responses engaging and polished.`,
     taskCategory: 'creative', // OpenAI excels at creative writing
   },
-  '3': { 
-    name: 'UX Panda', 
-    image: 'panda', 
+  '3': {
+    name: 'UX Panda',
+    image: 'panda',
     color: '#74AE58',
     greeting: 'Hello! I\'m UX Panda, here to help with all things user experience.\nWhat design challenge can I help you solve?',
     skills: ['User research', 'Wireframing', 'Usability testing'],
@@ -117,9 +122,9 @@ Write with flair and personality. Use markdown formatting when appropriate. Be c
 Always consider the end user's perspective. Use markdown formatting for clarity. Provide actionable UX recommendations. Be supportive and collaborative.`,
     taskCategory: 'ux', // OpenAI for nuanced UX advice
   },
-  '4': { 
-    name: 'Advice Zebra', 
-    image: 'zebra', 
+  '4': {
+    name: 'Advice Zebra',
+    image: 'zebra',
     color: '#EB3F71',
     greeting: 'Hi there! I\'m Advice Zebra, ready to offer balanced perspectives.\nWhat\'s on your mind?',
     skills: ['Life coaching', 'Decision making', 'Problem solving'],
@@ -131,9 +136,9 @@ Always consider the end user's perspective. Use markdown formatting for clarity.
 Offer balanced, thoughtful advice. Use markdown formatting when helpful. Ask clarifying questions when needed. Be empathetic but also practical. Help users see multiple perspectives.`,
     taskCategory: 'conversation', // Gemini for fast, conversational advice
   },
-  '5': { 
-    name: 'Teacher Owl', 
-    image: 'owl', 
+  '5': {
+    name: 'Teacher Owl',
+    image: 'owl',
     color: '#5E24CB',
     greeting: 'Hello! I\'m Teacher Owl, here to help with learning.\nWhat shall we learn today?',
     skills: ['Lesson planning', 'Homework help', 'Concept explanation'],
@@ -145,9 +150,9 @@ Offer balanced, thoughtful advice. Use markdown formatting when helpful. Ask cla
 Be clear, patient, and encouraging. Use markdown formatting for better readability. Break down complex concepts into understandable parts.`,
     taskCategory: 'conversation',
   },
-  '6': { 
-    name: 'Prompt Turtle', 
-    image: 'turtle', 
+  '6': {
+    name: 'Prompt Turtle',
+    image: 'turtle',
     color: '#59C19D',
     greeting: 'Hi! I\'m Prompt Turtle, your AI prompt engineering expert.\nWhat prompt can I help craft?',
     skills: ['Prompt engineering', 'AI optimization', 'Workflow automation'],
@@ -159,9 +164,9 @@ Be clear, patient, and encouraging. Use markdown formatting for better readabili
 Be thorough and precise. Use markdown formatting. Provide clear, actionable prompt improvements.`,
     taskCategory: 'analysis',
   },
-  '7': { 
-    name: 'Data Badger', 
-    image: 'badger', 
+  '7': {
+    name: 'Data Badger',
+    image: 'badger',
     color: '#826F57',
     greeting: 'Hello! I\'m Data Badger, your analytics expert.\nWhat data shall we explore?',
     skills: ['Data visualization', 'Statistical analysis', 'Report generation'],
@@ -173,9 +178,9 @@ Be thorough and precise. Use markdown formatting. Provide clear, actionable prom
 Be precise and data-driven. Use markdown formatting with tables and charts when appropriate.`,
     taskCategory: 'analysis',
   },
-  '8': { 
-    name: 'Quick Mouse', 
-    image: 'mouse', 
+  '8': {
+    name: 'Quick Mouse',
+    image: 'mouse',
     color: '#2D6CF5',
     greeting: 'Hi! I\'m Quick Mouse, your fast problem solver.\nWhat needs a quick fix?',
     skills: ['Quick fixes', 'Troubleshooting', 'Time management'],
@@ -187,9 +192,9 @@ Be precise and data-driven. Use markdown formatting with tables and charts when 
 Be concise and action-oriented. Get to solutions quickly. Use markdown for clarity.`,
     taskCategory: 'conversation',
   },
-  '9': { 
-    name: 'Creative Pig', 
-    image: 'pig', 
+  '9': {
+    name: 'Creative Pig',
+    image: 'pig',
     color: '#EB3F71',
     greeting: 'Hey! I\'m Creative Pig, your design thinking companion.\nWhat shall we create?',
     skills: ['Brainstorming', 'Ideation', 'Creative writing'],
@@ -201,9 +206,9 @@ Be concise and action-oriented. Get to solutions quickly. Use markdown for clari
 Be creative and open-minded. Use markdown formatting. Encourage wild ideas and creative thinking.`,
     taskCategory: 'creative',
   },
-  '10': { 
-    name: 'Code Cat', 
-    image: 'cat', 
+  '10': {
+    name: 'Code Cat',
+    image: 'cat',
     color: '#2D2E66',
     greeting: 'Meow! I\'m Code Cat, your programming wizard.\nWhat code shall we write?',
     skills: ['Code review', 'Debugging', 'Architecture'],
@@ -215,9 +220,9 @@ Be creative and open-minded. Use markdown formatting. Encourage wild ideas and c
 Be precise and technical. Use code blocks and markdown formatting. Provide clear, actionable code solutions.`,
     taskCategory: 'analysis',
   },
-  '11': { 
-    name: 'Strategy Camel', 
-    image: 'camel', 
+  '11': {
+    name: 'Strategy Camel',
+    image: 'camel',
     color: '#826F57',
     greeting: 'Hello! I\'m Strategy Camel, your planning expert.\nWhat strategy shall we plan?',
     skills: ['Business strategy', 'Goal setting', 'Roadmap planning'],
@@ -229,9 +234,9 @@ Be precise and technical. Use code blocks and markdown formatting. Provide clear
 Be strategic and organized. Use markdown formatting with clear structure. Think long-term.`,
     taskCategory: 'analysis',
   },
-  '12': { 
-    name: 'Marketing Frog', 
-    image: 'frog', 
+  '12': {
+    name: 'Marketing Frog',
+    image: 'frog',
     color: '#59C19D',
     greeting: 'Hi! I\'m Marketing Frog, your growth hacker.\nWhat marketing challenge can I help with?',
     skills: ['Campaign planning', 'Copywriting', 'Social strategy'],
@@ -243,9 +248,9 @@ Be strategic and organized. Use markdown formatting with clear structure. Think 
 Be creative and data-driven. Use markdown formatting. Focus on results and engagement.`,
     taskCategory: 'creative',
   },
-  '13': { 
-    name: 'Product Giraffe', 
-    image: 'giraffe', 
+  '13': {
+    name: 'Product Giraffe',
+    image: 'giraffe',
     color: '#EDB440',
     greeting: 'Hello! I\'m Product Giraffe, your product management expert.\nWhat product question can I help with?',
     skills: ['PRD writing', 'Feature prioritization', 'Stakeholder management'],
@@ -257,9 +262,9 @@ Be creative and data-driven. Use markdown formatting. Focus on results and engag
 Be clear and user-focused. Use markdown formatting. Balance user needs with business goals.`,
     taskCategory: 'ux',
   },
-  '14': { 
-    name: 'Support Lion', 
-    image: 'lion', 
+  '14': {
+    name: 'Support Lion',
+    image: 'lion',
     color: '#ED7437',
     greeting: 'Hi! I\'m Support Lion, your customer success expert.\nHow can I help your customers?',
     skills: ['Customer support', 'FAQ creation', 'Escalation handling'],
@@ -271,9 +276,9 @@ Be clear and user-focused. Use markdown formatting. Balance user needs with busi
 Be empathetic and solution-oriented. Use markdown formatting. Focus on customer satisfaction.`,
     taskCategory: 'conversation',
   },
-  '15': { 
-    name: 'Mentor Seahorse', 
-    image: 'seahorse', 
+  '15': {
+    name: 'Mentor Seahorse',
+    image: 'seahorse',
     color: '#2D6CF5',
     greeting: 'Hello! I\'m Mentor Seahorse, your career guidance expert.\nWhat career question can I help with?',
     skills: ['Career coaching', 'Resume review', 'Interview prep'],
@@ -285,9 +290,9 @@ Be empathetic and solution-oriented. Use markdown formatting. Focus on customer 
 Be encouraging and practical. Use markdown formatting. Provide actionable career advice.`,
     taskCategory: 'conversation',
   },
-  '16': { 
-    name: 'Project Camel', 
-    image: 'camel', 
+  '16': {
+    name: 'Project Camel',
+    image: 'camel',
     color: '#ED7437',
     greeting: 'Hi! I\'m Project Camel, your project management expert.\nWhat project can I help manage?',
     skills: ['Project planning', 'Risk management', 'Status reporting'],
@@ -299,9 +304,9 @@ Be encouraging and practical. Use markdown formatting. Provide actionable career
 Be organized and clear. Use markdown formatting with timelines and checklists. Keep projects on track.`,
     taskCategory: 'analysis',
   },
-  '17': { 
-    name: 'Research Frog', 
-    image: 'frog', 
+  '17': {
+    name: 'Research Frog',
+    image: 'frog',
     color: '#74AE58',
     greeting: 'Hello! I\'m Research Frog, your market research expert.\nWhat research can I help with?',
     skills: ['Market analysis', 'Trend research', 'Competitor analysis'],
@@ -313,9 +318,9 @@ Be organized and clear. Use markdown formatting with timelines and checklists. K
 Be thorough and data-driven. Use markdown formatting with clear structure. Provide actionable insights.`,
     taskCategory: 'analysis',
   },
-  '18': { 
-    name: 'Agile Giraffe', 
-    image: 'giraffe', 
+  '18': {
+    name: 'Agile Giraffe',
+    image: 'giraffe',
     color: '#5E24CB',
     greeting: 'Hi! I\'m Agile Giraffe, your Scrum master.\nWhat agile question can I help with?',
     skills: ['Sprint planning', 'Retrospectives', 'Team facilitation'],
@@ -327,9 +332,9 @@ Be thorough and data-driven. Use markdown formatting with clear structure. Provi
 Be collaborative and adaptive. Use markdown formatting. Focus on team effectiveness.`,
     taskCategory: 'conversation',
   },
-  '19': { 
-    name: 'Brand Lion', 
-    image: 'lion', 
+  '19': {
+    name: 'Brand Lion',
+    image: 'lion',
     color: '#E64140',
     greeting: 'Hello! I\'m Brand Lion, your brand strategy expert.\nWhat brand question can I help with?',
     skills: ['Brand positioning', 'Voice & tone', 'Visual identity'],
@@ -341,9 +346,9 @@ Be collaborative and adaptive. Use markdown formatting. Focus on team effectiven
 Be creative and strategic. Use markdown formatting. Build strong, memorable brands.`,
     taskCategory: 'creative',
   },
-  '20': { 
-    name: 'Dev Seahorse', 
-    image: 'seahorse', 
+  '20': {
+    name: 'Dev Seahorse',
+    image: 'seahorse',
     color: '#2D2E66',
     greeting: 'Hi! I\'m Dev Seahorse, your full-stack developer.\nWhat development question can I help with?',
     skills: ['Full-stack development', 'API design', 'Code architecture'],
@@ -358,7 +363,24 @@ Be technical and precise. Use code blocks and markdown formatting. Provide clear
 };
 
 export default function ChatScreen() {
-  const { mascotId, questionPrompt, initialMessage, skillId, deepThinking, llm, conversationId: urlConversationId } = useLocalSearchParams<{ 
+  const {
+    mascotId,
+    initialMessage,
+    // Support separate initial prompt
+    questionPrompt,
+    // Support deep thinking flag
+    deepThinking: deepThinkingParam,
+    // Support LLM preference
+    llm: llmParam,
+    // Support initial attachment
+    initialAttachmentUri,
+    initialAttachmentMime,
+    initialAttachmentBase64,
+    skillId, // ID of skill selected from home
+    deepThinking, // 'true' or 'false' from home screen
+    llm, // LLM preference from home screen
+    conversationId: urlConversationId, // Existing conversation ID
+  } = useLocalSearchParams<{
     mascotId: string;
     questionPrompt?: string;
     initialMessage?: string;
@@ -366,6 +388,9 @@ export default function ChatScreen() {
     deepThinking?: string; // 'true' or 'false' from home screen
     llm?: LLMPreference; // LLM preference from home screen
     conversationId?: string; // Existing conversation ID
+    initialAttachmentUri?: string;
+    initialAttachmentMime?: string;
+    initialAttachmentBase64?: string;
   }>();
   const router = useRouter();
   const { colors } = useTheme();
@@ -391,7 +416,7 @@ export default function ChatScreen() {
   // Fetch skills and personality from database
   const { skills: dbSkills, isLoading: skillsLoading } = useMascotSkills(mascotId || '1');
   const { personality: dbPersonality, isLoading: personalityLoading, refetch: refetchPersonality } = useMascotPersonality(mascotId || '1');
-  
+
   // Fetch like data for mascot
   const { isLiked, likeCount, toggleLike, isToggling } = useMascotLike(mascotId || '1');
 
@@ -399,10 +424,10 @@ export default function ChatScreen() {
   const { canUse, reason, trialCount, trialLimit, isLoading: isLoadingAccess, refresh: refreshAccess } = useMascotAccess(mascotId || null);
   const isTrial = reason === 'trial';
   const isTrialExhausted = reason === 'trial_exhausted';
-  
+
   // Local state to track trial count (for immediate UI updates)
   const [localTrialCount, setLocalTrialCount] = React.useState(trialCount);
-  
+
   // Update local trial count when hook updates
   React.useEffect(() => {
     setLocalTrialCount(trialCount);
@@ -428,6 +453,7 @@ export default function ChatScreen() {
   // Conversation management
   const [currentConversationId, setCurrentConversationId] = useState<string | null>(urlConversationId || null);
   const [hasSavedFirstMessage, setHasSavedFirstMessage] = useState(false);
+  const [hasIncrementedTrial, setHasIncrementedTrial] = useState(false);
   const [titleGenerationQueued, setTitleGenerationQueued] = useState(false);
 
   // Track if we've processed the initial message from home screen
@@ -438,7 +464,32 @@ export default function ChatScreen() {
 
   // Load existing conversation messages if conversationId is provided
   const { messages: dbMessages, isLoading: isLoadingMessages } = useConversationMessages(currentConversationId);
-  
+
+  // Initialize hasIncrementedTrial from database flag
+  useEffect(() => {
+    async function initTrialStatus() {
+      if (currentConversationId) {
+        // Reset to false while we check the new conversation
+        setHasIncrementedTrial(false);
+        const conv = await getConversation(currentConversationId);
+        // ONLY trust the database flag. If the DB hasn't counted it yet, 
+        // we want the next message (>=3) to trigger the increment.
+        if (conv?.is_trial_counted) {
+          setHasIncrementedTrial(true);
+        }
+      } else {
+        setHasIncrementedTrial(false);
+      }
+    }
+    initTrialStatus();
+  }, [currentConversationId]);
+
+  // Keep isTrial in ref for cleanup closure
+  const isTrialRef = useRef(isTrial);
+  useEffect(() => {
+    isTrialRef.current = isTrial;
+  }, [isTrial]);
+
   // Load existing messages when conversation is loaded
   useEffect(() => {
     if (currentConversationId && dbMessages.length > 0) {
@@ -451,7 +502,7 @@ export default function ChatScreen() {
           content: m.content,
           model: m.model || undefined,
         }));
-      
+
       // Always replace messages when conversation is loaded (even if messages exist)
       // This ensures clicking a conversation from history shows the full conversation
       if (loadedMessages.length > 0) {
@@ -509,6 +560,29 @@ export default function ChatScreen() {
     },
   ]);
 
+  // Keep messages in ref for use in unmount cleanup
+  const messagesRef = useRef(messages);
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
+  // Cleanup trial conversations with < 3 user messages when leaving
+  useEffect(() => {
+    return () => {
+      // Use messages ref to get correct messages even in unmount
+      const currentMessages = messagesRef.current;
+      const userMessageCount = currentMessages.filter(m => m.role === 'user').length;
+
+      if (isTrialRef.current && currentConversationId && userMessageCount < 3) {
+        console.log('[Chat] Trial conversation with only', userMessageCount, 'user messages. Deleting conversation:', currentConversationId);
+        // We use the background delete to avoid blocking unmount
+        deleteConversation(currentConversationId).catch((err: any) => {
+          console.warn('[Chat] Failed to delete short trial conversation:', err);
+        });
+      }
+    };
+  }, [currentConversationId]);
+
   const [isLoading, setIsLoading] = useState(false);
   const [streamingContent, setStreamingContent] = useState('');
   const [isRecording, setIsRecording] = useState(false);
@@ -533,8 +607,12 @@ export default function ChatScreen() {
   // Core function to send a message (used by handleSend and auto-send from home)
   // When a skill is clicked, messageContent will be the skill LABEL
   // User sees the skill label, but LLM receives the full skill prompt
-  const sendMessage = useCallback(async (messageContent: string, isSkillLabel: boolean = false) => {
-    if (!messageContent.trim() || isLoading) return;
+  const sendMessage = useCallback(async (
+    messageContent: string,
+    isSkillLabel: boolean = false,
+    attachment?: { uri: string; base64?: string; mimeType?: string }
+  ) => {
+    if ((!messageContent.trim() && !attachment) || isLoading) return;
 
     // Check if this is the first user message BEFORE adding it to state
     // This determines if it's a new conversation for trial purposes
@@ -544,17 +622,17 @@ export default function ChatScreen() {
     // If this is a skill label, we need to send the full skill prompt to LLM
     // but display the label to the user
     let actualMessageContentForLLM = messageContent.trim();
-    
+
     if (isSkillLabel && activeSkill?.skill_prompt) {
       // This is a skill click - send full prompt to LLM
       actualMessageContentForLLM = activeSkill.skill_prompt;
     }
 
-    // Display the label to user (what they clicked)
     const userMessage: Message = {
       id: Date.now().toString(),
       role: 'user',
       content: messageContent.trim(), // User always sees the label or their message
+      attachment,
     };
 
     const assistantMessageId = (Date.now() + 1).toString();
@@ -564,7 +642,7 @@ export default function ChatScreen() {
     setInputText('');
     setIsLoading(true);
     setStreamingContent('');
-    
+
     // Focus input immediately after clearing (user can start typing right away)
     // Use requestAnimationFrame for web to ensure DOM is ready
     if (Platform.OS === 'web') {
@@ -592,15 +670,15 @@ export default function ChatScreen() {
       }
 
       // Check if messageContent is the skill prompt (when clicking a skill)
-      const isSkillPrompt = activeSkill?.skill_prompt && 
+      const isSkillPrompt = activeSkill?.skill_prompt &&
         messageContent.trim() === activeSkill.skill_prompt.trim();
-      
+
       // Build chat history for AI
       // CRITICAL: If this is a skill prompt, send the FULL prompt to LLM, not the label
-      const actualMessageContentForLLM = isSkillPrompt 
+      const actualMessageContentForLLM = isSkillPrompt
         ? messageContent.trim() // Send full skill prompt
         : messageContent.trim(); // Regular message
-      
+
       const currentMessages = [...messages];
 
       // Get the mascot's system prompt (personality)
@@ -608,12 +686,12 @@ export default function ChatScreen() {
       // The skill prompt is also sent as the user message for the first interaction
       const mascotData = MASCOT_DATA[mascotId || '1'];
       let systemPrompt = mascotData?.systemPrompt || 'You are a helpful AI assistant.';
-      
+
       // Add database personality if available
       if (dbPersonality) {
         systemPrompt = `${systemPrompt}\n\n---\n\n${dbPersonality.personality}`;
       }
-      
+
       // Add active skill prompt to system prompt so it continues to be followed
       // This ensures step-by-step prompts work correctly throughout the conversation
       if (activeSkill?.skill_prompt) {
@@ -641,11 +719,11 @@ export default function ChatScreen() {
           role: m.role as 'user' | 'assistant',
           content: m.content,
         }));
-      
+
       // Convert chatLLM to provider override ('openai' | 'gemini' | undefined for auto)
       // If 'auto', don't pass provider (let system choose based on mascot config or default)
       // If 'perplexity', treat as 'auto' for now (not supported in Edge Function yet)
-      const providerOverride: 'openai' | 'gemini' | undefined = 
+      const providerOverride: 'openai' | 'gemini' | undefined =
         chatLLM === 'openai' || chatLLM === 'gemini' ? chatLLM : undefined;
 
       // Log which provider we're using
@@ -671,49 +749,34 @@ export default function ChatScreen() {
       } else {
         console.log('[Chat] Using existing conversation:', conversationId);
       }
-      
-      // Increment trial usage if this is the FIRST user message in the conversation
-      // This counts as one trial - clicking a skill or sending first message starts a conversation
-      console.log('[Chat] sendMessage - Trial check:', {
-        isFirstUserMessage,
-        isTrial,
-        mascotId,
-        conversationId,
-        reason,
-        currentTrialCount: localTrialCount,
-      });
-      
-      if (isFirstUserMessage && isTrial && mascotId && conversationId) {
+
+      // count user messages to see if we should increment trial usage
+      const userMessageCount = [
+        ...messages.filter(m => m.role === 'user'),
+        { role: 'user', content: messageContent }
+      ].length;
+
+      console.log('[Chat] User message count:', userMessageCount);
+
+      // Increment trial usage if this conversation reaches 3 user messages
+      // and we haven't incremented it for this conversation yet
+      if (isTrial && mascotId && conversationId && userMessageCount >= 3 && !hasIncrementedTrial) {
         try {
-          console.log('[Chat] First user message (sendMessage) - incrementing trial usage for mascot:', mascotId);
-          const { error: trialError, usage } = await incrementTrialUsage(mascotId);
+          console.log('[Chat] 3rd+ user message reached - incrementing trial usage for mascot:', mascotId);
+          const { error: trialError, usage } = await incrementTrialUsage(mascotId, conversationId);
           if (trialError) {
             console.error('[Chat] Error incrementing trial usage:', trialError);
           } else {
             console.log('[Chat] Trial usage incremented successfully:', usage);
+            setHasIncrementedTrial(true);
             // Update local trial count immediately for UI feedback
             if (usage) {
-              console.log('[Chat] Updating local trial count from', localTrialCount, 'to', usage.conversationCount);
               setLocalTrialCount(usage.conversationCount);
-              // Refresh access status to get updated trial count from server
               await refreshAccess();
             }
           }
         } catch (error) {
           console.error('[Chat] Error incrementing trial usage:', error);
-        }
-      } else {
-        if (!isFirstUserMessage) {
-          console.log('[Chat] Not first user message - continuing existing conversation, no trial increment');
-        }
-        if (!isTrial) {
-          console.log('[Chat] Not in trial mode (reason:', reason, ') - no trial increment');
-        }
-        if (!mascotId) {
-          console.log('[Chat] No mascotId - no trial increment');
-        }
-        if (!conversationId) {
-          console.log('[Chat] No conversationId - no trial increment');
         }
       }
 
@@ -745,17 +808,18 @@ export default function ChatScreen() {
         conversationId || undefined, // Pass conversationId to Edge Function
         activeSkillId || undefined, // skillId
         providerOverride, // provider override (undefined = system chooses)
-        deepThinkingEnabled // Deep Thinking mode (uses pro models)
+        deepThinkingEnabled, // Deep Thinking mode (uses pro models)
+        attachment && attachment.base64 ? { mimeType: attachment.mimeType || 'image/jpeg', base64: attachment.base64 } : undefined
       );
 
       const assistantContent = response.content;
 
       // Use the provider from the response (Edge Function tells us what was actually used)
-      const actualProvider: 'openai' | 'gemini' | undefined = response.provider || 
+      const actualProvider: 'openai' | 'gemini' | undefined = response.provider ||
         (providerOverride || // Fallback to user override if response doesn't include provider
-         (response.model?.toLowerCase().includes('gpt') ? 'openai' : 
-          response.model?.toLowerCase().includes('gemini') ? 'gemini' : 
-          undefined));
+          (response.model?.toLowerCase().includes('gpt') ? 'openai' :
+            response.model?.toLowerCase().includes('gemini') ? 'gemini' :
+              undefined));
 
       console.log('[Chat] Response received - Model:', response.model, 'Provider:', actualProvider, '(requested:', providerOverride || 'auto', ')');
 
@@ -778,7 +842,7 @@ export default function ChatScreen() {
       if (!titleGenerationQueued && conversationId && assistantContent) {
         // Count total messages including the ones we just added
         const totalMessages = messages.filter(m => !m.isThinking && (m.role === 'user' || m.role === 'assistant')).length + 2; // +2 for user and assistant we just added
-        
+
         if (totalMessages >= 2) { // At least one exchange (user + assistant)
           setTitleGenerationQueued(true);
           // Generate title asynchronously (don't block UI)
@@ -819,17 +883,17 @@ export default function ChatScreen() {
     } catch (error) {
       console.error('AI Error:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      
+
       // Detect specific error types
-      const isCorsError = errorMessage.toLowerCase().includes('cors') || 
-                         errorMessage.toLowerCase().includes('cross-origin');
+      const isCorsError = errorMessage.toLowerCase().includes('cors') ||
+        errorMessage.toLowerCase().includes('cross-origin');
       const isAuthError = errorMessage.toLowerCase().includes('unauthorized') ||
-                         errorMessage.toLowerCase().includes('not authenticated');
-      const isConnectionError = (errorMessage.toLowerCase().includes('connection') || 
-                                errorMessage.toLowerCase().includes('network') ||
-                                errorMessage.toLowerCase().includes('fetch') ||
-                                errorMessage.toLowerCase().includes('timeout')) && !isCorsError;
-      
+        errorMessage.toLowerCase().includes('not authenticated');
+      const isConnectionError = (errorMessage.toLowerCase().includes('connection') ||
+        errorMessage.toLowerCase().includes('network') ||
+        errorMessage.toLowerCase().includes('fetch') ||
+        errorMessage.toLowerCase().includes('timeout')) && !isCorsError;
+
       // Provide specific error messages
       let userFriendlyMessage = '';
       if (isCorsError) {
@@ -841,7 +905,7 @@ export default function ChatScreen() {
       } else {
         userFriendlyMessage = `Sorry, I encountered an error. Please try again.\n\n*Error: ${errorMessage}*`;
       }
-      
+
       // Add error message
       setMessages((prev) => [
         ...prev,
@@ -874,22 +938,43 @@ export default function ChatScreen() {
   // IMPORTANT: If skillId is provided, send the skill label
   // User sees the skill label, but LLM receives the full skill prompt (handled in sendMessage)
   useEffect(() => {
-    if (initialMessage && !hasProcessedInitialMessage.current) {
+    if ((initialMessage || (initialAttachmentUri && initialAttachmentBase64)) && !hasProcessedInitialMessage.current) {
       hasProcessedInitialMessage.current = true;
-      // Small delay to ensure the UI is ready
-      setTimeout(async () => {
-        // If we have a skillId, send the skill label
-        // sendMessage will detect it's a skill and send the full prompt to LLM
-        if (skillId && activeSkillId && activeSkill) {
-          // Send the skill label (user sees this), but LLM gets full prompt
-          sendMessage(activeSkill.skill_label, true); // true = this is a skill label
-        } else {
-          // No skill selected, send the initial message as-is
-          sendMessage(initialMessage);
+
+      // If we have an initial message, send it automatically
+      // But verify we haven't already saved it (in case of remounts)
+      // Check if messages array contains only the initial assistant message (length 1)
+      // or is completely empty (length 0)
+      const hasOnlyInitialAssistantMessage = messages.length === 1 && messages[0]?.id === '1' && messages[0]?.role === 'assistant';
+      const isMessagesEmpty = messages.length === 0;
+
+      if (hasOnlyInitialAssistantMessage || isMessagesEmpty) {
+        console.log('Auto-sending initial message:', initialMessage || 'Image only');
+
+        let attachment = undefined;
+        if (initialAttachmentUri && initialAttachmentBase64) {
+          attachment = {
+            uri: initialAttachmentUri,
+            base64: initialAttachmentBase64,
+            mimeType: initialAttachmentMime || 'image/jpeg'
+          };
         }
-      }, 300);
+
+        // Use a small timeout to ensure the UI is ready
+        setTimeout(() => {
+          // If we have a skillId, send the skill label
+          // sendMessage will detect it's a skill and send the full prompt to LLM
+          if (skillId && activeSkillId && activeSkill) {
+            // Send the skill label (user sees this), but LLM gets full prompt
+            sendMessage(activeSkill.skill_label, true, attachment); // true = this is a skill label
+          } else {
+            // No skill selected, send the initial message as-is
+            sendMessage(initialMessage || '', false, attachment);
+          }
+        }, 500);
+      }
     }
-  }, [initialMessage, sendMessage, skillId, activeSkillId, activeSkill]);
+  }, [initialMessage, sendMessage, skillId, activeSkillId, activeSkill, initialAttachmentUri, initialAttachmentBase64, initialAttachmentMime, messages]);
 
   // Track keyboard state to fix padding issues
   useEffect(() => {
@@ -977,13 +1062,15 @@ export default function ChatScreen() {
     }
   }, []);
 
-  const handleSend = async () => {
-    if (!inputText.trim() || isLoading) return;
+  const handleSend = async (text?: string, attachment?: { uri: string; base64?: string; mimeType?: string }) => {
+    const textToSend = typeof text === 'string' ? text : inputText;
+    if ((!textToSend.trim() && !attachment) || isLoading) return;
+
     // Don't dismiss keyboard on web - we want to keep focus
     if (Platform.OS !== 'web') {
       Keyboard.dismiss();
     }
-    await sendMessage(inputText);
+    await sendMessage(textToSend, false, attachment);
     // Focus input after sending (with a small delay to ensure it works)
     setTimeout(() => {
       chatInputRef.current?.focus();
@@ -1000,20 +1087,20 @@ export default function ChatScreen() {
     // Handle both database skill objects and legacy string skills
     const skillLabel = typeof skill === 'string' ? skill : skill.skill_label;
     const skillIdToActivate = typeof skill === 'string' ? null : skill.id;
-    
+
     // CRITICAL: Get the FULL skill prompt from the skill object or from dbSkills
     // For non-admin users, skill_prompt will be null - DO NOT use skill_prompt_preview
     // The Edge Function will fetch the full prompt from the database using skillId
     // We only use skill_prompt (full prompt), never skill_prompt_preview (partial preview)
     let skillPrompt = typeof skill === 'string' ? null : skill.skill_prompt;
-    
+
     // If we don't have the prompt from the skill object, try to get it from dbSkills
     if (!skillPrompt && skillIdToActivate) {
       const fullSkill = dbSkills.find((s) => s.id === skillIdToActivate);
       // Only use full prompt (admin only), never preview
       skillPrompt = fullSkill?.skill_prompt || null;
     }
-    
+
     // If we don't have the full prompt, that's OK - Edge Function will fetch it using skillId
     // We should NOT send the preview or label to the LLM - let Edge Function handle it
     if (!skillPrompt && skillIdToActivate) {
@@ -1029,7 +1116,7 @@ export default function ChatScreen() {
     // This determines if it's a new conversation for trial purposes
     const hasUserMessages = messages.some(m => m.role === 'user');
     const isFirstUserMessage = !hasUserMessages;
-    
+
     // CRITICAL: User sees the skill label, but LLM receives the FULL skill prompt
     // Send the skill label as the message (user will see it)
     // But when sending to LLM, we'll replace it with the full skill prompt
@@ -1074,12 +1161,12 @@ export default function ChatScreen() {
       // throughout the conversation
       const mascotData = MASCOT_DATA[mascotId || '1'];
       let systemPrompt = mascotData?.systemPrompt || 'You are a helpful AI assistant.';
-      
+
       // Add database personality if available
       if (dbPersonality) {
         systemPrompt = `${systemPrompt}\n\n---\n\n${dbPersonality.personality}`;
       }
-      
+
       // Add skill prompt to system prompt ONLY if we have the full prompt (admin users)
       // For non-admin users, the Edge Function will add it to the system prompt
       if (skillPrompt) {
@@ -1091,7 +1178,7 @@ export default function ChatScreen() {
       // 2. Non-admin users: We don't have skillPrompt - send skillLabel, Edge Function will fetch full prompt
       // NEVER send skill_prompt_preview - it's incomplete and shouldn't be shown to LLM
       const actualMessageContentForLLM = skillPrompt || skillLabel;
-      
+
       console.log('[Chat] Skill clicked - Label:', skillLabel);
       console.log('[Chat] Skill clicked - Full prompt available:', !!skillPrompt);
       if (skillPrompt) {
@@ -1116,11 +1203,11 @@ export default function ChatScreen() {
       // Convert chatLLM to provider override ('openai' | 'gemini' | undefined for auto)
       // If 'auto', don't pass provider (let system choose based on mascot config or default)
       // If 'perplexity', treat as 'auto' for now (not supported in Edge Function yet)
-      const providerOverride: 'openai' | 'gemini' | undefined = 
+      const providerOverride: 'openai' | 'gemini' | undefined =
         chatLLM === 'openai' || chatLLM === 'gemini' ? chatLLM : undefined;
 
       console.log('[Chat] Skill press - Provider override:', providerOverride || 'auto (system chooses)');
-      
+
       // Convert chat messages to secure chat format (no system messages)
       const secureMessages: SecureChatMessage[] = chatHistory
         .filter((m) => m.role !== 'system')
@@ -1128,7 +1215,7 @@ export default function ChatScreen() {
           role: m.role as 'user' | 'assistant',
           content: m.content,
         }));
-      
+
       // Create or use existing conversation
       // isFirstUserMessage was already checked at the start of handleSkillPress
       let conversationId = currentConversationId;
@@ -1148,7 +1235,7 @@ export default function ChatScreen() {
       } else {
         console.log('[Chat] Using existing conversation:', conversationId);
       }
-      
+
       // Increment trial usage if this is the FIRST user message in the conversation
       // This counts as one trial - clicking a skill or sending first message starts a conversation
       console.log('[Chat] handleSkillPress - Trial check:', {
@@ -1159,38 +1246,34 @@ export default function ChatScreen() {
         reason,
         currentTrialCount: localTrialCount,
       });
-      
-      if (isFirstUserMessage && isTrial && mascotId && conversationId) {
+
+      // count user messages to see if we should increment trial usage
+      const userMessageCount = [
+        ...messages.filter(m => m.role === 'user'),
+        { role: 'user', content: skillLabel }
+      ].length;
+
+      console.log('[Chat] handleSkillPress - User message count:', userMessageCount);
+
+      // Increment trial usage if this conversation reaches 3 user messages
+      // and we haven't incremented it for this conversation yet
+      if (isTrial && mascotId && conversationId && userMessageCount >= 3 && !hasIncrementedTrial) {
         try {
-          console.log('[Chat] First user message (skill click) - incrementing trial usage for mascot:', mascotId);
-          const { error: trialError, usage } = await incrementTrialUsage(mascotId);
+          console.log('[Chat] handleSkillPress - 3rd+ user message reached - incrementing trial usage for mascot:', mascotId);
+          const { error: trialError, usage } = await incrementTrialUsage(mascotId, conversationId);
           if (trialError) {
             console.error('[Chat] Error incrementing trial usage:', trialError);
           } else {
-            console.log('[Chat] Trial usage incremented successfully:', usage);
+            console.log('[Chat] handleSkillPress - Trial usage incremented successfully:', usage);
+            setHasIncrementedTrial(true);
             // Update local trial count immediately for UI feedback
             if (usage) {
-              console.log('[Chat] Updating local trial count from', localTrialCount, 'to', usage.conversationCount);
               setLocalTrialCount(usage.conversationCount);
-              // Refresh access status to get updated trial count from server
               await refreshAccess();
             }
           }
         } catch (error) {
           console.error('[Chat] Error incrementing trial usage:', error);
-        }
-      } else {
-        if (!isFirstUserMessage) {
-          console.log('[Chat] Not first user message - continuing existing conversation, no trial increment');
-        }
-        if (!isTrial) {
-          console.log('[Chat] Not in trial mode (reason:', reason, ') - no trial increment');
-        }
-        if (!mascotId) {
-          console.log('[Chat] No mascotId - no trial increment');
-        }
-        if (!conversationId) {
-          console.log('[Chat] No conversationId - no trial increment');
         }
       }
 
@@ -1233,11 +1316,11 @@ export default function ChatScreen() {
       const assistantContent = response.content;
 
       // Use the provider from the response (Edge Function tells us what was actually used)
-      const actualProvider: 'openai' | 'gemini' | undefined = response.provider || 
+      const actualProvider: 'openai' | 'gemini' | undefined = response.provider ||
         (providerOverride || // Fallback to user override if response doesn't include provider
-         (response.model?.toLowerCase().includes('gpt') ? 'openai' : 
-          response.model?.toLowerCase().includes('gemini') ? 'gemini' : 
-          undefined));
+          (response.model?.toLowerCase().includes('gpt') ? 'openai' :
+            response.model?.toLowerCase().includes('gemini') ? 'gemini' :
+              undefined));
 
       console.log('[Chat] Skill response - Model:', response.model, 'Provider:', actualProvider, '(requested:', providerOverride || 'auto', ')');
 
@@ -1270,17 +1353,17 @@ export default function ChatScreen() {
     } catch (error) {
       console.error('AI Error:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      
+
       // Detect specific error types
-      const isCorsError = errorMessage.toLowerCase().includes('cors') || 
-                         errorMessage.toLowerCase().includes('cross-origin');
+      const isCorsError = errorMessage.toLowerCase().includes('cors') ||
+        errorMessage.toLowerCase().includes('cross-origin');
       const isAuthError = errorMessage.toLowerCase().includes('unauthorized') ||
-                         errorMessage.toLowerCase().includes('not authenticated');
-      const isConnectionError = (errorMessage.toLowerCase().includes('connection') || 
-                                errorMessage.toLowerCase().includes('network') ||
-                                errorMessage.toLowerCase().includes('fetch') ||
-                                errorMessage.toLowerCase().includes('timeout')) && !isCorsError;
-      
+        errorMessage.toLowerCase().includes('not authenticated');
+      const isConnectionError = (errorMessage.toLowerCase().includes('connection') ||
+        errorMessage.toLowerCase().includes('network') ||
+        errorMessage.toLowerCase().includes('fetch') ||
+        errorMessage.toLowerCase().includes('timeout')) && !isCorsError;
+
       // Provide specific error messages
       let userFriendlyMessage = '';
       if (isCorsError) {
@@ -1292,7 +1375,7 @@ export default function ChatScreen() {
       } else {
         userFriendlyMessage = `Sorry, I encountered an error. Please try again.\n\n*Error: ${errorMessage}*`;
       }
-      
+
       setMessages((prev) => [
         ...prev,
         {
@@ -1447,8 +1530,8 @@ export default function ChatScreen() {
 
   // Calculate bottom padding: use safe area insets when keyboard is hidden
   // When keyboard is visible, add keyboard height to safe area
-  const bottomPadding = Platform.OS === 'web' 
-    ? 16 
+  const bottomPadding = Platform.OS === 'web'
+    ? 16
     : (keyboardHeight > 0 ? keyboardHeight : Math.max(insets.bottom, 0));
 
   const content = (
@@ -1494,7 +1577,7 @@ export default function ChatScreen() {
             dbSkills.map((skill) => {
               // Check if skill is locked (user doesn't have full access)
               const isSkillLocked = !skill.is_full_access;
-              
+
               return (
                 <Pressable
                   key={skill.id}
@@ -1800,18 +1883,29 @@ export default function ChatScreen() {
                 <View
                   style={[
                     styles.userBubble,
-                    { backgroundColor: colors.chatBubble },
+                    { backgroundColor: colors.chatBubble }, // Reverted to default grey
                   ]}
                 >
+                  {message.attachment && (
+                    <Image
+                      source={{ uri: message.attachment.uri }}
+                      style={{
+                        width: 200,
+                        height: 200,
+                        borderRadius: 12,
+                        marginBottom: 8,
+                      }}
+                      resizeMode="cover"
+                    />
+                  )}
                   <Text
                     style={[
                       styles.messageText,
                       {
                         fontFamily: fontFamilies.figtree.medium,
-                        color: colors.text,
+                        color: colors.text, // Reverted to default text color
                       },
                     ]}
-                    selectable
                   >
                     {message.content}
                   </Text>
@@ -1843,7 +1937,7 @@ export default function ChatScreen() {
                           },
                         ]}
                       >
-                        {message.provider ? 
+                        {message.provider ?
                           `${message.provider === 'openai' ? 'OpenAI' : 'Gemini'} ${message.model ? `(${message.model})` : ''}`.trim() :
                           message.model || 'Unknown'}
                       </Text>
@@ -1891,33 +1985,33 @@ export default function ChatScreen() {
           {skillsLoading ? (
             <ActivityIndicator size="small" color={colors.primary} />
           ) : (
-            <ScrollView 
-              horizontal 
+            <ScrollView
+              horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.skillsContent}
             >
               {dbSkills.length > 0
                 ? dbSkills.map((skill) => (
-                    <LinkPill
-                      key={skill.id}
-                      label={skill.skill_label}
-                      onPress={() => handleSkillPress(skill)}
-                    />
-                  ))
+                  <LinkPill
+                    key={skill.id}
+                    label={skill.skill_label}
+                    onPress={() => handleSkillPress(skill)}
+                  />
+                ))
                 : mascot.skills.map((skill) => (
-                    <LinkPill
-                      key={skill}
-                      label={skill}
-                      onPress={() => handleSkillPress(skill)}
-                    />
-                  ))}
+                  <LinkPill
+                    key={skill}
+                    label={skill}
+                    onPress={() => handleSkillPress(skill)}
+                  />
+                ))}
             </ScrollView>
           )}
         </View>
       )}
 
       {/* Input */}
-      <View style={[styles.inputContainer, { 
+      <View style={[styles.inputContainer, {
         paddingBottom: bottomPadding,
         marginBottom: 0,
       }]}>
