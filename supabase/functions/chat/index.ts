@@ -45,8 +45,8 @@ serve(async (req: Request) => {
       );
     }
 
-    // Extract token
-    const token = authHeader.substring(7).trim();
+    // Extract token (handle "Bearer " prefix with potential whitespace)
+    const token = authHeader.replace(/^Bearer\s+/i, '').trim();
 
     // Create admin client and validate token
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
