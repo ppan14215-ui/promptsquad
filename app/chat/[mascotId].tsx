@@ -25,7 +25,7 @@ import { usePreferences, selectBestProvider, TaskCategory, LLMPreference } from 
 import { ChatHeader, LinkPill, ChatInputBox, SkillPreview, ChatHistory, Icon, BigPrimaryButton } from '@/components';
 import type { ChatInputBoxRef } from '@/components/ui/ChatInputBox';
 import { secureChatStream } from '@/services/ai/secure-chat';
-import type { ChatMessage, AI_CONFIG, WebSource } from '@/services/ai';
+import type { ChatMessage, AI_CONFIG, WebSource, SecureChatMessage } from '@/services/ai';
 import { useMascotSkills, useMascotPersonality, MascotSkill, getCombinedPrompt, useIsAdmin, updatePersonality, resetPersonalityToDefault } from '@/services/admin';
 import { useMascotLike } from '@/services/mascot-likes';
 import { createConversation, saveMessage, generateConversationTitle, useConversationMessages } from '@/services/chat-history';
