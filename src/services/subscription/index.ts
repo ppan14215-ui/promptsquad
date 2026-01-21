@@ -20,9 +20,10 @@ export function useSubscription() {
           .from('profiles')
           .select('is_subscribed, subscription_expires_at')
           .eq('id', user.id)
-          .single();
+          .maybeSingle();
 
-        if (error) {
+        // PGRST116 = no rows (profile doesn't exist yet) - this is OK, just not subscribed
+        if (error && error.code !== 'PGRST116') {
           console.error('Error checking subscription:', error);
           setIsSubscribed(false);
         } else {

@@ -25,7 +25,7 @@ export function useMascotLike(mascotId: string | null) {
         const { count, error: countError } = await supabase
           .from('mascot_likes')
           .select('*', { count: 'exact', head: true })
-          .eq('mascot_id', mascotId);
+          .eq('mascot_id', mascotId as string);
 
         if (countError) {
           setLikeCount(0);
@@ -38,7 +38,7 @@ export function useMascotLike(mascotId: string | null) {
           const { data, error: likeError } = await supabase
             .from('mascot_likes')
             .select('id')
-            .eq('mascot_id', mascotId)
+            .eq('mascot_id', mascotId as string)
             .eq('user_id', user.id)
             .maybeSingle();
 
@@ -93,9 +93,9 @@ export function useMascotLike(mascotId: string | null) {
         const { error } = await supabase
           .from('mascot_likes')
           .insert({
-            mascot_id: mascotId,
+            mascot_id: mascotId as string,
             user_id: user.id,
-          });
+          } as any);
 
         if (error) {
           // Show error to user
@@ -159,7 +159,7 @@ export function useMascotLikeCounts(mascotIds: (string | null)[]) {
           counts[id] = 0;
         });
 
-        data?.forEach((like) => {
+        data?.forEach((like: { mascot_id: string }) => {
           const mascotId = like.mascot_id;
           counts[mascotId] = (counts[mascotId] || 0) + 1;
         });

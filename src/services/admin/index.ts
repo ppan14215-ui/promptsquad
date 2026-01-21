@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/services/supabase';
 import { useAuth } from '@/services/auth';
+import { logger } from '@/lib/utils/logger';
 
 // Types
 export type MascotSkill = {
@@ -16,10 +17,11 @@ export type MascotSkill = {
   updated_at: string;
 };
 
-export type MascotInstructions = {
+export type MascotPersonality = {
   id: string;
   mascot_id: string;
-  instructions: string;
+  personality: string;
+  default_personality?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -33,6 +35,20 @@ export type MascotBasic = {
   question_prompt?: string | null;
   sort_order?: number;
   is_free?: boolean;
+};
+
+export type SkillQuestion = {
+  id: string;
+  label: string;
+  type: 'text' | 'choice';
+  required: boolean;
+  choices?: string[];
+  placeholder?: string;
+};
+
+export type SkillQuestionsConfig = {
+  skillId: string;
+  questions: SkillQuestion[];
 };
 
 // Hook to check if current user is admin
@@ -54,16 +70,17 @@ export function useIsAdmin() {
           .from('profiles')
           .select('role')
           .eq('id', user.id)
-          .single();
+          .maybeSingle();
 
-        if (error) {
-          console.error('Error checking admin role:', error);
+        // PGRST116 = no rows (profile doesn't exist yet) - this is OK, just not admin
+        if (error && error.code !== 'PGRST116') {
+          logger.error('Error checking admin role:', error);
           setIsAdmin(false);
         } else {
           setIsAdmin(data?.role === 'admin');
         }
       } catch (err) {
-        console.error('Error checking admin role:', err);
+        logger.error('Error checking admin role:', err);
         setIsAdmin(false);
       } finally {
         setIsLoading(false);
@@ -92,6 +109,13 @@ export function useMascots() {
           .order('sort_order', { ascending: true });
 
         if (error) {
+          // Self-healing: If unauthorized, force sign out
+          if (error.code === '401' || error.code === '406' || (error as any).status === 401 || (error as any).status === 406) {
+            logger.error('Auth error in fetchMascots, forcing sign out:', error);
+            await supabase.auth.signOut();
+            return;
+          }
+
           setError(error.message);
           setMascots([]);
         } else {
@@ -128,13 +152,13 @@ export function useMascotSkills(mascotId: string | null) {
     setIsLoading(true);
     setError(null);
     try {
-      console.log('[useMascotSkills] Fetching skills for mascot:', mascotId);
+      logger.debug('[useMascotSkills] Fetching skills for mascot:', mascotId);
       const { data, error } = await supabase.rpc('get_mascot_skills', {
         p_mascot_id: mascotId,
       });
 
       if (error) {
-        console.error('[useMascotSkills] RPC error:', error);
+        logger.error('[useMascotSkills] RPC error:', error);
         // Code 42883 = function does not exist (RPC not deployed)
         if (error.code === '42883') {
           setSkills([]);
@@ -144,12 +168,12 @@ export function useMascotSkills(mascotId: string | null) {
           setSkills([]);
         }
       } else {
-        console.log('[useMascotSkills] Fetched skills:', data?.length || 0, 'skills');
+        logger.debug('[useMascotSkills] Fetched skills:', data?.length || 0, 'skills');
         setSkills(data || []);
         setError(null);
       }
     } catch (err: any) {
-      console.error('[useMascotSkills] Exception:', err);
+      logger.error('[useMascotSkills] Exception:', err);
       setError(err.message);
       setSkills([]);
     } finally {
@@ -163,22 +187,22 @@ export function useMascotSkills(mascotId: string | null) {
 
   // Create a refetch function that forces a fresh fetch
   const refetch = useCallback(async () => {
-    console.log('[useMascotSkills] Refetch called for mascot:', mascotId);
+    logger.debug('[useMascotSkills] Refetch called for mascot:', mascotId);
     await fetchSkills();
   }, [fetchSkills, mascotId]);
 
   return { skills, isLoading, error, refetch };
 }
 
-// Hook to get instructions for a mascot
-export function useMascotInstructions(mascotId: string | null) {
-  const [instructions, setInstructions] = useState<MascotInstructions | null>(null);
+// Hook to get personality for a mascot
+export function useMascotPersonality(mascotId: string | null) {
+  const [personality, setPersonality] = useState<MascotPersonality | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchInstructions = useCallback(async () => {
+  const fetchPersonality = useCallback(async () => {
     if (!mascotId) {
-      setInstructions(null);
+      setPersonality(null);
       setIsLoading(false);
       return;
     }
@@ -186,7 +210,7 @@ export function useMascotInstructions(mascotId: string | null) {
     setIsLoading(true);
     try {
       const { data, error } = await supabase
-        .from('mascot_instructions')
+        .from('mascot_personality')
         .select('*')
         .eq('mascot_id', mascotId)
         .single();
@@ -194,30 +218,33 @@ export function useMascotInstructions(mascotId: string | null) {
       // PGRST116 = no rows returned, 42P01 = table doesn't exist
       if (error && error.code !== 'PGRST116') {
         if (error.code === '42P01') {
-          setInstructions(null);
+          setPersonality(null);
           setError(null);
         } else {
           setError(error.message);
-          setInstructions(null);
+          setPersonality(null);
         }
       } else {
-        setInstructions(data || null);
+        setPersonality(data || null);
         setError(null);
       }
     } catch (err: any) {
       setError(err.message);
-      setInstructions(null);
+      setPersonality(null);
     } finally {
       setIsLoading(false);
     }
   }, [mascotId]);
 
   useEffect(() => {
-    fetchInstructions();
-  }, [fetchInstructions]);
+    fetchPersonality();
+  }, [fetchPersonality]);
 
-  return { instructions, isLoading, error, refetch: fetchInstructions };
+  return { personality, isLoading, error, refetch: fetchPersonality };
 }
+
+// Legacy alias for backward compatibility (deprecated)
+export const useMascotInstructions = useMascotPersonality;
 
 // Admin CRUD operations for skills
 export async function createSkill(
@@ -230,7 +257,7 @@ export async function createSkill(
     throw new Error('Invalid mascot ID');
   }
 
-  console.log('[Admin] Creating skill for mascot:', mascotId, 'label:', skillLabel);
+  logger.debug('[Admin] Creating skill for mascot:', mascotId, 'label:', skillLabel);
 
   const { data, error } = await supabase
     .from('mascot_skills')
@@ -245,11 +272,11 @@ export async function createSkill(
     .single();
 
   if (error) {
-    console.error('[Admin] Error creating skill:', error);
+    logger.error('[Admin] Error creating skill:', error);
     throw new Error(error.message || 'Failed to create skill');
   }
   
-  console.log('[Admin] Skill created successfully:', data);
+  logger.debug('[Admin] Skill created successfully:', data);
   return data;
 }
 
@@ -257,7 +284,7 @@ export async function updateSkill(
   skillId: string,
   updates: { skill_label?: string; skill_prompt?: string; sort_order?: number; is_active?: boolean }
 ): Promise<MascotSkill> {
-  console.log('[Admin] Updating skill:', skillId, 'with updates:', updates);
+  logger.debug('[Admin] Updating skill:', skillId, 'with updates:', updates);
   
   const { data, error } = await supabase
     .from('mascot_skills')
@@ -270,11 +297,11 @@ export async function updateSkill(
     .single();
 
   if (error) {
-    console.error('[Admin] Error updating skill:', error);
+    logger.error('[Admin] Error updating skill:', error);
     throw new Error(error.message || 'Failed to update skill');
   }
   
-  console.log('[Admin] Skill updated successfully:', data);
+  logger.debug('[Admin] Skill updated successfully:', data);
   return data;
 }
 
@@ -314,26 +341,156 @@ export async function updateMascot(
   return data;
 }
 
-// Admin CRUD operations for instructions
-export async function upsertInstructions(
+// Admin CRUD operations for personality
+// When admin sets personality, both personality and default_personality are set
+export async function upsertPersonality(
   mascotId: string,
-  instructions: string
-): Promise<MascotInstructions> {
+  personality: string
+): Promise<MascotPersonality> {
   if (!mascotId) {
     throw new Error('Invalid mascot ID');
   }
 
-  const { data, error } = await supabase
-    .from('mascot_instructions')
-    .upsert(
-      {
-        mascot_id: mascotId,
-        instructions,
-      },
-      {
+  // Check if default_personality column exists by trying to query it
+  // If it doesn't exist, we'll only set personality
+  const upsertData: any = {
+    mascot_id: mascotId,
+    personality,
+  };
+
+  // Try to include default_personality, but don't fail if column doesn't exist
+  // We'll check by attempting the upsert and handling the error
+  try {
+    const upsertWithDefault: any = {
+      ...upsertData,
+      default_personality: personality, // Admin sets both when creating/updating
+    };
+
+    const { data, error } = await ((supabase
+      .from('mascot_personality') as any)
+      .upsert(upsertWithDefault, {
         onConflict: 'mascot_id',
+      })
+      .select()
+      .single());
+
+    if (error) {
+      // If error is about default_personality column not existing, try without it
+      if (error.message?.includes('default_personality') || error.code === 'PGRST204') {
+        logger.warn('[Admin] default_personality column not found, upserting without it');
+        const { data: dataWithoutDefault, error: errorWithoutDefault } = await ((supabase
+          .from('mascot_personality') as any)
+          .upsert(upsertData, {
+            onConflict: 'mascot_id',
+          })
+          .select()
+          .single());
+
+        if (errorWithoutDefault) {
+          logger.error('[Admin] Error upserting personality:', errorWithoutDefault);
+          throw new Error(errorWithoutDefault.message || 'Failed to save personality');
+        }
+        
+        if (!dataWithoutDefault) {
+          throw new Error('No data returned from upsert');
+        }
+        
+        return dataWithoutDefault;
       }
-    )
+      
+      logger.error('[Admin] Error upserting personality:', error);
+      throw new Error(error.message || 'Failed to save personality');
+    }
+    
+    if (!data) {
+      throw new Error('No data returned from upsert');
+    }
+    
+    return data;
+  } catch (err: any) {
+    // Fallback: try without default_personality
+    if (err.message?.includes('default_personality') || err.code === 'PGRST204') {
+      logger.warn('[Admin] Retrying upsert without default_personality column');
+      const { data: fallbackData, error: fallbackError } = await ((supabase
+        .from('mascot_personality') as any)
+        .upsert(upsertData, {
+          onConflict: 'mascot_id',
+        })
+        .select()
+        .single());
+
+      if (fallbackError) {
+        logger.error('[Admin] Error upserting personality (fallback):', fallbackError);
+        throw new Error(fallbackError.message || 'Failed to save personality');
+      }
+      
+      if (!fallbackData) {
+        throw new Error('No data returned from upsert');
+      }
+      
+      return fallbackData;
+    }
+    
+    throw err;
+  }
+}
+
+// Update personality (for all users - doesn't change default_personality)
+export async function updatePersonality(
+  mascotId: string,
+  personality: string
+): Promise<MascotPersonality> {
+  if (!mascotId) {
+    throw new Error('Invalid mascot ID');
+  }
+
+  const updateData: any = { personality };
+
+  const { data, error } = await ((supabase
+    .from('mascot_personality') as any)
+    .update(updateData)
+    .eq('mascot_id', mascotId)
+    .select()
+    .single());
+
+  if (error) {
+    logger.error('[Admin] Error updating personality:', error);
+    throw new Error(error.message || 'Failed to update personality');
+  }
+  
+  if (!data) {
+    throw new Error('No data returned from update');
+  }
+  
+  return data;
+}
+
+// Reset personality to default (for all users)
+export async function resetPersonalityToDefault(
+  mascotId: string
+): Promise<MascotPersonality> {
+  if (!mascotId) {
+    throw new Error('Invalid mascot ID');
+  }
+
+  // Get the current personality to find default_personality
+  const { data: current, error: fetchError } = await supabase
+    .from('mascot_personality')
+    .select('default_personality')
+    .eq('mascot_id', mascotId)
+    .single();
+
+  if (fetchError) {
+    throw new Error(fetchError.message);
+  }
+
+  // Use default_personality if available, otherwise keep current personality
+  const defaultPersonality = current?.default_personality || current?.personality || '';
+
+  const { data, error } = await supabase
+    .from('mascot_personality')
+    .update({ personality: defaultPersonality })
+    .eq('mascot_id', mascotId)
     .select()
     .single();
 
@@ -341,24 +498,29 @@ export async function upsertInstructions(
   return data;
 }
 
-// Get combined prompt for chat (instructions + skill prompt)
+// Legacy aliases for backward compatibility (deprecated)
+export const upsertInstructions = upsertPersonality;
+export const updateInstructions = updatePersonality;
+export const resetInstructionsToDefault = resetPersonalityToDefault;
+
+// Get combined prompt for chat (personality + skill prompt)
 export async function getCombinedPrompt(
   mascotId: string,
   skillId: string
-): Promise<{ instructions: string; skillPrompt: string; combined: string }> {
+): Promise<{ personality: string; skillPrompt: string; combined: string }> {
   if (!mascotId) {
     throw new Error('Invalid mascot ID');
   }
 
-  // Fetch instructions
-  const { data: instructionsData, error: instructionsError } = await supabase
-    .from('mascot_instructions')
-    .select('instructions')
+  // Fetch personality
+  const { data: personalityData, error: personalityError } = await supabase
+    .from('mascot_personality')
+    .select('personality')
     .eq('mascot_id', mascotId)
     .single();
 
-  if (instructionsError && instructionsError.code !== 'PGRST116') {
-    throw new Error(instructionsError.message);
+  if (personalityError && personalityError.code !== 'PGRST116') {
+    throw new Error(personalityError.message);
   }
 
   // Fetch skill (using RPC to get full prompt for admins)
@@ -373,15 +535,15 @@ export async function getCombinedPrompt(
 
   // For non-admins, skill_prompt will be null - use preview or throw
   const skillPrompt = skill.skill_prompt || skill.skill_prompt_preview;
-  const instructions = instructionsData?.instructions || '';
+  const personality = personalityData?.personality || '';
 
-  // Combine: instructions first, then skill prompt
-  const combined = instructions 
-    ? `${instructions}\n\n---\n\n${skillPrompt}`
+  // Combine: personality first, then skill prompt
+  const combined = personality 
+    ? `${personality}\n\n---\n\n${skillPrompt}`
     : skillPrompt;
 
   return {
-    instructions,
+    personality,
     skillPrompt,
     combined,
   };
