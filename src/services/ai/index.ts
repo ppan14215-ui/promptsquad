@@ -1,10 +1,10 @@
 export { secureChatStream, secureChat } from './secure-chat';
 export type { ChatMessage, SecureChatResponse } from './secure-chat';
 
-// Re-export ChatMessage for compatibility
-export type { ChatMessage as ChatMessageType } from './secure-chat';
+// Re-export for compatibility
+export type { ChatMessage as SecureChatMessage } from './secure-chat';
 
-// Placeholder types for compatibility (if needed by UI)
+// Types for compatibility
 export type AI_CONFIG = {
   provider?: 'openai' | 'gemini';
   deepThinking?: boolean;
