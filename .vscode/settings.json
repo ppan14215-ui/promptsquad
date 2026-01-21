@@ -1,0 +1,17 @@
+{
+  "typescript.preferences.includePackageJsonAutoImports": "off",
+  "typescript.tsserver.experimental.enableProjectDiagnostics": false,
+  "typescript.tsserver.watchOptions": {
+    "excludeDirectories": ["**/node_modules", "**/.expo", "**/.expo-shared"]
+  },
+  "files.exclude": {
+    "**/node_modules": true,
+    "**/.expo": true,
+    "**/.expo-shared": true
+  },
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/.expo": true,
+    "**/.expo-shared": true
+  }
+}

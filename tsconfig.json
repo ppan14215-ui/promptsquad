@@ -6,10 +6,19 @@
       "@/*": [
         "./src/*"
       ]
-    }
+    },
+    "skipLibCheck": true
   },
   "include": [
     "**/*.ts",
     "**/*.tsx"
+  ],
+  "exclude": [
+    "node_modules",
+    ".expo",
+    ".expo-shared",
+    "dist",
+    "**/providers/openai.ts",
+    "**/providers/gemini.ts"
   ]
 }
