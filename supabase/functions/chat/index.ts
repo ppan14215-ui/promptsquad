@@ -58,8 +58,8 @@ serve(async (req) => {
       );
     }
 
-    // Extract bearer token
-    const token = authHeader.replace('Bearer', '').trim();
+    // Extract bearer token (handle "Bearer " prefix properly)
+    const token = authHeader.replace(/^Bearer\s+/i, '').trim();
     if (!token) {
       console.error('[Edge Function] Authorization header present but no token');
       return new Response(
@@ -139,16 +139,32 @@ serve(async (req) => {
       );
     }
 
-    // Fetch instructions (system behavior guidelines)
-    const { data: instructionsData, error: instructionsError } = await supabaseAdmin
-      .from('mascot_instructions')
-      .select('instructions')
+    // Fetch personality (system behavior guidelines)
+    // Try new table first, fallback to old table for compatibility
+    let personality = '';
+    
+    // Try mascot_personality table first (new naming)
+    const { data: personalityData } = await supabaseAdmin
+      .from('mascot_personality')
+      .select('personality')
       .eq('mascot_id', mascotIdString)
       .maybeSingle();
     
-    if (instructionsError) {
-      console.error('[Edge Function] Error fetching instructions:', instructionsError);
-      // Continue without instructions if there's an error
+    if (personalityData?.personality) {
+      personality = personalityData.personality;
+    } else {
+      // Fallback to old mascot_instructions table
+      const { data: instructionsData, error: instructionsError } = await supabaseAdmin
+        .from('mascot_instructions')
+        .select('instructions')
+        .eq('mascot_id', mascotIdString)
+        .maybeSingle();
+      
+      if (instructionsError) {
+        console.error('[Edge Function] Error fetching instructions/personality:', instructionsError);
+      } else if (instructionsData?.instructions) {
+        personality = instructionsData.instructions;
+      }
     }
 
     // Fetch skill prompt if skillId is provided
@@ -182,17 +198,17 @@ serve(async (req) => {
       }
     }
 
-    // Construct system prompt from mascot info and instructions
-    // Mascot instructions = personality/behavior (ALWAYS applied)
+    // Construct system prompt from mascot info and personality
+    // Mascot personality = behavior guidelines (ALWAYS applied)
     // Skill prompt = specific approach for this chat (ADDITIONAL guidance when skill is selected)
     let combinedSystemPrompt = `You are ${mascot.name}, ${mascot.subtitle || 'a helpful AI assistant'}.`;
     
-    // MASCOT INSTRUCTIONS (Personality/Behavior - Always True)
+    // MASCOT PERSONALITY (Personality/Behavior - Always True)
     // These define the mascot's personality and should be followed in ALL conversations
-    if (instructionsData?.instructions) {
-      combinedSystemPrompt = `${combinedSystemPrompt}\n\n---\n\nYOUR PERSONALITY AND BEHAVIOR (Always apply these in every conversation):\n\n${instructionsData.instructions}`;
+    if (personality) {
+      combinedSystemPrompt = `${combinedSystemPrompt}\n\n---\n\nYOUR PERSONALITY AND BEHAVIOR (Always apply these in every conversation):\n\n${personality}`;
     } else {
-      // Default instructions if none configured
+      // Default personality if none configured
       combinedSystemPrompt = `${combinedSystemPrompt}\n\n---\n\nYOUR PERSONALITY AND BEHAVIOR (Always apply these in every conversation):\n\nYou are friendly, helpful, and thorough. Always provide clear, actionable responses.`;
     }
     
