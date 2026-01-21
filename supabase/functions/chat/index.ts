@@ -47,20 +47,38 @@ serve(async (req: Request) => {
 
     // Extract token (handle "Bearer " prefix with potential whitespace)
     const token = authHeader.replace(/^Bearer\s+/i, '').trim();
+    
+    console.log('[Edge Function] Extracted token (first 20 chars):', token.substring(0, 20) + '...');
+    console.log('[Edge Function] Token length:', token.length);
 
     // Create admin client and validate token
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
+    console.log('[Edge Function] Created admin client, validating token...');
+    
     const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
+    
+    console.log('[Edge Function] Auth result - User:', user?.id || 'none');
+    console.log('[Edge Function] Auth result - Error:', authError?.message || 'none');
+    console.log('[Edge Function] Auth result - Error code:', authError?.code || 'none');
 
     if (authError || !user) {
+      console.error('[Edge Function] Authentication failed:', {
+        error: authError?.message,
+        code: authError?.code,
+        hasToken: !!token,
+        tokenLength: token?.length
+      });
       return new Response(
         JSON.stringify({ 
           error: 'Authentication failed',
-          details: authError?.message || 'Invalid token'
+          details: authError?.message || 'Invalid token',
+          code: authError?.code
         }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
+    
+    console.log('[Edge Function] User authenticated:', user.id);
 
     // Parse request body
     const body: ChatRequest = await req.json();

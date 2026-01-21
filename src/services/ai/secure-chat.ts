@@ -23,12 +23,24 @@ export async function secureChatStream(
   provider?: 'openai' | 'gemini',
   deepThinking?: boolean
 ): Promise<SecureChatResponse> {
-  // Get session
+  // Get fresh session (getUser refreshes token if needed)
+  const { data: { user: currentUser }, error: userError } = await supabase.auth.getUser();
+  
+  if (userError || !currentUser) {
+    console.error('[SecureChat] Auth error:', userError);
+    throw new Error('Not authenticated. Please sign in.');
+  }
+  
+  // Get session with fresh token
   const { data: { session }, error: sessionError } = await supabase.auth.getSession();
   
   if (sessionError || !session?.access_token) {
-    throw new Error('Not authenticated. Please sign in.');
+    console.error('[SecureChat] Session error:', sessionError);
+    console.error('[SecureChat] Has session:', !!session);
+    throw new Error('Failed to get session. Please try signing in again.');
   }
+  
+  console.log('[SecureChat] Using access token (first 20 chars):', session.access_token.substring(0, 20) + '...');
 
   const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
