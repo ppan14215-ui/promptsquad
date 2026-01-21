@@ -14,7 +14,8 @@ import { useTheme, fontFamilies, shadowToCSS, shadowToNative } from '@/design-sy
 import { BigPrimaryButton } from '@/components/ui/BigPrimaryButton';
 import { BigSecondaryButton } from '@/components/ui/BigSecondaryButton';
 import { Icon } from '@/components/ui/Icon';
-import { MascotInstructions, upsertInstructions } from '@/services/admin';
+import { upsertInstructions } from '@/services/admin';
+import type { MascotPersonality } from '@/services/admin';
 
 type InstructionsEditorProps = {
   visible: boolean;
@@ -22,7 +23,7 @@ type InstructionsEditorProps = {
   onSave: () => void;
   mascotId: string;
   mascotName?: string;
-  instructions?: MascotInstructions | null;
+  instructions?: MascotPersonality | null;
 };
 
 export function InstructionsEditor({
@@ -84,7 +85,7 @@ export function InstructionsEditor({
           <Text
             style={[
               styles.headerTitle,
-              { fontFamily: fontFamilies.semibold, color: colors.text },
+              { fontFamily: fontFamilies.figtree.semiBold, color: colors.text },
             ]}
           >
             Mascot Instructions
@@ -93,7 +94,7 @@ export function InstructionsEditor({
             <Text
               style={[
                 styles.headerSubtitle,
-                { fontFamily: fontFamilies.regular, color: colors.textSecondary },
+                { fontFamily: fontFamilies.figtree.regular, color: colors.textMuted },
               ]}
             >
               for {mascotName}
@@ -112,7 +113,7 @@ export function InstructionsEditor({
             <Text
               style={[
                 styles.infoText,
-                { fontFamily: fontFamilies.regular, color: colors.textSecondary },
+                { fontFamily: fontFamilies.figtree.regular, color: colors.textMuted },
               ]}
             >
               Instructions define the mascot's personality and behavior. They are combined with skill prompts to create the final system prompt for the AI.
@@ -124,7 +125,7 @@ export function InstructionsEditor({
             <Text
               style={[
                 styles.label,
-                { fontFamily: fontFamilies.medium, color: colors.text },
+                { fontFamily: fontFamilies.figtree.medium, color: colors.text },
               ]}
             >
               Instructions *
@@ -132,7 +133,7 @@ export function InstructionsEditor({
             <Text
               style={[
                 styles.hint,
-                { fontFamily: fontFamilies.regular, color: colors.textSecondary },
+                { fontFamily: fontFamilies.figtree.regular, color: colors.textMuted },
               ]}
             >
               Define personality traits, communication style, and general behaviors.
@@ -141,7 +142,7 @@ export function InstructionsEditor({
               style={[
                 styles.textArea,
                 {
-                  fontFamily: fontFamilies.regular,
+                  fontFamily: fontFamilies.figtree.regular,
                   color: colors.text,
                   borderColor: colors.outline,
                   backgroundColor: colors.surface,
@@ -165,7 +166,7 @@ export function InstructionsEditor({
             <Text
               style={[
                 styles.exampleTitle,
-                { fontFamily: fontFamilies.medium, color: colors.text },
+                { fontFamily: fontFamilies.figtree.medium, color: colors.text },
               ]}
             >
               Example Instructions
@@ -173,7 +174,7 @@ export function InstructionsEditor({
             <Text
               style={[
                 styles.exampleText,
-                { fontFamily: fontFamilies.regular, color: colors.textSecondary },
+                { fontFamily: fontFamilies.figtree.regular, color: colors.textMuted },
               ]}
             >
               {`• Be friendly and approachable

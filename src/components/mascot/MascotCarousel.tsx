@@ -4,7 +4,7 @@ import { useTheme, fontFamilies } from '@/design-system';
 import { Icon } from '@/components';
 import type { MascotColorVariant } from './MascotCard';
 
-type MascotCarouselMascot = {
+export type MascotCarouselMascot = {
   id: string;
   name: string;
   subtitle: string;
