@@ -133,7 +133,7 @@ export default function SkillsScreen() {
         <Text
           style={[
             styles.loadingText,
-            { fontFamily: fontFamilies.regular, color: colors.textSecondary },
+            { fontFamily: fontFamilies.figtree.regular, color: colors.textMuted },
           ]}
         >
           Loading...
@@ -147,11 +147,11 @@ export default function SkillsScreen() {
     return (
       <View style={[styles.centerContainer, { backgroundColor: colors.background }]}>
         <View style={[styles.restrictedBox, { backgroundColor: colors.surface, borderColor: colors.outline }]}>
-          <Icon name="lock" size={48} color={colors.textSecondary} />
+          <Icon name="lock" size={48} color={colors.textMuted} />
           <Text
             style={[
               styles.restrictedTitle,
-              { fontFamily: fontFamilies.semibold, color: colors.text },
+              { fontFamily: fontFamilies.figtree.semiBold, color: colors.text },
             ]}
           >
             Admin Access Required
@@ -159,7 +159,7 @@ export default function SkillsScreen() {
           <Text
             style={[
               styles.restrictedText,
-              { fontFamily: fontFamilies.regular, color: colors.textSecondary },
+              { fontFamily: fontFamilies.figtree.regular, color: colors.textMuted },
             ]}
           >
             You need admin privileges to manage skills and personality.
@@ -184,7 +184,7 @@ export default function SkillsScreen() {
         <Text
           style={[
             styles.headerSubtitle,
-            { fontFamily: fontFamilies.regular, color: colors.textSecondary },
+            { fontFamily: fontFamilies.figtree.regular, color: colors.textMuted },
           ]}
         >
           Manage mascot skills and personality
@@ -196,7 +196,7 @@ export default function SkillsScreen() {
         <Text
           style={[
             styles.sectionLabel,
-            { fontFamily: fontFamilies.medium, color: colors.text },
+              { fontFamily: fontFamilies.figtree.medium, color: colors.text },
           ]}
         >
           Select Mascot
@@ -243,7 +243,7 @@ export default function SkillsScreen() {
                 <Text
                   style={[
                     styles.sectionTitle,
-                    { fontFamily: fontFamilies.semibold, color: colors.text },
+                    { fontFamily: fontFamilies.figtree.semiBold, color: colors.text },
                   ]}
                 >
                   Mascot Details
@@ -272,7 +272,7 @@ export default function SkillsScreen() {
                 <Text
                   style={[
                     styles.mascotName,
-                    { fontFamily: fontFamilies.semibold, color: colors.text },
+                    { fontFamily: fontFamilies.figtree.semiBold, color: colors.text },
                   ]}
                 >
                   {selectedMascot.name}
@@ -306,7 +306,7 @@ export default function SkillsScreen() {
                 <Text
                   style={[
                     styles.sectionTitle,
-                    { fontFamily: fontFamilies.semibold, color: colors.text },
+                    { fontFamily: fontFamilies.figtree.semiBold, color: colors.text },
                   ]}
                 >
                   Mascot Personality
@@ -362,7 +362,7 @@ export default function SkillsScreen() {
                 <Text
                   style={[
                     styles.sectionTitle,
-                    { fontFamily: fontFamilies.semibold, color: colors.text },
+                    { fontFamily: fontFamilies.figtree.semiBold, color: colors.text },
                   ]}
                 >
                   Skills ({skills.length})

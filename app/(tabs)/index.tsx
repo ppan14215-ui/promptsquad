@@ -579,16 +579,19 @@ export default function HomeScreen() {
     setMessage('');
   };
 
-  const handleMascotCardPress = async (mascot: OwnedMascot, actualIndex: number, isSelected: boolean) => {
+  const handleMascotCardPress = async (mascot: any, actualIndex: number, isSelected: boolean) => {
+    // Find the full OwnedMascot from availableMascots
+    const fullMascot = availableMascots.find(m => m.id === mascot.id);
+    if (!fullMascot) return;
     if (isSelected) {
       // If already selected, open details modal
-      setSelectedMascotDetails(mascot);
+      setSelectedMascotDetails(fullMascot);
     } else {
       // If not selected, select this mascot
       setSelectedIndex(actualIndex);
       // Save to storage
       try {
-        await AsyncStorage.setItem(LAST_MASCOT_KEY, mascot.id);
+        await AsyncStorage.setItem(LAST_MASCOT_KEY, fullMascot.id);
       } catch (error) {
         console.error('Error saving last mascot:', error);
       }
@@ -647,7 +650,13 @@ export default function HomeScreen() {
         {/* Bottom Section: Carousel + Input (Pinned to Bottom) */}
         <View style={styles.bottomSection}>
           <MascotCarousel
-            mascots={availableMascots}
+            mascots={availableMascots.map(m => ({
+              id: m.id,
+              name: m.name,
+              subtitle: m.subtitle,
+              image: m.image,
+              color: m.color as any,
+            }))}
             selectedIndex={selectedIndex}
             onMascotPress={handleMascotCardPress}
             onPrev={handlePrevMascot}
@@ -705,9 +714,7 @@ export default function HomeScreen() {
                 models={selectedMascotDetails.models}
                 skills={selectedMascotDetails.skills}
                 variant="available"
-                isFavorite={false}
                 onClose={() => setSelectedMascotDetails(null)}
-                onFavorite={() => console.log('Favorite pressed')}
                 onStartChat={() => {
                   setSelectedMascotDetails(null);
                   router.push({

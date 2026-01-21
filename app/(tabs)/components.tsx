@@ -18,28 +18,28 @@ const SAMPLE_CAROUSEL_MASCOTS = [
     name: 'Analyst Bear',
     subtitle: 'Great at research',
     image: require('../../assets/mascots/Bear.png'),
-    color: 'yellow',
+    color: 'yellow' as const,
   },
   {
     id: '2',
     name: 'Writer Fox',
     subtitle: 'Best at writing',
     image: require('../../assets/mascots/fox.png'),
-    color: 'orange',
+    color: 'orange' as const,
   },
   {
     id: '3',
     name: 'UX Panda',
     subtitle: 'Principal UX skills',
     image: require('../../assets/mascots/panda.png'),
-    color: 'green',
+    color: 'green' as const,
   },
   {
     id: '4',
     name: 'Advice Zebra',
     subtitle: 'Here to support',
     image: require('../../assets/mascots/zebra.png'),
-    color: 'pink',
+    color: 'pink' as const,
   },
   {
     id: '5',
@@ -927,7 +927,6 @@ export default function ComponentsScreen() {
                 skills={SAMPLE_MASCOT_DETAILS.skills}
                 variant={variant}
                 onClose={() => console.log(`${label} close pressed`)}
-                onFavorite={() => console.log(`${label} favorite pressed`)}
                 onStartChat={() => console.log(`${label} start chat pressed`)}
                 onTryOut={() => console.log(`${label} try out pressed`)}
                 onUnlock={() => console.log(`${label} unlock pressed`)}

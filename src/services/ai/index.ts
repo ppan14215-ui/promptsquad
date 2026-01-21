@@ -1,8 +1,11 @@
 export { secureChatStream, secureChat } from './secure-chat';
 export type { ChatMessage, SecureChatResponse } from './secure-chat';
 
-// Re-export for compatibility
-export type { ChatMessage as SecureChatMessage } from './secure-chat';
+// SecureChatMessage excludes 'system' role (for Edge Function)
+export type SecureChatMessage = {
+  role: 'user' | 'assistant';
+  content: string;
+};
 
 // Types for compatibility
 export type AI_CONFIG = {

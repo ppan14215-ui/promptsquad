@@ -1,7 +1,7 @@
 import { supabase } from '@/services/supabase';
 
 export type ChatMessage = {
-  role: 'user' | 'assistant';
+  role: 'user' | 'assistant' | 'system';
   content: string;
 };
 
