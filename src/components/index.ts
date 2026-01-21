@@ -26,5 +26,5 @@ export * from './mascot/MascotCarousel';
 
 // Admin Components
 export * from './admin/SkillEditor';
-export * from './admin/InstructionsEditor';
+export * from './admin/PersonalityEditor';
 export * from './admin/MascotEditor';

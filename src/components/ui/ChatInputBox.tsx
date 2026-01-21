@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useImperativeHandle, forwardRef } from 'react';
 import {
   View,
   TextInput,
@@ -10,6 +10,10 @@ import {
 import { useTheme, fontFamilies, shadowToCSS, shadowToNative, textStyles } from '@/design-system';
 import { Icon } from './Icon';
 import { LLM_OPTIONS, LLMPreference } from '@/services/preferences';
+
+export type ChatInputBoxRef = {
+  focus: () => void;
+};
 
 type ChatInputBoxProps = {
   value: string;
@@ -36,7 +40,7 @@ type ChatInputBoxProps = {
   maxWidth?: number;
 };
 
-export function ChatInputBox({
+export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
   value,
   onChangeText,
   onSend,
@@ -54,13 +58,23 @@ export function ChatInputBox({
   isRecording = false,
   onVoicePress,
   maxWidth = 720,
-}: ChatInputBoxProps) {
+}, ref) => {
   const { colors } = useTheme();
   const [showLLMDropdown, setShowLLMDropdown] = useState(false);
   const [showWebSearchTooltip, setShowWebSearchTooltip] = useState(false);
   const [showDeepThinkingTooltip, setShowDeepThinkingTooltip] = useState(false);
   const [inputHeight, setInputHeight] = useState(48); // Start with min height
   const inputRef = useRef<TextInput>(null);
+
+  // Expose focus method to parent component
+  useImperativeHandle(ref, () => ({
+    focus: () => {
+      // Use setTimeout to ensure focus happens after any DOM updates
+      setTimeout(() => {
+        inputRef.current?.focus();
+      }, 0);
+    },
+  }));
 
   const isSendDisabled = disabled || !value.trim();
 
@@ -119,7 +133,6 @@ export function ChatInputBox({
         value={value}
         onChangeText={onChangeText}
         multiline
-        maxLength={2000}
         textAlignVertical="top"
         selectionColor={colors.primary}
         onKeyPress={handleKeyPress}
@@ -282,7 +295,7 @@ export function ChatInputBox({
       </View>
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   container: {

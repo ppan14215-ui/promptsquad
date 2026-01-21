@@ -14,14 +14,14 @@ import {
   BigPrimaryButton,
   SkillPreview,
   SkillEditor,
-  InstructionsEditor,
+  PersonalityEditor,
   MascotEditor,
 } from '@/components';
 import {
   useIsAdmin,
   useMascots,
   useMascotSkills,
-  useMascotInstructions,
+  useMascotPersonality,
   MascotSkill,
   updateMascot,
 } from '@/services/admin';
@@ -35,11 +35,11 @@ export default function SkillsScreen() {
 
   const [selectedMascotId, setSelectedMascotId] = useState<string | null>(null);
   const [skillEditorVisible, setSkillEditorVisible] = useState(false);
-  const [instructionsEditorVisible, setInstructionsEditorVisible] = useState(false);
+  const [personalityEditorVisible, setPersonalityEditorVisible] = useState(false);
   const [mascotEditorVisible, setMascotEditorVisible] = useState(false);
   const [editingSkill, setEditingSkill] = useState<MascotSkill | null>(null);
 
-  // Get skills and instructions for selected mascot
+  // Get skills and personality for selected mascot
   const {
     skills,
     isLoading: isSkillsLoading,
@@ -47,10 +47,10 @@ export default function SkillsScreen() {
     error: skillsError,
   } = useMascotSkills(selectedMascotId);
   const {
-    instructions,
-    isLoading: isInstructionsLoading,
-    refetch: refetchInstructions,
-  } = useMascotInstructions(selectedMascotId);
+    personality: mascotPersonality,
+    isLoading: isPersonalityLoading,
+    refetch: refetchPersonality,
+  } = useMascotPersonality(selectedMascotId);
 
   // Log skills changes for debugging
   React.useEffect(() => {
@@ -109,8 +109,8 @@ export default function SkillsScreen() {
     }
   };
 
-  const handleInstructionsSaved = () => {
-    refetchInstructions();
+  const handlePersonalitySaved = () => {
+    refetchPersonality();
   };
 
   const handleMascotSaved = async (name: string, subtitle: string) => {
@@ -162,7 +162,7 @@ export default function SkillsScreen() {
               { fontFamily: fontFamilies.regular, color: colors.textSecondary },
             ]}
           >
-            You need admin privileges to manage skills and instructions.
+            You need admin privileges to manage skills and personality.
           </Text>
         </View>
       </View>
@@ -187,7 +187,7 @@ export default function SkillsScreen() {
             { fontFamily: fontFamilies.regular, color: colors.textSecondary },
           ]}
         >
-          Manage mascot skills and instructions
+          Manage mascot skills and personality
         </Text>
       </View>
 
@@ -300,7 +300,7 @@ export default function SkillsScreen() {
               </View>
             </View>
 
-            {/* Instructions Section */}
+            {/* Personality Section */}
             <View style={styles.section}>
               <View style={styles.sectionHeader}>
                 <Text
@@ -309,10 +309,10 @@ export default function SkillsScreen() {
                     { fontFamily: fontFamilies.semibold, color: colors.text },
                   ]}
                 >
-                  Mascot Instructions
+                  Mascot Personality
                 </Text>
                 <Pressable
-                  onPress={() => setInstructionsEditorVisible(true)}
+                  onPress={() => setPersonalityEditorVisible(true)}
                   style={[styles.editButton, { backgroundColor: colors.surface }]}
                 >
                   <Icon name="edit" size={18} color={colors.primary} />
@@ -332,16 +332,16 @@ export default function SkillsScreen() {
                   { backgroundColor: colors.surface, borderColor: colors.outline },
                 ]}
               >
-                {isInstructionsLoading ? (
+                {isPersonalityLoading ? (
                   <ActivityIndicator size="small" color={colors.primary} />
-                ) : instructions ? (
+                ) : mascotPersonality ? (
                   <Text
                     style={[
                       styles.instructionsText,
                       { fontFamily: fontFamilies.regular, color: colors.text },
                     ]}
                   >
-                    {instructions.instructions}
+                    {mascotPersonality.personality}
                   </Text>
                 ) : (
                   <Text
@@ -350,7 +350,7 @@ export default function SkillsScreen() {
                       { fontFamily: fontFamilies.regular, color: colors.textMuted },
                     ]}
                   >
-                    No instructions set. Click Edit to add instructions.
+                    No personality set. Click Edit to add personality.
                   </Text>
                 )}
               </View>
@@ -434,14 +434,14 @@ export default function SkillsScreen() {
         skill={editingSkill}
       />
 
-      {/* Instructions Editor Modal */}
-      <InstructionsEditor
-        visible={instructionsEditorVisible}
-        onClose={() => setInstructionsEditorVisible(false)}
-        onSave={handleInstructionsSaved}
+      {/* Personality Editor Modal */}
+      <PersonalityEditor
+        visible={personalityEditorVisible}
+        onClose={() => setPersonalityEditorVisible(false)}
+        onSave={handlePersonalitySaved}
         mascotId={selectedMascotId || ''}
         mascotName={selectedMascot?.name}
-        instructions={instructions}
+        personality={mascotPersonality}
       />
 
       {/* Mascot Editor Modal */}

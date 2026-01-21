@@ -18,6 +18,8 @@ export type MascotCardProps = {
   grayscaleImageSource?: ImageSourcePropType; // Grayscale version of the image
   onPress?: () => void;
   isLocked?: boolean;
+  isPro?: boolean; // True if mascot is exclusively for pro subscription
+  isUnlocked?: boolean; // True if mascot is unlocked for the user (affects badge color)
   /** Force a specific state for preview purposes */
   forceState?: MascotCardState;
   /** Color variant for hover border (defaults to yellow) */
@@ -34,6 +36,8 @@ export function MascotCard({
   grayscaleImageSource,
   onPress,
   isLocked = false,
+  isPro = false,
+  isUnlocked = false,
   forceState,
   colorVariant = 'yellow',
   forceGrayscale = false,
@@ -178,9 +182,21 @@ export function MascotCard({
           })}
         >
           <MiniButton
-            label="Unlock for 99ct"
+            label={isPro ? "Unlock for €1.99" : "Unlock for 99ct"}
             onPress={onPress}
           />
+        </View>
+      )}
+
+      {/* Pro Badge - Only show for PRO mascots, primary/purple color always */}
+      {isPro && (
+        <View style={[
+          styles.proBadge,
+          {
+            backgroundColor: colors.primary,
+          }
+        ]}>
+          <Text style={[styles.proBadgeText, { color: colors.buttonText }]}>PRO</Text>
         </View>
       )}
     </Pressable>
@@ -246,6 +262,20 @@ const styles = StyleSheet.create({
     bottom: 16, // 16px padding from bottom
     left: (CARD_SIZE - 97) / 2, // Center the button (button width ~97px from Figma)
     zIndex: 11,
+  },
+  proBadge: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+    zIndex: 10,
+  },
+  proBadgeText: {
+    fontSize: 8,
+    fontWeight: '700',
+    letterSpacing: 0.3,
   },
 });
 

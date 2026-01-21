@@ -1,4 +1,5 @@
 import { View, Text, StyleSheet, ScrollView, Pressable, Platform } from 'react-native';
+import { useRouter } from 'expo-router';
 import { useTheme, fontFamilies, textStyles } from '@/design-system';
 import { useI18n, LANGUAGES, Language } from '@/i18n';
 import { usePreferences, LLM_OPTIONS, LLMPreference } from '@/services/preferences';
@@ -240,6 +241,7 @@ function LLMOption({ code, name, description, isSelected, onPress }: LLMOptionPr
 }
 
 export default function ProfileScreen() {
+  const router = useRouter();
   const { colors, mode, setMode } = useTheme();
   const { language, setLanguage, t } = useI18n();
   const { preferredLLM, setPreferredLLM } = usePreferences();
@@ -427,11 +429,17 @@ export default function ProfileScreen() {
         >
           {t.profile.account}
         </Text>
+        <SettingRow
+          label="Choose Mascots"
+          onPress={() => router.push('/(onboarding)/select-mascots')}
+          showCheckmark={false}
+        />
         <Pressable
           style={[
             styles.signOutButton,
             {
               borderColor: colors.outline,
+              marginTop: 8,
             },
           ]}
           onPress={signOut}

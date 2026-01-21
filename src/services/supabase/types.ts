@@ -26,9 +26,11 @@ export interface Database {
           ai_provider: string;
           ai_model: string;
           is_free: boolean;
+          is_pro: boolean | null;
           price_cents: number;
           sort_order: number;
           is_active: boolean;
+          question_prompt: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -45,9 +47,11 @@ export interface Database {
           ai_provider?: string;
           ai_model?: string;
           is_free?: boolean;
+          is_pro?: boolean | null;
           price_cents?: number;
           sort_order?: number;
           is_active?: boolean;
+          question_prompt?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -64,9 +68,11 @@ export interface Database {
           ai_provider?: string;
           ai_model?: string;
           is_free?: boolean;
+          is_pro?: boolean | null;
           price_cents?: number;
           sort_order?: number;
           is_active?: boolean;
+          question_prompt?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -107,6 +113,8 @@ export interface Database {
           language: string;
           is_subscribed: boolean;
           subscription_expires_at: string | null;
+          role: string | null;
+          onboarding_completed: boolean;
           created_at: string;
           updated_at: string;
         };
@@ -119,6 +127,8 @@ export interface Database {
           language?: string;
           is_subscribed?: boolean;
           subscription_expires_at?: string | null;
+          role?: string | null;
+          onboarding_completed?: boolean;
           created_at?: string;
           updated_at?: string;
         };
@@ -131,6 +141,8 @@ export interface Database {
           language?: string;
           is_subscribed?: boolean;
           subscription_expires_at?: string | null;
+          role?: string | null;
+          onboarding_completed?: boolean;
           created_at?: string;
           updated_at?: string;
         };
@@ -140,27 +152,21 @@ export interface Database {
           id: string;
           user_id: string;
           mascot_id: string;
-          is_favorite: boolean;
           unlocked_at: string;
-          purchase_type: string;
           created_at: string;
         };
         Insert: {
           id?: string;
           user_id: string;
           mascot_id: string;
-          is_favorite?: boolean;
           unlocked_at?: string;
-          purchase_type?: string;
           created_at?: string;
         };
         Update: {
           id?: string;
           user_id?: string;
           mascot_id?: string;
-          is_favorite?: boolean;
           unlocked_at?: string;
-          purchase_type?: string;
           created_at?: string;
         };
       };
@@ -171,6 +177,7 @@ export interface Database {
           mascot_id: string;
           title: string | null;
           is_archived: boolean;
+          is_pinned: boolean;
           created_at: string;
           updated_at: string;
         };
@@ -180,6 +187,7 @@ export interface Database {
           mascot_id: string;
           title?: string | null;
           is_archived?: boolean;
+          is_pinned?: boolean;
           created_at?: string;
           updated_at?: string;
         };
@@ -189,6 +197,7 @@ export interface Database {
           mascot_id?: string;
           title?: string | null;
           is_archived?: boolean;
+          is_pinned?: boolean;
           created_at?: string;
           updated_at?: string;
         };
@@ -222,9 +231,143 @@ export interface Database {
           created_at?: string;
         };
       };
+      mascot_likes: {
+        Row: {
+          id: string;
+          user_id: string;
+          mascot_id: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          mascot_id: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          mascot_id?: string;
+          created_at?: string;
+        };
+      };
+      mascot_personality: {
+        Row: {
+          id: string;
+          mascot_id: string;
+          personality: string;
+          default_personality: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          mascot_id: string;
+          personality: string;
+          default_personality?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          mascot_id?: string;
+          personality?: string;
+          default_personality?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
+      mascot_skills: {
+        Row: {
+          id: string;
+          mascot_id: string;
+          skill_label: string;
+          skill_prompt: string | null;
+          skill_prompt_preview: string;
+          is_full_access: boolean;
+          sort_order: number;
+          is_active: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          mascot_id: string;
+          skill_label: string;
+          skill_prompt?: string | null;
+          skill_prompt_preview: string;
+          is_full_access?: boolean;
+          sort_order?: number;
+          is_active?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          mascot_id?: string;
+          skill_label?: string;
+          skill_prompt?: string | null;
+          skill_prompt_preview?: string;
+          is_full_access?: boolean;
+          sort_order?: number;
+          is_active?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
+      trial_usage: {
+        Row: {
+          id: string;
+          user_id: string;
+          mascot_id: string;
+          conversation_count: number;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          mascot_id: string;
+          conversation_count?: number;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          mascot_id?: string;
+          conversation_count?: number;
+          updated_at?: string;
+        };
+      };
     };
     Views: {};
-    Functions: {};
+    Functions: {
+      increment_trial_usage: {
+        Args: {
+          p_mascot_id: string;
+        };
+        Returns: {
+          conversation_count: number;
+          limit_reached: boolean;
+        }[];
+      };
+      get_mascot_skills: {
+        Args: {
+          p_mascot_id: string;
+        };
+        Returns: {
+          id: string;
+          mascot_id: string;
+          skill_label: string;
+          skill_prompt: string | null;
+          skill_prompt_preview: string;
+          is_full_access: boolean;
+          sort_order: number;
+          is_active: boolean;
+          created_at: string;
+          updated_at: string;
+        }[];
+      };
+    };
     Enums: {};
   };
 }

@@ -3,7 +3,6 @@ import { Session, User } from '@supabase/supabase-js';
 import { Platform } from 'react-native';
 import * as Linking from 'expo-linking';
 import { supabase } from '@/services/supabase';
-import { validateTokenProject } from './token-validator';
 
 type AuthContextType = {
   session: Session | null;
@@ -23,29 +22,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Get initial session (this will parse OAuth callback URL hash/query params)
+    // Get initial session
     supabase.auth.getSession()
-      .then(async ({ data: { session }, error }) => {
+      .then(({ data: { session }, error }) => {
         if (error) {
           console.error('[AuthProvider] Error getting session:', error);
-          setSession(null);
-          setUser(null);
-          setIsLoading(false);
-          return;
         }
-
-        // Validate token is from correct project
-        if (session?.access_token) {
-          const isValid = await validateTokenProject();
-          if (!isValid) {
-            // Token invalid - already signed out by validator
-            setSession(null);
-            setUser(null);
-            setIsLoading(false);
-            return;
-          }
-        }
-
         setSession(session);
         setUser(session?.user ?? null);
         setIsLoading(false);
@@ -54,23 +36,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         console.error('[AuthProvider] Failed to get session:', error);
         setSession(null);
         setUser(null);
-        setIsLoading(false); // Always set loading to false, even on error
+        setIsLoading(false);
       });
 
     // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      // Validate token on sign in
-      if (session?.access_token && event === 'SIGNED_IN') {
-        const isValid = await validateTokenProject();
-        if (!isValid) {
-          // Token invalid - already signed out
-          setSession(null);
-          setUser(null);
-          setIsLoading(false);
-          return;
-        }
-      }
-      
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
       setUser(session?.user ?? null);
       setIsLoading(false);
@@ -100,15 +70,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signInWithGoogle = async () => {
-    // Get the correct redirect URL based on platform
     let redirectTo: string;
     
     if (Platform.OS === 'web') {
-      // For web, use the current origin + /callback
       redirectTo = `${window.location.origin}/callback`;
     } else {
-      // For native (iOS/Android), use expo-linking to get the deep link URL
-      // This will be something like: prompt-squad://callback
       const scheme = Linking.createURL('/callback');
       redirectTo = scheme;
     }
@@ -119,7 +85,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       provider: 'google',
       options: {
         redirectTo,
-        // Skip browser redirect on native - Expo handles it
         skipBrowserRedirect: Platform.OS !== 'web',
       },
     });
@@ -155,4 +120,3 @@ export function useAuth() {
   }
   return context;
 }
-

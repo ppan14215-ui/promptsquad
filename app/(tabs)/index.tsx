@@ -7,6 +7,7 @@ import { useTheme, fontFamilies } from '@/design-system';
 import { useAuth } from '@/services/auth';
 import { useMascotSkills, MascotSkill, useIsAdmin, useMascots, MascotBasic } from '@/services/admin';
 import { getMascotImageSource, getMascotGrayscaleImageSource } from '@/services/admin/mascot-images';
+import { useUnlockedMascots } from '@/services/mascot-access';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // Local mascot images
@@ -404,13 +405,16 @@ export default function HomeScreen() {
   
   // Fetch mascots from database
   const { mascots: dbMascots, isLoading: isLoadingMascots, error: mascotsError } = useMascots();
+  const { unlockedMascotIds, isLoading: isLoadingUnlocked } = useUnlockedMascots();
 
   // Convert database mascots to OwnedMascot type with fallback to hardcoded
+  // Filter to only show unlocked mascots (or all for admin)
   const availableMascots = useMemo(() => {
+    let convertedMascots: OwnedMascot[] = [];
+    
     if (dbMascots.length > 0) {
       // Convert database mascots to OwnedMascot type
-      return dbMascots
-        .filter((m) => isAdmin || m.is_free) // Filter: all for admin, only free for regular users
+      convertedMascots = dbMascots
         .map((m: MascotBasic) => {
           const imageSource = getMascotImageSource(m.image_url || null) || mascotImages.bear;
           // Find matching hardcoded mascot for fallback questionPrompt
@@ -427,10 +431,23 @@ export default function HomeScreen() {
             skills: hardcodedMascot?.skills || [], // Include hardcoded skills as fallback
           } as OwnedMascot;
         });
+    } else {
+      // Fallback to hardcoded data
+      convertedMascots = isAdmin ? ALL_MASCOTS : FREE_MASCOTS;
     }
-    // Fallback to hardcoded data
-    return isAdmin ? ALL_MASCOTS : FREE_MASCOTS;
-  }, [dbMascots, isAdmin]);
+    
+    // For admin, show all mascots
+    if (isAdmin) {
+      return convertedMascots;
+    }
+    
+    // For regular users, only show unlocked mascots
+    if (isLoadingUnlocked) {
+      return [];
+    }
+    
+    return convertedMascots.filter(m => unlockedMascotIds.includes(m.id));
+  }, [dbMascots, isAdmin, unlockedMascotIds, isLoadingUnlocked]);
 
   // Storage key for last selected mascot
   const LAST_MASCOT_KEY = 'lastSelectedMascotId';
@@ -480,11 +497,13 @@ export default function HomeScreen() {
 
   const selectedMascot = availableMascots[selectedIndex] || availableMascots[0];
 
-  // Fetch skills from database for the selected mascot
-  const { skills: dbSkills, isLoading: skillsLoading } = useMascotSkills(selectedMascot.id);
+  // Fetch skills from database for the selected mascot (only if mascot exists)
+  const { skills: dbSkills, isLoading: skillsLoading } = useMascotSkills(selectedMascot?.id || '');
 
   // Use DB skills if available, otherwise fall back to hardcoded
   const displaySkills = useMemo(() => {
+    if (!selectedMascot) return [];
+    
     if (dbSkills.length > 0) {
       return dbSkills.map((s) => ({ id: s.id, label: s.skill_label }));
     }
@@ -495,7 +514,7 @@ export default function HomeScreen() {
     // Final fallback: find from ALL_MASCOTS
     const hardcodedMascot = ALL_MASCOTS.find((m) => m.id === selectedMascot.id);
     return hardcodedMascot?.skills || [];
-  }, [dbSkills, selectedMascot.id, selectedMascot.skills]);
+  }, [dbSkills, selectedMascot?.id, selectedMascot?.skills]);
 
   const userName = user?.user_metadata?.full_name?.split(' ')[0] || 
                    user?.user_metadata?.name?.split(' ')[0] || 
@@ -580,6 +599,29 @@ export default function HomeScreen() {
   // iOS: 'padding' behavior works best
   // Android: 'height' behavior works with adjustResize manifest setting
   const wrapperBehavior = Platform.OS === 'ios' ? 'padding' : 'height';
+
+  // Show loading or empty state if no mascots available
+  if (isLoadingMascots || isLoadingUnlocked) {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (!selectedMascot || availableMascots.length === 0) {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
+        <View style={styles.loadingContainer}>
+          <Text style={[styles.emptyText, { color: colors.textMuted }]}>
+            No mascots available. Please complete onboarding.
+          </Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
@@ -707,6 +749,15 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  emptyText: {
+    fontSize: 16,
+    textAlign: 'center',
   },
   headerSection: {
     flex: 1,

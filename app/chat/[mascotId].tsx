@@ -11,6 +11,7 @@ import {
   ImageSourcePropType,
   Linking,
   ActivityIndicator,
+  TextInput,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -21,13 +22,15 @@ const SPEECH_RECOGNITION_AVAILABLE = Platform.OS === 'web';
 import { useTheme, fontFamilies, textStyles, shadowToCSS, shadowToNative } from '@/design-system';
 import { useI18n } from '@/i18n';
 import { usePreferences, selectBestProvider, TaskCategory, LLMPreference } from '@/services/preferences';
-import { ChatHeader, LinkPill, ChatInputBox, SkillPreview, ChatHistory } from '@/components';
+import { ChatHeader, LinkPill, ChatInputBox, SkillPreview, ChatHistory, Icon, BigPrimaryButton } from '@/components';
+import type { ChatInputBoxRef } from '@/components/ui/ChatInputBox';
 import { secureChatStream, ChatMessage as SecureChatMessage } from '@/services/ai/secure-chat';
 import type { ChatMessage, AI_CONFIG } from '@/services/ai';
 import type { WebSource } from '@/services/ai';
-import { useMascotSkills, useMascotInstructions, MascotSkill, getCombinedPrompt, useIsAdmin } from '@/services/admin';
+import { useMascotSkills, useMascotPersonality, MascotSkill, getCombinedPrompt, useIsAdmin, updatePersonality, resetPersonalityToDefault } from '@/services/admin';
 import { useMascotLike } from '@/services/mascot-likes';
 import { createConversation, saveMessage, generateConversationTitle, useConversationMessages } from '@/services/chat-history';
+import { useMascotAccess, incrementTrialUsage } from '@/services/mascot-access';
 
 // Message types
 type MessageRole = 'user' | 'assistant';
@@ -42,7 +45,7 @@ type Message = {
 };
 
 // Chat tabs
-type ChatTab = 'chat' | 'sources' | 'skills' | 'instructions' | 'history';
+type ChatTab = 'chat' | 'sources' | 'skills' | 'personality' | 'history';
 
 // Local mascot images
 const mascotImages: Record<string, ImageSourcePropType> = {
@@ -369,6 +372,7 @@ export default function ChatScreen() {
   const { colors } = useTheme();
   const { t } = useI18n();
   const scrollViewRef = useRef<ScrollView>(null);
+  const chatInputRef = useRef<ChatInputBoxRef>(null);
 
   const mascot = MASCOT_DATA[mascotId || '1'] || MASCOT_DATA['1'];
   const mascotImage = mascotImages[mascot.image] || mascotImages.bear; // Fallback to bear if image not found
@@ -385,16 +389,42 @@ export default function ChatScreen() {
   // Check if user is admin
   const { isAdmin } = useIsAdmin();
 
-  // Fetch skills and instructions from database
+  // Fetch skills and personality from database
   const { skills: dbSkills, isLoading: skillsLoading } = useMascotSkills(mascotId || '1');
-  const { instructions: dbInstructions, isLoading: instructionsLoading } = useMascotInstructions(mascotId || '1');
+  const { personality: dbPersonality, isLoading: personalityLoading, refetch: refetchPersonality } = useMascotPersonality(mascotId || '1');
   
   // Fetch like data for mascot
   const { isLiked, likeCount, toggleLike, isToggling } = useMascotLike(mascotId || '1');
 
+  // Check mascot access (unlocked, trial, or locked)
+  const { canUse, reason, trialCount, trialLimit, isLoading: isLoadingAccess, refresh: refreshAccess } = useMascotAccess(mascotId || null);
+  const isTrial = reason === 'trial';
+  const isTrialExhausted = reason === 'trial_exhausted';
+  
+  // Local state to track trial count (for immediate UI updates)
+  const [localTrialCount, setLocalTrialCount] = React.useState(trialCount);
+  
+  // Update local trial count when hook updates
+  React.useEffect(() => {
+    setLocalTrialCount(trialCount);
+  }, [trialCount]);
+
   // Active skill for enhanced prompting
   const [activeSkillId, setActiveSkillId] = useState<string | null>(skillId || null);
   const activeSkill = dbSkills.find((s) => s.id === activeSkillId);
+
+  // Personality editing state
+  const [isEditingPersonality, setIsEditingPersonality] = useState(false);
+  const [editedPersonality, setEditedPersonality] = useState('');
+  const [isSavingPersonality, setIsSavingPersonality] = useState(false);
+  const [isResettingPersonality, setIsResettingPersonality] = useState(false);
+
+  // Sync editedPersonality when dbPersonality changes (but not when editing)
+  useEffect(() => {
+    if (!isEditingPersonality && dbPersonality) {
+      setEditedPersonality(dbPersonality.personality);
+    }
+  }, [dbPersonality, isEditingPersonality]);
 
   // Conversation management
   const [currentConversationId, setCurrentConversationId] = useState<string | null>(urlConversationId || null);
@@ -461,6 +491,16 @@ export default function ChatScreen() {
   }, [currentConversationId, dbMessages, urlConversationId, initialAssistantMessage]);
 
   const [activeTab, setActiveTab] = useState<ChatTab>('chat');
+
+  // Auto-focus input when chat tab is active
+  useEffect(() => {
+    if (activeTab === 'chat') {
+      // Focus input when switching to chat tab
+      setTimeout(() => {
+        chatInputRef.current?.focus();
+      }, 100);
+    }
+  }, [activeTab]);
   const [inputText, setInputText] = useState('');
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -497,6 +537,11 @@ export default function ChatScreen() {
   const sendMessage = useCallback(async (messageContent: string, isSkillLabel: boolean = false) => {
     if (!messageContent.trim() || isLoading) return;
 
+    // Check if this is the first user message BEFORE adding it to state
+    // This determines if it's a new conversation for trial purposes
+    const hasUserMessages = messages.some(m => m.role === 'user');
+    const isFirstUserMessage = !hasUserMessages;
+
     // If this is a skill label, we need to send the full skill prompt to LLM
     // but display the label to the user
     let actualMessageContentForLLM = messageContent.trim();
@@ -520,6 +565,20 @@ export default function ChatScreen() {
     setInputText('');
     setIsLoading(true);
     setStreamingContent('');
+    
+    // Focus input immediately after clearing (user can start typing right away)
+    // Use requestAnimationFrame for web to ensure DOM is ready
+    if (Platform.OS === 'web') {
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          chatInputRef.current?.focus();
+        }, 50);
+      });
+    } else {
+      setTimeout(() => {
+        chatInputRef.current?.focus();
+      }, 100);
+    }
 
     // Scroll to bottom
     setTimeout(() => {
@@ -545,15 +604,15 @@ export default function ChatScreen() {
       
       const currentMessages = [...messages];
 
-      // Get the mascot's system prompt (instructions)
+      // Get the mascot's system prompt (personality)
       // IMPORTANT: When a skill is active, add it to the system prompt so the LLM continues following it
       // The skill prompt is also sent as the user message for the first interaction
       const mascotData = MASCOT_DATA[mascotId || '1'];
       let systemPrompt = mascotData?.systemPrompt || 'You are a helpful AI assistant.';
       
-      // Add database instructions if available
-      if (dbInstructions) {
-        systemPrompt = `${systemPrompt}\n\n---\n\n${dbInstructions}`;
+      // Add database personality if available
+      if (dbPersonality) {
+        systemPrompt = `${systemPrompt}\n\n---\n\n${dbPersonality.personality}`;
       }
       
       // Add active skill prompt to system prompt so it continues to be followed
@@ -595,21 +654,83 @@ export default function ChatScreen() {
       console.log('[Chat] Current chatLLM setting:', chatLLM);
 
       // Create or use existing conversation
+      // isFirstUserMessage was already checked at the start of the function
       let conversationId = currentConversationId;
+      let isNewConversation = false;
       if (!conversationId) {
-        const newConversation = await createConversation(mascotId || '1');
-        conversationId = newConversation.id;
-        setCurrentConversationId(conversationId);
+        try {
+          console.log('[Chat] Creating new conversation for mascot:', mascotId || '1');
+          const newConversation = await createConversation(mascotId || '1');
+          conversationId = newConversation.id;
+          console.log('[Chat] New conversation created:', conversationId);
+          setCurrentConversationId(conversationId);
+          isNewConversation = true;
+        } catch (error) {
+          console.error('[Chat] Error creating conversation:', error);
+          // Continue without conversationId - messages won't be saved but chat will work
+        }
+      } else {
+        console.log('[Chat] Using existing conversation:', conversationId);
+      }
+      
+      // Increment trial usage if this is the FIRST user message in the conversation
+      // This counts as one trial - clicking a skill or sending first message starts a conversation
+      console.log('[Chat] sendMessage - Trial check:', {
+        isFirstUserMessage,
+        isTrial,
+        mascotId,
+        conversationId,
+        reason,
+        currentTrialCount: localTrialCount,
+      });
+      
+      if (isFirstUserMessage && isTrial && mascotId && conversationId) {
+        try {
+          console.log('[Chat] First user message (sendMessage) - incrementing trial usage for mascot:', mascotId);
+          const { error: trialError, usage } = await incrementTrialUsage(mascotId);
+          if (trialError) {
+            console.error('[Chat] Error incrementing trial usage:', trialError);
+          } else {
+            console.log('[Chat] Trial usage incremented successfully:', usage);
+            // Update local trial count immediately for UI feedback
+            if (usage) {
+              console.log('[Chat] Updating local trial count from', localTrialCount, 'to', usage.conversationCount);
+              setLocalTrialCount(usage.conversationCount);
+              // Refresh access status to get updated trial count from server
+              await refreshAccess();
+            }
+          }
+        } catch (error) {
+          console.error('[Chat] Error incrementing trial usage:', error);
+        }
+      } else {
+        if (!isFirstUserMessage) {
+          console.log('[Chat] Not first user message - continuing existing conversation, no trial increment');
+        }
+        if (!isTrial) {
+          console.log('[Chat] Not in trial mode (reason:', reason, ') - no trial increment');
+        }
+        if (!mascotId) {
+          console.log('[Chat] No mascotId - no trial increment');
+        }
+        if (!conversationId) {
+          console.log('[Chat] No conversationId - no trial increment');
+        }
       }
 
       // Save user message to database
       if (conversationId) {
         try {
-          await saveMessage(conversationId, 'user', actualMessageContentForLLM);
+          console.log('[Chat] Saving user message to conversation:', conversationId);
+          const savedMessage = await saveMessage(conversationId, 'user', actualMessageContentForLLM);
+          console.log('[Chat] User message saved successfully:', savedMessage.id);
           setHasSavedFirstMessage(true);
         } catch (error) {
           console.error('[Chat] Error saving user message:', error);
+          // Don't block the chat flow if saving fails, but log it
         }
+      } else {
+        console.warn('[Chat] No conversationId available to save user message');
       }
 
       // Use secure chat stream through Supabase Edge Function (avoids CORS)
@@ -642,30 +763,45 @@ export default function ChatScreen() {
       // Save assistant message to database
       if (conversationId) {
         try {
-          await saveMessage(conversationId, 'assistant', assistantContent, response.model);
+          console.log('[Chat] Saving assistant message to conversation:', conversationId);
+          const savedMessage = await saveMessage(conversationId, 'assistant', assistantContent, response.model);
+          console.log('[Chat] Assistant message saved successfully:', savedMessage.id);
         } catch (error) {
           console.error('[Chat] Error saving assistant message:', error);
+          // Don't block the chat flow if saving fails, but log it
         }
+      } else {
+        console.warn('[Chat] No conversationId available to save assistant message');
+      }
 
-        // Generate title after first few messages (2-3 exchanges)
-        // Only generate once per conversation
-        if (!titleGenerationQueued && messages.length >= 1 && conversationId) {
+      // Generate title after assistant response (need at least user + assistant message)
+      // Only generate once per conversation
+      if (!titleGenerationQueued && conversationId && assistantContent) {
+        // Count total messages including the ones we just added
+        const totalMessages = messages.filter(m => !m.isThinking && (m.role === 'user' || m.role === 'assistant')).length + 2; // +2 for user and assistant we just added
+        
+        if (totalMessages >= 2) { // At least one exchange (user + assistant)
           setTitleGenerationQueued(true);
           // Generate title asynchronously (don't block UI)
           setTimeout(async () => {
             try {
               const conversationMessages = [
-                ...messages.slice(-2), // Previous messages
+                ...messages
+                  .filter(m => !m.isThinking && (m.role === 'user' || m.role === 'assistant'))
+                  .slice(-2) // Previous messages
+                  .map(m => ({ role: m.role as 'user' | 'assistant', content: m.content })),
                 { role: 'user' as const, content: actualMessageContentForLLM },
                 { role: 'assistant' as const, content: assistantContent },
               ];
-              if (conversationId) {
-                await generateConversationTitle(conversationId, conversationMessages);
-              }
+              console.log('[Chat] Generating conversation title for:', conversationId);
+              await generateConversationTitle(conversationId, conversationMessages, mascotId || '1');
+              console.log('[Chat] Conversation title generated successfully');
             } catch (error) {
               console.error('[Chat] Error generating conversation title:', error);
+              // Reset flag on error so we can try again
+              setTitleGenerationQueued(false);
             }
-          }, 1000);
+          }, 2000); // Wait 2 seconds to ensure messages are saved
         }
       }
 
@@ -719,8 +855,21 @@ export default function ChatScreen() {
       setStreamingContent('');
     } finally {
       setIsLoading(false);
+      // Focus input after response completes so user can continue typing
+      // Use longer delay to ensure response rendering is complete
+      if (Platform.OS === 'web') {
+        requestAnimationFrame(() => {
+          setTimeout(() => {
+            chatInputRef.current?.focus();
+          }, 150);
+        });
+      } else {
+        setTimeout(() => {
+          chatInputRef.current?.focus();
+        }, 200);
+      }
     }
-  }, [isLoading, messages, mascotId, formatSourcesForMessage, chatLLM, activeSkill, dbInstructions, activeSkillId]);
+  }, [isLoading, messages, mascotId, formatSourcesForMessage, chatLLM, activeSkill, dbPersonality, activeSkillId]);
 
   // Auto-send initial message from home screen
   // IMPORTANT: If skillId is provided, send the skill label
@@ -831,9 +980,15 @@ export default function ChatScreen() {
 
   const handleSend = async () => {
     if (!inputText.trim() || isLoading) return;
-    // Dismiss keyboard before sending to prevent padding issues
-    Keyboard.dismiss();
+    // Don't dismiss keyboard on web - we want to keep focus
+    if (Platform.OS !== 'web') {
+      Keyboard.dismiss();
+    }
     await sendMessage(inputText);
+    // Focus input after sending (with a small delay to ensure it works)
+    setTimeout(() => {
+      chatInputRef.current?.focus();
+    }, 200);
   };
 
   const handleSkillPress = async (skill: MascotSkill | string) => {
@@ -847,14 +1002,23 @@ export default function ChatScreen() {
     const skillLabel = typeof skill === 'string' ? skill : skill.skill_label;
     const skillIdToActivate = typeof skill === 'string' ? null : skill.id;
     
-    // CRITICAL: Get the skill prompt from the skill object or from dbSkills
-    // Sometimes the skill object passed in might not have the full prompt
+    // CRITICAL: Get the FULL skill prompt from the skill object or from dbSkills
+    // For non-admin users, skill_prompt will be null - DO NOT use skill_prompt_preview
+    // The Edge Function will fetch the full prompt from the database using skillId
+    // We only use skill_prompt (full prompt), never skill_prompt_preview (partial preview)
     let skillPrompt = typeof skill === 'string' ? null : skill.skill_prompt;
     
     // If we don't have the prompt from the skill object, try to get it from dbSkills
     if (!skillPrompt && skillIdToActivate) {
       const fullSkill = dbSkills.find((s) => s.id === skillIdToActivate);
+      // Only use full prompt (admin only), never preview
       skillPrompt = fullSkill?.skill_prompt || null;
+    }
+    
+    // If we don't have the full prompt, that's OK - Edge Function will fetch it using skillId
+    // We should NOT send the preview or label to the LLM - let Edge Function handle it
+    if (!skillPrompt && skillIdToActivate) {
+      console.log('[Chat] Full skill prompt not available in client. Edge Function will fetch it using skillId:', skillIdToActivate);
     }
 
     // Set active skill for future messages
@@ -862,6 +1026,11 @@ export default function ChatScreen() {
       setActiveSkillId(skillIdToActivate);
     }
 
+    // Check if this is the first user message BEFORE adding it to state
+    // This determines if it's a new conversation for trial purposes
+    const hasUserMessages = messages.some(m => m.role === 'user');
+    const isFirstUserMessage = !hasUserMessages;
+    
     // CRITICAL: User sees the skill label, but LLM receives the FULL skill prompt
     // Send the skill label as the message (user will see it)
     // But when sending to LLM, we'll replace it with the full skill prompt
@@ -878,10 +1047,20 @@ export default function ChatScreen() {
     setStreamingContent('');
     setShowSkills(false);
 
-    // Scroll to bottom
+    // Switch to chat tab to show the message
+    setActiveTab('chat');
+
+    // Scroll to bottom (only if ScrollView is mounted and we're on chat tab)
     setTimeout(() => {
-      scrollViewRef.current?.scrollToEnd({ animated: true });
-    }, 100);
+      if (scrollViewRef.current) {
+        try {
+          scrollViewRef.current.scrollToEnd({ animated: true });
+        } catch (error) {
+          // ScrollView might not be ready yet, ignore error
+          console.log('[Chat] ScrollView not ready for scrolling:', error);
+        }
+      }
+    }, 200);
 
     try {
       // Clear web sources if web search is disabled
@@ -897,28 +1076,29 @@ export default function ChatScreen() {
       const mascotData = MASCOT_DATA[mascotId || '1'];
       let systemPrompt = mascotData?.systemPrompt || 'You are a helpful AI assistant.';
       
-      // Add database instructions if available
-      if (dbInstructions) {
-        systemPrompt = `${systemPrompt}\n\n---\n\n${dbInstructions}`;
+      // Add database personality if available
+      if (dbPersonality) {
+        systemPrompt = `${systemPrompt}\n\n---\n\n${dbPersonality.personality}`;
       }
       
-      // Add skill prompt to system prompt so the LLM continues following it in subsequent messages
-      // The skill prompt is also sent as the first user message to initiate the conversation
+      // Add skill prompt to system prompt ONLY if we have the full prompt (admin users)
+      // For non-admin users, the Edge Function will add it to the system prompt
       if (skillPrompt) {
         systemPrompt = `${systemPrompt}\n\n---\n\nCRITICAL: Follow these skill-specific instructions throughout this entire conversation:\n\n${skillPrompt}\n\nThese instructions define how you should behave and what questions you should ask. Continue following them for all subsequent messages.`;
       }
 
-      // Convert to ChatMessage format with system prompt
-      // CRITICAL: If skill was clicked, send the FULL skill prompt as user message
-      // User sees skillLabel in UI, but LLM receives skillPrompt
+      // CRITICAL: For skill clicks, we have two scenarios:
+      // 1. Admin users: We have skillPrompt (full prompt) - send it to LLM
+      // 2. Non-admin users: We don't have skillPrompt - send skillLabel, Edge Function will fetch full prompt
+      // NEVER send skill_prompt_preview - it's incomplete and shouldn't be shown to LLM
       const actualMessageContentForLLM = skillPrompt || skillLabel;
       
       console.log('[Chat] Skill clicked - Label:', skillLabel);
-      console.log('[Chat] Skill clicked - Prompt exists:', !!skillPrompt);
-      console.log('[Chat] Skill clicked - Sending to LLM:', skillPrompt ? skillPrompt.substring(0, 100) + '...' : skillLabel);
-      
-      if (!skillPrompt && skillIdToActivate) {
-        console.error('[Chat] ERROR: Skill clicked but skillPrompt is null! Skill ID:', skillIdToActivate);
+      console.log('[Chat] Skill clicked - Full prompt available:', !!skillPrompt);
+      if (skillPrompt) {
+        console.log('[Chat] Skill clicked - Sending full prompt to LLM (length:', skillPrompt.length, ')');
+      } else {
+        console.log('[Chat] Skill clicked - Sending skill label. Edge Function will fetch full prompt using skillId:', skillIdToActivate);
       }
 
       const chatHistory: ChatMessage[] = [
@@ -951,21 +1131,86 @@ export default function ChatScreen() {
         }));
       
       // Create or use existing conversation
+      // isFirstUserMessage was already checked at the start of handleSkillPress
       let conversationId = currentConversationId;
+      let isNewConversation = false;
       if (!conversationId) {
-        const newConversation = await createConversation(mascotId || '1');
-        conversationId = newConversation.id;
-        setCurrentConversationId(conversationId);
+        try {
+          console.log('[Chat] Creating new conversation for mascot:', mascotId || '1');
+          const newConversation = await createConversation(mascotId || '1');
+          conversationId = newConversation.id;
+          console.log('[Chat] New conversation created:', conversationId);
+          setCurrentConversationId(conversationId);
+          isNewConversation = true;
+        } catch (error) {
+          console.error('[Chat] Error creating conversation:', error);
+          // Continue without conversationId - messages won't be saved but chat will work
+        }
+      } else {
+        console.log('[Chat] Using existing conversation:', conversationId);
+      }
+      
+      // Increment trial usage if this is the FIRST user message in the conversation
+      // This counts as one trial - clicking a skill or sending first message starts a conversation
+      console.log('[Chat] handleSkillPress - Trial check:', {
+        isFirstUserMessage,
+        isTrial,
+        mascotId,
+        conversationId,
+        reason,
+        currentTrialCount: localTrialCount,
+      });
+      
+      if (isFirstUserMessage && isTrial && mascotId && conversationId) {
+        try {
+          console.log('[Chat] First user message (skill click) - incrementing trial usage for mascot:', mascotId);
+          const { error: trialError, usage } = await incrementTrialUsage(mascotId);
+          if (trialError) {
+            console.error('[Chat] Error incrementing trial usage:', trialError);
+          } else {
+            console.log('[Chat] Trial usage incremented successfully:', usage);
+            // Update local trial count immediately for UI feedback
+            if (usage) {
+              console.log('[Chat] Updating local trial count from', localTrialCount, 'to', usage.conversationCount);
+              setLocalTrialCount(usage.conversationCount);
+              // Refresh access status to get updated trial count from server
+              await refreshAccess();
+            }
+          }
+        } catch (error) {
+          console.error('[Chat] Error incrementing trial usage:', error);
+        }
+      } else {
+        if (!isFirstUserMessage) {
+          console.log('[Chat] Not first user message - continuing existing conversation, no trial increment');
+        }
+        if (!isTrial) {
+          console.log('[Chat] Not in trial mode (reason:', reason, ') - no trial increment');
+        }
+        if (!mascotId) {
+          console.log('[Chat] No mascotId - no trial increment');
+        }
+        if (!conversationId) {
+          console.log('[Chat] No conversationId - no trial increment');
+        }
       }
 
-      // Save user message to database (save skill prompt, not label)
+      // Save user message to database
+      // IMPORTANT: Save the skill label (what user sees), not the prompt
+      // The prompt is sent to LLM but shouldn't be stored/displayed in chat history
       if (conversationId) {
         try {
-          await saveMessage(conversationId, 'user', actualMessageContentForLLM);
+          console.log('[Chat] Saving user message to conversation:', conversationId);
+          // Save skillLabel (what user sees), not the prompt
+          const savedMessage = await saveMessage(conversationId, 'user', skillLabel);
+          console.log('[Chat] User message saved successfully:', savedMessage.id);
           setHasSavedFirstMessage(true);
         } catch (error) {
           console.error('[Chat] Error saving user message:', error);
+          // Don't block the chat flow if saving fails, but log it
         }
+      } else {
+        console.warn('[Chat] No conversationId available to save user message');
       }
 
       // Use secure chat stream through Supabase Edge Function (avoids CORS)
@@ -980,7 +1225,7 @@ export default function ChatScreen() {
           setStreamingContent(fullContent);
           scrollViewRef.current?.scrollToEnd({ animated: false });
         },
-        conversationId, // Pass conversationId to Edge Function
+        conversationId || undefined, // Pass conversationId to Edge Function
         skillIdToActivate || undefined, // skillId - pass it as backup (though prompt is in user message)
         providerOverride, // provider override (undefined = system chooses)
         deepThinkingEnabled // Deep Thinking mode (uses pro models)
@@ -996,6 +1241,20 @@ export default function ChatScreen() {
           undefined));
 
       console.log('[Chat] Skill response - Model:', response.model, 'Provider:', actualProvider, '(requested:', providerOverride || 'auto', ')');
+
+      // Save assistant message to database
+      if (conversationId) {
+        try {
+          console.log('[Chat] Saving assistant message to conversation:', conversationId);
+          const savedMessage = await saveMessage(conversationId, 'assistant', assistantContent, response.model);
+          console.log('[Chat] Assistant message saved successfully:', savedMessage.id);
+        } catch (error) {
+          console.error('[Chat] Error saving assistant message:', error);
+          // Don't block the chat flow if saving fails, but log it
+        }
+      } else {
+        console.warn('[Chat] No conversationId available to save assistant message');
+      }
 
       // Add the complete message with provider info
       setMessages((prev) => [
@@ -1057,12 +1316,11 @@ export default function ChatScreen() {
     }
   };
 
-  // Tab labels (matching Figma design: Chat, Sources, Skills, Instructions)
+  // Tab labels: Chat, Skills, Personality, History (sources hidden)
   const tabs: { key: ChatTab; label: string }[] = [
     { key: 'chat', label: t.chat.tabs.chat },
-    { key: 'sources', label: t.chat.tabs.sources },
     { key: 'skills', label: 'Skills' },
-    { key: 'instructions', label: t.chat.tabs.instructions },
+    { key: 'personality', label: t.chat.tabs.personality },
     { key: 'history', label: 'History' },
   ];
 
@@ -1209,6 +1467,9 @@ export default function ChatScreen() {
         onTabChange={(tab) => setActiveTab(tab as ChatTab)}
         isToggling={isToggling}
         insets={insets}
+        isTrial={isTrial}
+        trialCount={localTrialCount}
+        trialLimit={trialLimit}
       />
 
       {activeTab === 'skills' ? (
@@ -1231,37 +1492,51 @@ export default function ChatScreen() {
               No skills configured for this mascot yet.
             </Text>
           ) : (
-            dbSkills.map((skill) => (
-              <Pressable
-                key={skill.id}
-                onPress={() => handleSkillPress(skill)}
-                style={[
-                  styles.skillPreviewCard,
-                  activeSkillId === skill.id && { borderColor: mascot.color, borderWidth: 2 },
-                ]}
-              >
-                <SkillPreview
-                  skillLabel={skill.skill_label}
-                  skillPromptPreview={skill.skill_prompt_preview}
-                  isFullAccess={skill.is_full_access}
-                  fullPrompt={skill.skill_prompt}
-                  mascotColor={mascot.color}
-                />
-                {activeSkillId === skill.id && (
-                  <View style={[styles.activeSkillBadge, { backgroundColor: mascot.color }]}>
-                    <Text style={styles.activeSkillBadgeText}>Active</Text>
-                  </View>
-                )}
-              </Pressable>
-            ))
+            dbSkills.map((skill) => {
+              // Check if skill is locked (user doesn't have full access)
+              const isSkillLocked = !skill.is_full_access;
+              
+              return (
+                <Pressable
+                  key={skill.id}
+                  onPress={() => {
+                    // Only allow clicking if skill is not locked or user has access
+                    if (!isSkillLocked || skill.is_full_access) {
+                      handleSkillPress(skill);
+                    }
+                  }}
+                  disabled={isSkillLocked && !skill.is_full_access}
+                  style={[
+                    styles.skillPreviewCard,
+                    activeSkillId === skill.id && { borderColor: mascot.color, borderWidth: 2 },
+                    isSkillLocked && !skill.is_full_access && { opacity: 0.6 },
+                  ]}
+                >
+                  <SkillPreview
+                    skillLabel={skill.skill_label}
+                    skillPromptPreview={skill.skill_prompt_preview}
+                    isFullAccess={skill.is_full_access}
+                    fullPrompt={skill.skill_prompt}
+                    mascotColor={mascot.color}
+                  />
+                  {activeSkillId === skill.id && (
+                    <View style={[styles.activeSkillBadge, { backgroundColor: mascot.color }]}>
+                      <Text style={styles.activeSkillBadgeText}>Active</Text>
+                    </View>
+                  )}
+                </Pressable>
+              );
+            })
           )}
         </ScrollView>
-      ) : activeTab === 'sources' ? (
+      ) : activeTab === 'personality' ? (
         <ScrollView
           style={styles.messagesContainer}
-          contentContainerStyle={styles.sourcesContent}
+          contentContainerStyle={styles.personalityContent}
         >
-          {webSearchError && (
+          {personalityLoading ? (
+            <ActivityIndicator size="large" color={colors.primary} />
+          ) : !dbPersonality ? (
             <Text
               style={[
                 styles.sourcesMessage,
@@ -1271,68 +1546,199 @@ export default function ChatScreen() {
                 },
               ]}
             >
-              Web search unavailable: {webSearchError}
+              No personality configured for this mascot yet.
             </Text>
-          )}
-          {!webSearchError && webSources.length === 0 && (
-            <Text
+          ) : (
+            <View
               style={[
-                styles.sourcesMessage,
-                {
-                  fontFamily: textStyles.body.fontFamily,
-                  color: colors.textMuted,
-                },
+                styles.personalityCard,
+                { backgroundColor: colors.surface, borderColor: colors.outline },
               ]}
             >
-              No sources yet. Enable web search and send a message.
-            </Text>
-          )}
-          {webSources.map((source, index) => (
-            <Pressable
-              key={`${source.url}-${index}`}
-              style={[
-                styles.sourceCard,
-                { backgroundColor: colors.background, borderColor: colors.outline },
-              ]}
-              onPress={() => Linking.openURL(source.url)}
-            >
-              <Text
-                style={[
-                  styles.sourceTitle,
-                  {
-                    fontFamily: textStyles.message.fontFamily,
-                    color: colors.text,
-                  },
-                ]}
-              >
-                {index + 1}. {source.title}
-              </Text>
-              <Text
-                style={[
-                  styles.sourceUrl,
-                  {
-                    fontFamily: textStyles.caption.fontFamily,
-                    color: colors.primary,
-                  },
-                ]}
-              >
-                {source.url}
-              </Text>
-              {!!source.snippet && (
+              {/* Header with Edit button */}
+              <View style={styles.personalityHeader}>
                 <Text
                   style={[
-                    styles.sourceSnippet,
+                    styles.personalityTitle,
                     {
-                      fontFamily: textStyles.body.fontFamily,
-                      color: colors.textMuted,
+                      fontFamily: fontFamilies.figtree.semiBold,
+                      color: colors.text,
                     },
                   ]}
                 >
-                  {source.snippet}
+                  Personality
                 </Text>
+                {!isEditingPersonality ? (
+                  <Pressable
+                    onPress={() => {
+                      setEditedPersonality(dbPersonality.personality);
+                      setIsEditingPersonality(true);
+                    }}
+                    style={styles.editButton}
+                  >
+                    <Icon name="edit" size={18} color={colors.primary} />
+                    <Text
+                      style={[
+                        styles.editButtonText,
+                        {
+                          fontFamily: fontFamilies.figtree.medium,
+                          color: colors.primary,
+                        },
+                      ]}
+                    >
+                      Edit
+                    </Text>
+                  </Pressable>
+                ) : null}
+              </View>
+
+              {/* Content: Edit mode or View mode */}
+              {isEditingPersonality ? (
+                <View style={styles.editContainer}>
+                  <TextInput
+                    style={[
+                      styles.personalityTextInput,
+                      {
+                        fontFamily: fontFamilies.figtree.regular,
+                        color: colors.text,
+                        borderColor: colors.outline,
+                        backgroundColor: colors.background,
+                      },
+                    ]}
+                    value={editedPersonality}
+                    onChangeText={setEditedPersonality}
+                    placeholder="Enter personality..."
+                    placeholderTextColor={colors.textMuted}
+                    multiline
+                    textAlignVertical="top"
+                  />
+                  <View style={styles.personalityActions}>
+                    {dbPersonality?.default_personality ? (
+                      <Pressable
+                        onPress={async () => {
+                          setIsResettingPersonality(true);
+                          try {
+                            await resetPersonalityToDefault(mascotId || '1');
+                            await refetchPersonality();
+                            // editedPersonality will be synced via useEffect when dbPersonality updates
+                          } catch (error) {
+                            console.error('Error resetting personality:', error);
+                          } finally {
+                            setIsResettingPersonality(false);
+                          }
+                        }}
+                        disabled={isSavingPersonality || isResettingPersonality}
+                        style={[
+                          styles.resetButton,
+                          {
+                            borderColor: colors.outline,
+                            opacity: (isSavingPersonality || isResettingPersonality) ? 0.6 : 1,
+                          },
+                        ]}
+                      >
+                        {isResettingPersonality ? (
+                          <ActivityIndicator size="small" color={colors.textMuted} />
+                        ) : (
+                          <>
+                            <Icon name="settings" size={16} color={colors.textMuted} />
+                            <Text
+                              style={[
+                                styles.resetButtonText,
+                                {
+                                  fontFamily: fontFamilies.figtree.medium,
+                                  color: colors.textMuted,
+                                },
+                              ]}
+                            >
+                              Reset to Default
+                            </Text>
+                          </>
+                        )}
+                      </Pressable>
+                    ) : (
+                      <View style={{ flex: 1 }} />
+                    )}
+                    <View style={styles.saveCancelButtons}>
+                      <Pressable
+                        onPress={() => {
+                          setIsEditingPersonality(false);
+                          setEditedPersonality(dbPersonality.personality);
+                        }}
+                        disabled={isSavingPersonality || isResettingPersonality}
+                        style={[
+                          styles.cancelButton,
+                          {
+                            borderColor: colors.outline,
+                            opacity: (isSavingPersonality || isResettingPersonality) ? 0.6 : 1,
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.cancelButtonText,
+                            {
+                              fontFamily: fontFamilies.figtree.medium,
+                              color: colors.text,
+                            },
+                          ]}
+                        >
+                          Cancel
+                        </Text>
+                      </Pressable>
+                      <Pressable
+                        onPress={async () => {
+                          setIsSavingPersonality(true);
+                          try {
+                            await updatePersonality(mascotId || '1', editedPersonality);
+                            await refetchPersonality();
+                            setIsEditingPersonality(false);
+                          } catch (error) {
+                            console.error('Error saving personality:', error);
+                          } finally {
+                            setIsSavingPersonality(false);
+                          }
+                        }}
+                        disabled={isSavingPersonality || isResettingPersonality || !editedPersonality.trim()}
+                        style={[
+                          styles.saveButton,
+                          {
+                            backgroundColor: colors.primary,
+                            opacity: (isSavingPersonality || isResettingPersonality || !editedPersonality.trim()) ? 0.6 : 1,
+                          },
+                        ]}
+                      >
+                        {isSavingPersonality ? (
+                          <ActivityIndicator size="small" color="#FFFFFF" />
+                        ) : (
+                          <Text
+                            style={[
+                              styles.saveButtonText,
+                              {
+                                fontFamily: fontFamilies.figtree.medium,
+                                color: '#FFFFFF',
+                              },
+                            ]}
+                          >
+                            Save
+                          </Text>
+                        )}
+                      </Pressable>
+                    </View>
+                  </View>
+                </View>
+              ) : (
+                dbPersonality.personality && typeof dbPersonality.personality === 'string' && dbPersonality.personality.trim() ? (
+                  <Markdown style={markdownStyles}>
+                    {dbPersonality.personality}
+                  </Markdown>
+                ) : (
+                  <Text style={[styles.messageText, { color: colors.textMuted }]}>
+                    No personality available
+                  </Text>
+                )
               )}
-            </Pressable>
-          ))}
+            </View>
+          )}
         </ScrollView>
       ) : activeTab === 'history' ? (
         <ChatHistory
@@ -1363,6 +1769,7 @@ export default function ChatScreen() {
             // Clear URL params
             router.setParams({ conversationId: undefined });
           }}
+          onSkillPress={handleSkillPress}
         />
       ) : (
         <ScrollView
@@ -1412,11 +1819,17 @@ export default function ChatScreen() {
                 </View>
               ) : (
                 <View style={styles.assistantMessage}>
-                  <Markdown
-                    style={markdownStyles}
-                  >
-                    {message.content}
-                  </Markdown>
+                  {message.content && typeof message.content === 'string' && message.content.trim() ? (
+                    <Markdown
+                      style={markdownStyles}
+                    >
+                      {message.content}
+                    </Markdown>
+                  ) : (
+                    <Text style={[styles.messageText, { color: colors.textMuted }]}>
+                      (Empty message)
+                    </Text>
+                  )}
                   {(message.model || message.provider) && (
                     <View style={[
                       styles.modelLabelContainer,
@@ -1443,7 +1856,7 @@ export default function ChatScreen() {
           ))}
 
           {/* Streaming response */}
-          {isLoading && streamingContent && (
+          {isLoading && streamingContent && typeof streamingContent === 'string' && streamingContent.trim() && (
             <View style={[styles.messageWrapper, styles.assistantMessageWrapper]}>
               <View style={styles.assistantMessage}>
                 <Markdown style={markdownStyles}>
@@ -1473,7 +1886,8 @@ export default function ChatScreen() {
       )}
 
       {/* Skills suggestions - use DB skills if available, fallback to hardcoded */}
-      {showSkills && (
+      {/* Only show skills at bottom when NOT on history tab (skills are in history tab) */}
+      {showSkills && activeTab !== 'history' && (
         <View style={styles.skillsContainer}>
           {skillsLoading ? (
             <ActivityIndicator size="small" color={colors.primary} />
@@ -1508,24 +1922,56 @@ export default function ChatScreen() {
         paddingBottom: bottomPadding,
         marginBottom: 0,
       }]}>
-        <ChatInputBox
-          value={inputText}
-          onChangeText={setInputText}
-          onSend={handleSend}
-          placeholder={t.chat.placeholder}
-          disabled={isLoading}
-          mascotColor={mascot.color}
-          showLLMPicker={true}
-          chatLLM={chatLLM}
-          onLLMChange={setChatLLM}
-          deepThinkingEnabled={deepThinkingEnabled}
-          onDeepThinkingToggle={() => setDeepThinkingEnabled((prev) => !prev)}
-          isAdmin={isAdmin}
-          isRecording={isRecording}
-          onVoicePress={SPEECH_RECOGNITION_AVAILABLE ? handleVoiceInput : undefined}
-          maxWidth={CHAT_MAX_WIDTH}
-        />
-        </View>
+        {activeTab === 'chat' && (
+          <>
+            {isTrialExhausted ? (
+              <View style={styles.purchaseContainer}>
+                <Text
+                  style={[
+                    styles.purchaseText,
+                    {
+                      fontFamily: fontFamilies.figtree.medium,
+                      fontSize: 14,
+                      color: colors.textMuted,
+                      marginBottom: 12,
+                      textAlign: 'center',
+                    },
+                  ]}
+                >
+                  You've used all {trialLimit} trial conversations. Purchase to continue chatting.
+                </Text>
+                <BigPrimaryButton
+                  label="Purchase"
+                  onPress={() => {
+                    // TODO: Navigate to purchase screen or trigger purchase flow
+                    console.log('Purchase pressed for mascot:', mascotId);
+                    router.push(`/(tabs)/store`);
+                  }}
+                />
+              </View>
+            ) : (
+              <ChatInputBox
+                ref={chatInputRef}
+                value={inputText}
+                onChangeText={setInputText}
+                onSend={handleSend}
+                placeholder={t.chat.placeholder}
+                disabled={isLoading || !canUse}
+                mascotColor={mascot.color}
+                showLLMPicker={true}
+                chatLLM={chatLLM}
+                onLLMChange={setChatLLM}
+                deepThinkingEnabled={deepThinkingEnabled}
+                onDeepThinkingToggle={() => setDeepThinkingEnabled((prev) => !prev)}
+                isAdmin={isAdmin}
+                isRecording={isRecording}
+                onVoicePress={SPEECH_RECOGNITION_AVAILABLE ? handleVoiceInput : undefined}
+                maxWidth={CHAT_MAX_WIDTH}
+              />
+            )}
+          </>
+        )}
+      </View>
     </>
   );
 
@@ -1694,6 +2140,88 @@ const styles = StyleSheet.create({
     padding: 16,
     gap: 16,
   },
+  personalityContent: {
+    padding: 16,
+  },
+  personalityCard: {
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    gap: 16,
+  },
+  personalityHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  personalityTitle: {
+    fontSize: 18,
+    lineHeight: 24,
+  },
+  editButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  editButtonText: {
+    fontSize: 14,
+    lineHeight: 18,
+  },
+  editContainer: {
+    gap: 12,
+  },
+  personalityTextInput: {
+    minHeight: 200,
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  personalityActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 12,
+  },
+  resetButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  resetButtonText: {
+    fontSize: 14,
+    lineHeight: 18,
+  },
+  saveCancelButtons: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  cancelButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  cancelButtonText: {
+    fontSize: 14,
+    lineHeight: 18,
+  },
+  saveButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  saveButtonText: {
+    fontSize: 14,
+    lineHeight: 18,
+  },
   skillPreviewCard: {
     borderRadius: 12,
     overflow: 'hidden',
@@ -1718,6 +2246,15 @@ const styles = StyleSheet.create({
     paddingBottom: 0, // Will be set dynamically based on safe area
     alignItems: 'center',
     marginBottom: 0, // Ensure no extra margin
+  },
+  purchaseContainer: {
+    width: '100%',
+    maxWidth: CHAT_MAX_WIDTH,
+    padding: 16,
+    alignItems: 'center',
+  },
+  purchaseText: {
+    textAlign: 'center',
   },
   favoriteContainer: {
     flexDirection: 'row',

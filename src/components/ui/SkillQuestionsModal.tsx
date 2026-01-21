@@ -178,7 +178,7 @@ export function SkillQuestionsModal({
 
             {currentQuestion.type === 'choice' ? (
               <View style={styles.choicesContainer}>
-                {currentQuestion.choices?.map((choice, index) => {
+                {currentQuestion.choices?.map((choice: string, index: number) => {
                   const isSelected = answers[currentQuestion.id] === choice;
                   return (
                     <Pressable

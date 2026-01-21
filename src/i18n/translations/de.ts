@@ -28,7 +28,8 @@ export const de: TranslationKeys = {
     skills: 'Fähigkeiten',
     startChatting: 'Chat starten',
     tryOut: 'Maskottchen testen',
-    unlockFor: 'Freischalten für 99ct',
+    unlockFor: 'Freischalten für 1,99€',
+    unlockForFree: 'Freischalten für 99ct',
   },
 
   // Chat Screen
@@ -37,7 +38,7 @@ export const de: TranslationKeys = {
       chat: 'Chat',
       sources: 'Quellen',
       skills: 'Fähigkeiten',
-      instructions: 'Anweisungen',
+      personality: 'Persönlichkeit',
       bio: 'Bio',
     },
     placeholder: 'Nachricht schreiben',

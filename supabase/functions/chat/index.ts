@@ -1,13 +1,6 @@
-// Supabase Edge Function for secure AI chat
-// This function:
-// 1. Verifies user authentication
-// 2. Fetches the mascot's hidden system prompt from the database
-// 3. Calls the AI provider with the prompt injected
-// 4. Streams the response back to the client
-
+// Clean Edge Function for chat - Simple authentication
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-// Use latest stable version of Google Generative AI SDK
 import { GoogleGenerativeAI } from 'https://esm.sh/@google/generative-ai@0.21.0';
 
 const corsHeaders = {
@@ -17,438 +10,139 @@ const corsHeaders = {
 
 interface ChatRequest {
   mascotId: string;
-  messages: Array<{
-    role: 'user' | 'assistant';
-    content: string;
-  }>;
+  messages: Array<{ role: 'user' | 'assistant'; content: string }>;
   conversationId?: string;
-  skillId?: string; // Optional skill ID to include skill prompt
-  provider?: string; // Optional AI provider override ('openai' | 'gemini')
-  deepThinking?: boolean; // Optional Deep Thinking mode (uses pro models)
+  skillId?: string;
+  provider?: 'openai' | 'gemini';
+  deepThinking?: boolean;
 }
 
-serve(async (req) => {
-  // Handle CORS preflight
+serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
 
   try {
-    // Log request details for debugging
-    console.log('[Edge Function] Method:', req.method);
-    console.log('[Edge Function] URL:', req.url);
-    // Create Supabase client with service role for accessing mascot_prompts
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
-    
-    // Client for auth verification (uses anon key + user's JWT)
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    const geminiApiKey = Deno.env.get('Gemini_API_KEY') || Deno.env.get('GEMINI_API_KEY');
+    const openaiApiKey = Deno.env.get('OPENAI_API_KEY');
+
+    if (!supabaseUrl || !supabaseServiceKey) {
+      return new Response(
+        JSON.stringify({ error: 'Server configuration error' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Get Authorization header
     const authHeader = req.headers.get('Authorization');
-    const apikeyHeader = req.headers.get('apikey');
-    
-    console.log('[Edge Function] Received request');
-    console.log('[Edge Function] Has Authorization header:', !!authHeader);
-    console.log('[Edge Function] Has apikey header:', !!apikeyHeader);
-    
-    if (!authHeader) {
-      console.error('[Edge Function] Missing Authorization header');
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return new Response(
         JSON.stringify({ error: 'Missing Authorization header' }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Extract bearer token (handle "Bearer " prefix properly)
-    const token = authHeader.replace(/^Bearer\s+/i, '').trim();
-    if (!token) {
-      console.error('[Edge Function] Authorization header present but no token');
-      return new Response(
-        JSON.stringify({ error: 'Invalid Authorization header' }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
+    // Extract token
+    const token = authHeader.substring(7).trim();
 
-    // Service client for accessing protected data and validating JWT
+    // Create admin client and validate token
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
-
-    // Verify user is authenticated using service role (more reliable in Edge Functions)
-    console.log('[Edge Function] Verifying user authentication...');
     const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
-    
-    if (authError) {
-      console.error('[Edge Function] Auth error:', authError);
-      console.error('[Edge Function] Auth error code:', authError.code);
-      console.error('[Edge Function] Auth error message:', authError.message);
-    }
-    
-    if (!user) {
-      console.error('[Edge Function] No user found');
-    }
-    
+
     if (authError || !user) {
       return new Response(
         JSON.stringify({ 
-          error: 'Unauthorized', 
-          details: authError?.message,
-          code: authError?.code 
+          error: 'Authentication failed',
+          details: authError?.message || 'Invalid token'
         }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
-    
-    console.log('[Edge Function] User authenticated:', user.id);
 
-    // Parse request body with error handling
-    let requestBody: ChatRequest;
-    try {
-      const bodyText = await req.text();
-      console.log('[Edge Function] Request body length:', bodyText.length);
-      requestBody = JSON.parse(bodyText);
-    } catch (parseError: any) {
-      console.error('[Edge Function] Failed to parse request body:', parseError);
-      return new Response(
-        JSON.stringify({ error: 'Invalid request body', details: parseError.message }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    const { mascotId, messages, conversationId, skillId, provider: userProviderOverride, deepThinking: deepThinkingEnabled } = requestBody;
+    // Parse request body
+    const body: ChatRequest = await req.json();
+    const { mascotId, messages, skillId, provider, deepThinking } = body;
 
     if (!mascotId || !messages || messages.length === 0) {
       return new Response(
-        JSON.stringify({ error: 'Missing required fields: mascotId, messages' }),
+        JSON.stringify({ error: 'Missing required fields' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Use mascot ID directly (VARCHAR, not UUID in new schema)
-    const mascotIdString = mascotId.toString();
-
-    // Fetch mascot info using VARCHAR ID
+    // Get mascot
     const { data: mascot, error: mascotError } = await supabaseAdmin
       .from('mascots')
       .select('*')
-      .eq('id', mascotIdString)
+      .eq('id', mascotId.toString())
       .single();
 
     if (mascotError || !mascot) {
-      console.error('[Edge Function] Mascot not found:', mascotError);
       return new Response(
-        JSON.stringify({ error: 'Mascot not found', details: mascotError?.message }),
+        JSON.stringify({ error: 'Mascot not found' }),
         { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Fetch personality (system behavior guidelines)
-    // Try new table first, fallback to old table for compatibility
+    // Get personality (try new table, fallback to old)
     let personality = '';
-    
-    // Try mascot_personality table first (new naming)
     const { data: personalityData } = await supabaseAdmin
       .from('mascot_personality')
       .select('personality')
-      .eq('mascot_id', mascotIdString)
+      .eq('mascot_id', mascotId.toString())
       .maybeSingle();
-    
+
     if (personalityData?.personality) {
       personality = personalityData.personality;
     } else {
-      // Fallback to old mascot_instructions table
-      const { data: instructionsData, error: instructionsError } = await supabaseAdmin
+      const { data: instructionsData } = await supabaseAdmin
         .from('mascot_instructions')
         .select('instructions')
-        .eq('mascot_id', mascotIdString)
+        .eq('mascot_id', mascotId.toString())
         .maybeSingle();
-      
-      if (instructionsError) {
-        console.error('[Edge Function] Error fetching instructions/personality:', instructionsError);
-      } else if (instructionsData?.instructions) {
+      if (instructionsData?.instructions) {
         personality = instructionsData.instructions;
       }
     }
 
-    // Fetch skill prompt if skillId is provided
-    // IMPORTANT: Fetch directly from database to get the full prompt (bypasses RPC admin check)
+    // Get skill prompt if provided
     let skillPrompt = '';
     if (skillId) {
-      // Try RPC first (might return null for non-admin users)
-      const { data: skillsData } = await supabaseAdmin
-        .rpc('get_mascot_skills', { p_mascot_id: mascotIdString });
-      
-      if (skillsData) {
-        const skill = skillsData.find((s: any) => s.id === skillId);
-        if (skill?.skill_prompt) {
-          skillPrompt = skill.skill_prompt;
-        }
-      }
-      
-      // If RPC didn't return the prompt (e.g., for non-admin users), fetch directly from database
-      if (!skillPrompt) {
-        const { data: skillData, error: skillError } = await supabaseAdmin
-          .from('mascot_skills')
-          .select('skill_prompt')
-          .eq('id', skillId)
-          .eq('mascot_id', mascotIdString)
-          .single();
-        
-        if (!skillError && skillData?.skill_prompt) {
-          skillPrompt = skillData.skill_prompt;
-          console.log('[Edge Function] Fetched skill prompt directly from database for skill:', skillId);
-        }
-      }
-    }
-
-    // Construct system prompt from mascot info and personality
-    // Mascot personality = behavior guidelines (ALWAYS applied)
-    // Skill prompt = specific approach for this chat (ADDITIONAL guidance when skill is selected)
-    let combinedSystemPrompt = `You are ${mascot.name}, ${mascot.subtitle || 'a helpful AI assistant'}.`;
-    
-    // MASCOT PERSONALITY (Personality/Behavior - Always True)
-    // These define the mascot's personality and should be followed in ALL conversations
-    if (personality) {
-      combinedSystemPrompt = `${combinedSystemPrompt}\n\n---\n\nYOUR PERSONALITY AND BEHAVIOR (Always apply these in every conversation):\n\n${personality}`;
-    } else {
-      // Default personality if none configured
-      combinedSystemPrompt = `${combinedSystemPrompt}\n\n---\n\nYOUR PERSONALITY AND BEHAVIOR (Always apply these in every conversation):\n\nYou are friendly, helpful, and thorough. Always provide clear, actionable responses.`;
-    }
-    
-    // SKILL PROMPT (Specific Approach - Additional instructions for this chat)
-    // These are specific instructions for the selected skill and should be followed EXACTLY
-    // The skill prompt should be followed throughout the entire conversation
-    // It may ask for information step-by-step, which should be maintained across all messages
-    if (skillPrompt) {
-      combinedSystemPrompt = `${combinedSystemPrompt}\n\n---\n\nCRITICAL: SKILL-SPECIFIC INSTRUCTIONS (FOLLOW THESE THROUGHOUT THE ENTIRE CONVERSATION):\n\n${skillPrompt}\n\nIMPORTANT: These skill instructions define how you should behave throughout this entire conversation. Your personality from above still applies, but these skill instructions determine your approach, methodology, response style, and the questions you should ask. Follow these instructions step-by-step as written. If the instructions specify asking for information one step at a time, maintain that approach across all messages. Continue following these instructions for every message in this conversation.`;
-    }
-
-    // Check if user has access to this mascot (free or unlocked)
-    // First, check if user is an admin (admins have access to all mascots)
-    const { data: userProfile, error: profileError } = await supabaseAdmin
-      .from('profiles')
-      .select('role, is_subscribed, subscription_expires_at')
-      .eq('id', user.id)
-      .maybeSingle();
-
-    // If profile doesn't exist, create a basic one (non-admin, not subscribed)
-    const isAdmin = userProfile?.role === 'admin' || false;
-    const isSubscribed = userProfile?.is_subscribed === true && 
-      (!userProfile.subscription_expires_at || new Date(userProfile.subscription_expires_at) > new Date());
-
-    // Free mascots are accessible to everyone
-    if (!mascot.is_free && !isAdmin) {
-      const { data: userMascot } = await supabaseAdmin
-        .from('user_mascots')
-        .select('id')
-        .eq('user_id', user.id)
-        .eq('mascot_id', mascotIdString)
+      const { data: skillData } = await supabaseAdmin
+        .from('mascot_skills')
+        .select('skill_prompt')
+        .eq('id', skillId)
+        .eq('mascot_id', mascotId.toString())
         .maybeSingle();
-
-      if (!userMascot && !isSubscribed) {
-        return new Response(
-          JSON.stringify({ error: 'Mascot not unlocked. Please purchase or subscribe.' }),
-          { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
+      if (skillData?.skill_prompt) {
+        skillPrompt = skillData.skill_prompt;
       }
     }
 
-    // Get AI provider credentials
-    // Note: Supabase secrets are case-sensitive, use the exact name from secrets list
-    // Secret is named "Gemini_API_KEY" (not "GEMINI_API_KEY")
-    // In Supabase Edge Functions, secrets are available via Deno.env.get()
-    const geminiApiKey = Deno.env.get('Gemini_API_KEY') || Deno.env.get('GEMINI_API_KEY');
-    const openaiApiKey = Deno.env.get('OPENAI_API_KEY');
+    // Build system prompt
+    let systemPrompt = `You are ${mascot.name}, ${mascot.subtitle || 'a helpful AI assistant'}.`;
     
-    // Debug logging for API keys (don't log the actual key values)
-    console.log('[Edge Function] Gemini API key exists:', !!geminiApiKey);
-    console.log('[Edge Function] OpenAI API key exists:', !!openaiApiKey);
-    console.log('[Edge Function] User provider override:', userProviderOverride || 'none');
-
-    // Provider selection priority:
-    // 1. User override (if provided)
-    // 2. Mascot's ai_provider (if configured)
-    // 3. System default (OpenAI if available, else Gemini)
-    let aiProvider: string;
-    let aiModel: string;
-    
-    if (userProviderOverride && (userProviderOverride === 'openai' || userProviderOverride === 'gemini')) {
-      // User explicitly chose a provider
-      aiProvider = userProviderOverride;
-      console.log('[Edge Function] Using user-provided provider:', aiProvider);
-    } else if ((mascot as any).ai_provider && ((mascot as any).ai_provider === 'openai' || (mascot as any).ai_provider === 'gemini')) {
-      // Use mascot's configured provider
-      aiProvider = (mascot as any).ai_provider;
-      console.log('[Edge Function] Using mascot-configured provider:', aiProvider);
-    } else {
-      // System default: prefer OpenAI if available, else Gemini
-      aiProvider = openaiApiKey ? 'openai' : 'gemini';
-      console.log('[Edge Function] Using system default provider:', aiProvider, openaiApiKey ? '(OpenAI key available)' : '(OpenAI key not available, using Gemini)');
+    if (personality) {
+      systemPrompt += `\n\n---\n\nYOUR PERSONALITY AND BEHAVIOR:\n\n${personality}`;
     }
-    
-    // Set the model based on the selected provider and Deep Thinking mode
-    // Deep Thinking uses pro models: gpt-4o (OpenAI) or gemini-1.5-pro (Gemini)
-    // Normal mode uses light models: gpt-4o-mini (OpenAI) or gemini-1.5-flash (Gemini)
-    if (aiProvider === 'openai') {
-      aiModel = deepThinkingEnabled 
-        ? 'gpt-4o' // Deep Thinking: use pro model
-        : (mascot as any).ai_model || 'gpt-4o-mini'; // Normal: use light model
-      if (!openaiApiKey) {
-        console.error('[Edge Function] OpenAI provider selected but API key not configured');
-        return new Response(
-          JSON.stringify({ error: 'OpenAI API key not configured. Please use Gemini or configure OpenAI.' }),
-          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-    } else {
-      // Gemini models
-      aiModel = deepThinkingEnabled 
-        ? 'gemini-1.5-pro' // Deep Thinking: use pro model
-        : 'gemini-1.5-flash'; // Normal: use light model
-      if (!geminiApiKey) {
-        console.error('[Edge Function] Gemini provider selected but API key not configured');
-        return new Response(
-          JSON.stringify({ error: 'Gemini API key not configured. Please use OpenAI or configure Gemini.' }),
-          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
+
+    if (skillPrompt) {
+      systemPrompt += `\n\n---\n\nSKILL-SPECIFIC INSTRUCTIONS:\n\n${skillPrompt}`;
     }
-    
-    console.log('[Edge Function] Deep Thinking mode:', deepThinkingEnabled || false, '- Using model:', aiModel);
-    
-    console.log('[Edge Function] Final provider:', aiProvider, 'Model:', aiModel);
 
-    const geminiModel = aiModel; // Use the same model we selected above
+    // Determine provider and model
+    const useProvider = provider || 'gemini';
+    const useModel = deepThinking 
+      ? (useProvider === 'openai' ? 'gpt-4o' : 'gemini-1.5-pro')
+      : (useProvider === 'openai' ? 'gpt-4o-mini' : 'gemini-1.5-flash');
 
-    // Route to appropriate AI provider
-    if (aiProvider === 'gemini' || !aiProvider || aiProvider === '') {
-      if (!geminiApiKey) {
-        console.error('[Edge Function] Gemini API key not configured');
-        return new Response(
-          JSON.stringify({ error: 'Gemini API key not configured' }),
-          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-
-      try {
-        console.log('[Edge Function] Initializing Gemini with model:', geminiModel);
-        const genAI = new GoogleGenerativeAI(geminiApiKey);
-        
-        // Use the selected Gemini model (gemini-1.5-flash by default)
-        // gemini-1.5-flash is stable and widely available
-        const model = genAI.getGenerativeModel({ 
-          model: geminiModel,
-          systemInstruction: combinedSystemPrompt,
-        });
-        
-        console.log('[Edge Function] Model initialized successfully:', geminiModel);
-
-        // Convert messages to Gemini format
-        // Gemini requires: first message must be from user, alternating user/model pattern
-        // Filter and convert messages, ensuring we start with a user message
-        const geminiHistory: Array<{ role: 'user' | 'model'; parts: Array<{ text: string }> }> = [];
-        
-        // Process all messages except the last one (which we'll send separately)
-        for (let i = 0; i < messages.length - 1; i++) {
-          const msg = messages[i];
-          // Skip any non-user/non-assistant messages
-          if (msg.role !== 'user' && msg.role !== 'assistant') continue;
-          
-          // Convert to Gemini format
-          const geminiRole = msg.role === 'assistant' ? 'model' : 'user';
-          
-          // Ensure we start with a user message
-          if (geminiHistory.length === 0 && geminiRole !== 'user') {
-            // Skip this message if it's not a user message and history is empty
-            continue;
-          }
-          
-          geminiHistory.push({
-            role: geminiRole,
-            parts: [{ text: msg.content }],
-          });
-        }
-
-        const lastMessage = messages[messages.length - 1];
-        console.log('[Edge Function] Starting chat with history length:', geminiHistory.length);
-        console.log('[Edge Function] Last message role:', lastMessage.role);
-        console.log('[Edge Function] Last message:', lastMessage.content.substring(0, 100) + '...');
-        
-        // Ensure last message is from user (required by Gemini)
-        if (lastMessage.role !== 'user') {
-          console.error('[Edge Function] Last message must be from user, got:', lastMessage.role);
-          return new Response(
-            JSON.stringify({ error: 'Last message must be from user' }),
-            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-          );
-        }
-        
-        const chat = model.startChat({ history: geminiHistory });
-
-        // Stream the response
-        console.log('[Edge Function] Sending message to Gemini...');
-        const result = await chat.sendMessageStream(lastMessage.content);
-        console.log('[Edge Function] Got response stream from Gemini');
-
-      // Create a readable stream for the response
-      const stream = new ReadableStream({
-        async start(controller) {
-          const encoder = new TextEncoder();
-          
-          try {
-            for await (const chunk of result.stream) {
-              const text = chunk.text();
-              if (text) {
-                controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content: text })}\n\n`));
-              }
-            }
-            
-            // Send completion signal with provider info
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, model: geminiModel, provider: 'gemini' })}\n\n`));
-            controller.close();
-          } catch (streamError: any) {
-            console.error('[Edge Function] Stream error:', streamError);
-            const errorMessage = streamError?.message || streamError?.toString() || 'Stream error occurred';
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: errorMessage })}\n\n`));
-            controller.close();
-          }
-        },
-      });
-
-        return new Response(stream, {
-          headers: {
-            ...corsHeaders,
-            'Content-Type': 'text/event-stream',
-            'Cache-Control': 'no-cache',
-            'Connection': 'keep-alive',
-          },
-        });
-      } catch (geminiError: any) {
-        console.error('[Edge Function] Gemini API error:', geminiError);
-        console.error('[Edge Function] Gemini error stack:', geminiError?.stack);
-        console.error('[Edge Function] Gemini error code:', geminiError?.code);
-        console.error('[Edge Function] Gemini error status:', geminiError?.status);
-        const errorMessage = geminiError?.message || geminiError?.toString() || 'Unknown Gemini API error';
-        return new Response(
-          JSON.stringify({ 
-            error: 'Gemini API error',
-            details: errorMessage,
-            code: geminiError?.code,
-            status: geminiError?.status
-          }),
-          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-
-    } else if (aiProvider === 'openai') {
-      if (!openaiApiKey) {
-        return new Response(
-          JSON.stringify({ error: 'OpenAI API key not configured' }),
-          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-
-      // OpenAI streaming implementation
+    // OpenAI
+    if (useProvider === 'openai' && openaiApiKey) {
       const openaiMessages = [
-        { role: 'system', content: combinedSystemPrompt },
-        ...messages.map((msg) => ({ role: msg.role, content: msg.content })),
+        { role: 'system', content: systemPrompt },
+        ...messages.map(m => ({ role: m.role, content: m.content })),
       ];
 
       const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -458,10 +152,9 @@ serve(async (req) => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: aiModel,
+          model: useModel,
           messages: openaiMessages,
           stream: true,
-          max_tokens: 2048,
         }),
       });
 
@@ -473,16 +166,15 @@ serve(async (req) => {
         );
       }
 
-      // Transform OpenAI stream to our format
       const transformStream = new TransformStream({
         async transform(chunk, controller) {
           const text = new TextDecoder().decode(chunk);
-          const lines = text.split('\n').filter((line) => line.startsWith('data: '));
+          const lines = text.split('\n').filter(line => line.startsWith('data: '));
           
           for (const line of lines) {
             const data = line.slice(6);
             if (data === '[DONE]') {
-              controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ done: true, model: aiModel, provider: 'openai' })}\n\n`));
+              controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ done: true, model: useModel, provider: 'openai' })}\n\n`));
             } else {
               try {
                 const parsed = JSON.parse(data);
@@ -503,29 +195,76 @@ serve(async (req) => {
           ...corsHeaders,
           'Content-Type': 'text/event-stream',
           'Cache-Control': 'no-cache',
-          'Connection': 'keep-alive',
         },
       });
+    }
 
-    } else {
+    // Gemini (default)
+    if (!geminiApiKey) {
       return new Response(
-        JSON.stringify({ error: `Unsupported AI provider: ${aiProvider}` }),
+        JSON.stringify({ error: 'Gemini API key not configured' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const genAI = new GoogleGenerativeAI(geminiApiKey);
+    const model = genAI.getGenerativeModel({ 
+      model: useModel,
+      systemInstruction: systemPrompt,
+    });
+
+    const geminiHistory: Array<{ role: 'user' | 'model'; parts: Array<{ text: string }> }> = [];
+    
+    for (let i = 0; i < messages.length - 1; i++) {
+      const msg = messages[i];
+      geminiHistory.push({
+        role: msg.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: msg.content }],
+      });
+    }
+
+    const lastMessage = messages[messages.length - 1];
+    if (lastMessage.role !== 'user') {
+      return new Response(
+        JSON.stringify({ error: 'Last message must be from user' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
+    const chat = model.startChat({ history: geminiHistory });
+    const result = await chat.sendMessageStream(lastMessage.content);
+
+    const stream = new ReadableStream({
+      async start(controller) {
+        const encoder = new TextEncoder();
+        try {
+          for await (const chunk of result.stream) {
+            const text = chunk.text();
+            if (text) {
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content: text })}\n\n`));
+            }
+          }
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, model: useModel, provider: 'gemini' })}\n\n`));
+          controller.close();
+        } catch (error: any) {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: error.message })}\n\n`));
+          controller.close();
+        }
+      },
+    });
+
+    return new Response(stream, {
+      headers: {
+        ...corsHeaders,
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+      },
+    });
+
   } catch (error: any) {
-    console.error('[Edge Function] Chat function error:', error);
-    console.error('[Edge Function] Error stack:', error.stack);
-    console.error('[Edge Function] Error message:', error.message);
     return new Response(
-      JSON.stringify({ 
-        error: 'Internal server error',
-        details: error.message || 'Unknown error',
-        type: error.name || 'Error'
-      }),
+      JSON.stringify({ error: 'Internal server error', details: error.message }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
 });
-

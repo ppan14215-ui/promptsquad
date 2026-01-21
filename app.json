@@ -8,6 +8,8 @@
     "userInterfaceStyle": "automatic",
     "scheme": "prompt-squad",
     "newArchEnabled": true,
+    "description": "AI-powered chat assistants for various tasks and purposes. Interact with specialized AI mascots to get help with writing, analysis, advice, and more.",
+    "privacy": "public",
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
@@ -19,6 +21,9 @@
       "infoPlist": {
         "NSSpeechRecognitionUsageDescription": "This app uses speech recognition to convert your voice input into text for chat messages.",
         "NSMicrophoneUsageDescription": "This app needs access to your microphone to record voice input for chat messages."
+      },
+      "privacyManifests": {
+        "NSPrivacyAccessedAPITypes": []
       }
     },
     "android": {
@@ -32,7 +37,8 @@
       "permissions": [
         "android.permission.RECORD_AUDIO"
       ],
-      "softwareKeyboardLayoutMode": "resize"
+      "softwareKeyboardLayoutMode": "resize",
+      "privacyPolicy": "https://promptsquad.app/privacy"
     },
     "web": {
       "favicon": "./assets/favicon.png",

@@ -65,6 +65,13 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
+        name="privacy"
+        options={{
+          tabBarLabel: 'Privacy',
+          tabBarIcon: ({ color }) => <Icon name="lock" color={color} size={24} />,
+        }}
+      />
+      <Tabs.Screen
         name="tokens"
         options={{
           tabBarLabel: 'Tokens',

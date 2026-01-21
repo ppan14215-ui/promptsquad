@@ -22,10 +22,11 @@ import {
   Settings02Icon,
   type HugeiconsProps 
 } from 'hugeicons-react-native';
+import { FavouriteFilledIcon } from './FavouriteFilledIcon';
 
-type IconComponent = React.ComponentType<HugeiconsProps>;
+type IconComponent = React.ComponentType<HugeiconsProps | SvgProps>;
 
-type NamedIcon = 'home' | 'user' | 'add-circle' | 'arrow-up-right' | 'close' | 'favourite' | 'arrow-left' | 'arrow-right' | 'send' | 'mic' | 'stop' | 'globe' | 'idea' | 'store' | 'lock' | 'edit' | 'delete' | 'add' | 'settings';
+type NamedIcon = 'home' | 'user' | 'add-circle' | 'arrow-up-right' | 'close' | 'favourite' | 'favourite-filled' | 'arrow-left' | 'arrow-right' | 'send' | 'mic' | 'stop' | 'globe' | 'idea' | 'store' | 'lock' | 'edit' | 'delete' | 'add' | 'settings' | 'pin' | 'pin-filled';
 
 type IconProps = {
   name?: NamedIcon;
@@ -42,6 +43,7 @@ const iconMap: Record<NamedIcon, IconComponent> = {
   'arrow-up-right': ArrowUpRight01Icon,
   'close': Cancel01Icon,
   'favourite': FavouriteIcon,
+  'favourite-filled': FavouriteFilledIcon,
   'arrow-left': ArrowLeft01Icon,
   'arrow-right': ArrowRight01Icon,
   'send': SentIcon,
@@ -55,6 +57,8 @@ const iconMap: Record<NamedIcon, IconComponent> = {
   'delete': Delete02Icon,
   'add': Add01Icon,
   'settings': Settings02Icon,
+  'pin': FavouriteIcon, // Use favourite icon for pin
+  'pin-filled': FavouriteFilledIcon, // Use filled favourite icon for filled pin
 };
 
 export function Icon({
@@ -67,8 +71,21 @@ export function Icon({
   const Component = icon ?? (name ? iconMap[name] : undefined);
 
   if (!Component) {
-    console.warn('[Icon] Missing icon component');
+    // Silently return null for missing icons in production
+    if (__DEV__) {
+      console.warn('[Icon] Missing icon component:', name);
+    }
     return null;
+  }
+
+  // Handle custom SVG components (like FavouriteFilledIcon) that don't use strokeWidth
+  if (name === 'favourite-filled' || name === 'pin-filled') {
+    return (
+      <Component
+        size={size}
+        color={color}
+      />
+    );
   }
 
   return (

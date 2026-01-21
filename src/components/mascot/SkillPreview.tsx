@@ -39,7 +39,8 @@ export function SkillPreview({
           style={[
             styles.skillLabel,
             {
-              fontFamily: fontFamilies.semibold,
+              fontFamily: textStyles.h3.fontFamily,
+              fontSize: textStyles.h3.fontSize,
               color: mascotColor || colors.text,
             },
           ]}
@@ -48,7 +49,7 @@ export function SkillPreview({
         </Text>
         {!isFullAccess && (
           <View style={[styles.lockBadge, { backgroundColor: colors.outline }]}>
-            <Icon name="lock" size={14} color={colors.textSecondary} />
+            <Icon name="lock" size={14} color={colors.textMuted} />
           </View>
         )}
       </View>
@@ -59,8 +60,10 @@ export function SkillPreview({
           style={[
             styles.promptText,
             {
-              fontFamily: fontFamilies.regular,
-              color: colors.textSecondary,
+              fontFamily: textStyles.body.fontFamily,
+              fontSize: textStyles.body.fontSize,
+              lineHeight: textStyles.body.lineHeight,
+              color: colors.textMuted,
             },
           ]}
           numberOfLines={isFullAccess ? undefined : 8}
@@ -83,13 +86,14 @@ export function SkillPreview({
       {/* Lock message for non-admins */}
       {!isFullAccess && (
         <View style={[styles.lockMessage, { borderTopColor: colors.outline }]}>
-          <Icon name="lock" size={16} color={colors.textSecondary} />
+          <Icon name="lock" size={16} color={colors.textMuted} />
           <Text
             style={[
               styles.lockText,
               {
-                fontFamily: fontFamilies.regular,
-                color: colors.textSecondary,
+                fontFamily: textStyles.body.fontFamily,
+                fontSize: textStyles.body.fontSize,
+                color: colors.textMuted,
               },
             ]}
           >

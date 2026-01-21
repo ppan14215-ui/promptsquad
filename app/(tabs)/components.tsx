@@ -54,7 +54,7 @@ const CHAT_TABS = [
   { key: 'chat', label: 'Chat' },
   { key: 'sources', label: 'Sources' },
   { key: 'skills', label: 'Skills' },
-  { key: 'instructions', label: 'Instructions' },
+  { key: 'personality', label: 'Personality' },
 ];
 
 const CARD_STATES: { state: MascotCardState; label: string }[] = [

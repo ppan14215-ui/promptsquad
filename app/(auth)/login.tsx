@@ -15,12 +15,14 @@ import { useTheme, fontFamilies, textStyles } from '@/design-system';
 import { useI18n } from '@/i18n';
 import { useAuth } from '@/services/auth';
 import { BigPrimaryButton, BigSecondaryButton, TextButton, SegmentedToggle, InputField } from '@/components';
+import { createNamedLogger } from '@/lib/utils/logger';
+
+const logger = createNamedLogger('Login');
 
 type AuthMode = 'login' | 'signup';
 
 const STORAGE_KEYS = {
   savedEmail: 'saved_email',
-  savedPassword: 'saved_password',
   rememberMe: 'remember_me',
 };
 
@@ -38,29 +40,27 @@ export default function LoginScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Load saved credentials on mount - run immediately
+  // Load saved email on mount - run immediately
   useEffect(() => {
-    const loadSavedCredentials = async () => {
+    const loadSavedEmail = async () => {
       try {
-        const [savedEmail, savedPassword, rememberMeValue] = await Promise.all([
+        const [savedEmail, rememberMeValue] = await Promise.all([
           AsyncStorage.getItem(STORAGE_KEYS.savedEmail),
-          AsyncStorage.getItem(STORAGE_KEYS.savedPassword),
           AsyncStorage.getItem(STORAGE_KEYS.rememberMe),
         ]);
 
-        if (rememberMeValue === 'true' && savedEmail && savedPassword) {
-          // Set state immediately
+        if (rememberMeValue === 'true' && savedEmail) {
+          // Set email only - password should never be stored
           setEmail(savedEmail);
-          setPassword(savedPassword);
           setRememberMe(true);
         }
       } catch (err) {
-        console.error('Error loading saved credentials:', err);
+        logger.error('Error loading saved email:', err);
       }
     };
 
     // Run immediately, don't wait
-    loadSavedCredentials();
+    loadSavedEmail();
   }, []);
 
   const isLogin = mode === 'login';
@@ -104,27 +104,25 @@ export default function LoginScreen() {
       if (authError) {
         setError(authError.message || t.auth.errors.generic);
       } else {
-        // Save credentials if "Remember Me" is checked
+        // Save email only if "Remember Me" is checked (password should never be stored)
         if (isLogin && rememberMe) {
           try {
             await Promise.all([
               AsyncStorage.setItem(STORAGE_KEYS.savedEmail, email),
-              AsyncStorage.setItem(STORAGE_KEYS.savedPassword, password),
               AsyncStorage.setItem(STORAGE_KEYS.rememberMe, 'true'),
             ]);
           } catch (err) {
-            console.error('Error saving credentials:', err);
+            logger.error('Error saving email:', err);
           }
         } else if (isLogin && !rememberMe) {
-          // Clear saved credentials if "Remember Me" is unchecked
+          // Clear saved email if "Remember Me" is unchecked
           try {
             await Promise.all([
               AsyncStorage.removeItem(STORAGE_KEYS.savedEmail),
-              AsyncStorage.removeItem(STORAGE_KEYS.savedPassword),
               AsyncStorage.removeItem(STORAGE_KEYS.rememberMe),
             ]);
           } catch (err) {
-            console.error('Error clearing credentials:', err);
+            logger.error('Error clearing saved email:', err);
           }
         }
 
@@ -278,13 +276,12 @@ export default function LoginScreen() {
             onPress={() => {
               const newValue = !rememberMe;
               setRememberMe(newValue);
-              // If unchecking, clear saved credentials
+              // If unchecking, clear saved email
               if (!newValue) {
                 AsyncStorage.multiRemove([
                   STORAGE_KEYS.savedEmail,
-                  STORAGE_KEYS.savedPassword,
                   STORAGE_KEYS.rememberMe,
-                ]).catch((err) => console.error('Error clearing credentials:', err));
+                ]).catch((err) => logger.error('Error clearing saved email:', err));
               }
             }}
           >

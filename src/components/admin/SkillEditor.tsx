@@ -17,6 +17,7 @@ import { BigSecondaryButton } from '@/components/ui/BigSecondaryButton';
 import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
 import { MascotSkill, createSkill, updateSkill, deleteSkill } from '@/services/admin';
+import { logger } from '@/lib/utils/logger';
 
 type SkillEditorProps = {
   visible: boolean;
@@ -86,12 +87,12 @@ export function SkillEditor({
           parseInt(sortOrder, 10) || 0
         );
       }
-      console.log('[SkillEditor] Skill saved successfully, calling onSave callback');
+      logger.debug('[SkillEditor] Skill saved successfully, calling onSave callback');
       onSave();
       onClose();
     } catch (err: any) {
-      console.error('[SkillEditor] Error saving skill:', err);
-      console.error('[SkillEditor] Error details:', {
+      logger.error('[SkillEditor] Error saving skill:', err);
+      logger.error('[SkillEditor] Error details:', {
         message: err.message,
         code: err.code,
         details: err.details,
@@ -116,7 +117,7 @@ export function SkillEditor({
       onSave();
       onClose();
     } catch (err: any) {
-      console.error('Error deleting skill:', err);
+      logger.error('Error deleting skill:', err);
       setError(err.message || 'Failed to delete skill');
     } finally {
       setIsLoading(false);

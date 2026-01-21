@@ -9,6 +9,7 @@ import { useIsAdmin, useMascots, MascotBasic, useMascotSkills, MascotSkill } fro
 import { getMascotImageSource, getMascotGrayscaleImageSource } from '@/services/admin/mascot-images';
 import { useSubscription } from '@/services/subscription';
 import { useMascotLikeCounts } from '@/services/mascot-likes';
+import { useUnlockedMascots } from '@/services/mascot-access';
 import React from 'react';
 
 const DESKTOP_BREAKPOINT = 768;
@@ -96,6 +97,8 @@ type Mascot = {
   grayscaleImage?: any; // Optional grayscale version
   color: MascotColor;
   isLocked?: boolean;
+  isPro?: boolean; // True if mascot is exclusively for pro subscription
+  isUnlocked?: boolean; // True if mascot is unlocked for the user
   personality: string[];
   models: string[];
   skills: Skill[];
@@ -429,6 +432,7 @@ export default function StoreScreen() {
   const { openMascotId } = useLocalSearchParams<{ openMascotId?: string }>();
   const { isAdmin } = useIsAdmin();
   const { isSubscribed } = useSubscription();
+  const { unlockedMascotIds } = useUnlockedMascots();
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const [selectedMascotId, setSelectedMascotId] = useState<string | null>(null);
@@ -446,6 +450,17 @@ export default function StoreScreen() {
         const grayscaleSource = getMascotGrayscaleImageSource(m.image_url || null);
         // Find matching hardcoded mascot for fallback data
         const hardcodedMascot = SAMPLE_MASCOTS.find((hm) => hm.id === m.id);
+        const mascotId = parseInt(m.id);
+        const isPro = mascotId >= 11 && mascotId <= 20;
+        const isFree = mascotId >= 1 && mascotId <= 10;
+        
+        // Determine unlock status:
+        // - For free mascots (1-10): unlocked only if in unlockedMascotIds
+        // - For pro mascots (11-20): unlocked if subscribed or admin
+        const isUnlocked = isFree 
+          ? unlockedMascotIds.includes(m.id)
+          : (isSubscribed || isAdmin);
+        
         return {
           id: m.id,
           name: m.name,
@@ -456,16 +471,33 @@ export default function StoreScreen() {
           personality: hardcodedMascot?.personality || [],
           models: hardcodedMascot?.models || [],
           skills: hardcodedMascot?.skills || [],
-          isLocked: !m.is_free && !isAdmin && !isSubscribed, // Determine lock status
+          isLocked: !isUnlocked, // Locked if not unlocked
+          isPro: isPro, // Mascots 11-20 are PRO
+          isUnlocked: isUnlocked,
         };
       });
     }
     // Fallback to hardcoded data
-    return SAMPLE_MASCOTS.map((m) => ({
-      ...m,
-      isLocked: !['1', '2', '3', '4'].includes(m.id) && !isAdmin && !isSubscribed,
-    }));
-  }, [dbMascots, isAdmin, isSubscribed]);
+    return SAMPLE_MASCOTS.map((m) => {
+      const mascotId = parseInt(m.id);
+      const isPro = mascotId >= 11 && mascotId <= 20;
+      const isFree = mascotId >= 1 && mascotId <= 10;
+      
+      // Determine unlock status:
+      // - For free mascots (1-10): unlocked only if in unlockedMascotIds
+      // - For pro mascots (11-20): unlocked if subscribed or admin
+      const isUnlocked = isFree 
+        ? unlockedMascotIds.includes(m.id)
+        : (isSubscribed || isAdmin);
+      
+      return {
+        ...m,
+        isLocked: !isUnlocked,
+        isPro: isPro,
+        isUnlocked: isUnlocked,
+      };
+    });
+  }, [dbMascots, isAdmin, isSubscribed, unlockedMascotIds]);
   
   // Fetch like counts for all mascots using their IDs
   const mascotIds = allMascots.map(m => m.id);
@@ -478,10 +510,14 @@ export default function StoreScreen() {
   
   // For admin, all mascots are unlocked (purchased state)
   // For regular users, check isLocked property (already set in allMascots)
-  const getMascotLockStatus = (mascot: Mascot) => {
+  const getMascotLockStatus = (mascot: Mascot | MascotBasic) => {
     if (isAdmin) return false; // Never locked for admin
     if (isSubscribed) return false; // Never locked for subscribers
-    return mascot.isLocked || false;
+    if ('isLocked' in mascot) {
+      return mascot.isLocked || false;
+    }
+    // For MascotBasic, check if it's free
+    return !('is_free' in mascot && mascot.is_free);
   };
 
   // Open mascot details if navigated from home with openMascotId
@@ -537,7 +573,7 @@ export default function StoreScreen() {
   };
 
   const handleUnlock = () => {
-    console.log(`Unlock ${selectedMascot?.name} for 99ct`);
+    console.log(`Unlock ${selectedMascot?.name} for €1.99`);
     // TODO: Trigger in-app purchase
   };
 
@@ -600,6 +636,7 @@ export default function StoreScreen() {
         skills={displaySkills}
         variant={getMascotLockStatus(mascot) ? 'locked' : 'available'}
         mascotId={mascot.id}
+        isPro={mascot.isPro || false}
         onClose={onClose}
         onStartChat={onStartChat}
         onTryOut={onTryOut}
@@ -710,6 +747,8 @@ export default function StoreScreen() {
                     grayscaleImageSource={mascot.grayscaleImage || undefined}
                     colorVariant={mascot.color}
                     isLocked={getMascotLockStatus(mascot)}
+                    isPro={mascot.isPro || false}
+                    isUnlocked={mascot.isUnlocked || false}
                     onPress={() => handleMascotPress(mascot.id)}
                   />
                 );

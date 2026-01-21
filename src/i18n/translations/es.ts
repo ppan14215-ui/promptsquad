@@ -28,7 +28,8 @@ export const es: TranslationKeys = {
     skills: 'Habilidades',
     startChatting: 'Iniciar chat',
     tryOut: 'Probar mascota',
-    unlockFor: 'Desbloquear por 99ct',
+    unlockFor: 'Desbloquear por 1,99€',
+    unlockForFree: 'Desbloquear por 99ct',
   },
 
   // Chat Screen
@@ -37,7 +38,7 @@ export const es: TranslationKeys = {
       chat: 'Chat',
       sources: 'Fuentes',
       skills: 'Habilidades',
-      instructions: 'Instrucciones',
+      personality: 'Personalidad',
       bio: 'Bio',
     },
     placeholder: 'Escribe un mensaje',

@@ -21,6 +21,10 @@ export type ChatHeaderProps = {
   onTabChange: (tab: string) => void;
   isToggling?: boolean;
   insets?: { top: number };
+  // Trial progress props
+  isTrial?: boolean;
+  trialCount?: number;
+  trialLimit?: number;
 };
 
 export function ChatHeader({
@@ -36,6 +40,9 @@ export function ChatHeader({
   onTabChange,
   isToggling = false,
   insets,
+  isTrial = false,
+  trialCount = 0,
+  trialLimit = 5,
 }: ChatHeaderProps) {
   const { colors } = useTheme();
 
@@ -106,9 +113,40 @@ export function ChatHeader({
       </View>
 
       <View style={styles.tabsContainer}>
-        {tabs.map((tab) => (
-          <ColoredTab key={tab.key} label={tab.label} isActive={activeTab === tab.key} onPress={() => onTabChange(tab.key)} />
-        ))}
+        <View style={styles.tabsLeft}>
+          {tabs.map((tab) => (
+            <ColoredTab key={tab.key} label={tab.label} isActive={activeTab === tab.key} onPress={() => onTabChange(tab.key)} />
+          ))}
+        </View>
+        
+        {/* Trial Progress Bar - Inline with tabs, right-aligned */}
+        {isTrial && (
+          <View style={styles.trialProgressInline}>
+            <Text
+              style={[
+                styles.trialProgressText,
+                {
+                  fontFamily: fontFamilies.figtree.medium,
+                  fontSize: 12,
+                  color: colors.textMuted,
+                },
+              ]}
+            >
+              Trial: {trialCount} / {trialLimit}
+            </Text>
+            <View style={[styles.trialProgressBarContainer, { backgroundColor: colors.outline }]}>
+              <View
+                style={[
+                  styles.trialProgressBarFill,
+                  {
+                    width: `${(trialCount / trialLimit) * 100}%`,
+                    backgroundColor: colors.primary,
+                  },
+                ]}
+              />
+            </View>
+          </View>
+        )}
       </View>
     </View>
   );
@@ -157,10 +195,17 @@ const styles = StyleSheet.create({
   },
   tabsContainer: {
     flexDirection: 'row',
-    gap: 8,
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingTop: 16,
     paddingLeft: 150,
+    gap: 16,
+  },
+  tabsLeft: {
+    flexDirection: 'row',
+    gap: 8,
     flexWrap: 'wrap',
+    flex: 1,
   },
   favoriteContainer: {
     flexDirection: 'row',
@@ -169,5 +214,24 @@ const styles = StyleSheet.create({
   },
   likeCount: {
     fontSize: 11,
+  },
+  trialProgressInline: {
+    alignItems: 'flex-end',
+    gap: 4,
+    minWidth: 120,
+  },
+  trialProgressText: {
+    textAlign: 'right',
+    fontSize: 11,
+  },
+  trialProgressBarContainer: {
+    height: 4,
+    borderRadius: 2,
+    overflow: 'hidden',
+    width: 100,
+  },
+  trialProgressBarFill: {
+    height: '100%',
+    borderRadius: 2,
   },
 });

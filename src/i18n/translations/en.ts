@@ -26,7 +26,8 @@ export const en = {
     skills: 'Skills',
     startChatting: 'Start chatting',
     tryOut: 'Try out Mascot',
-    unlockFor: 'Unlock for 99ct',
+    unlockFor: 'Unlock for €1.99',
+    unlockForFree: 'Unlock for 99ct',
   },
 
   // Chat Screen
@@ -35,7 +36,7 @@ export const en = {
       chat: 'Chat',
       sources: 'Sources',
       skills: 'Skills',
-      instructions: 'Instructions',
+      personality: 'Personality',
       bio: 'Bio',
     },
     placeholder: 'Write a message',

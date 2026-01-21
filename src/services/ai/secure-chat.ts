@@ -1,6 +1,3 @@
-// Secure chat service that calls the Supabase Edge Function
-// This keeps API keys server-side and validates user access
-
 import { supabase } from '@/services/supabase';
 
 export type ChatMessage = {
@@ -11,17 +8,11 @@ export type ChatMessage = {
 export type SecureChatResponse = {
   content: string;
   model: string;
-  provider?: 'openai' | 'gemini'; // Provider that was actually used
+  provider?: 'openai' | 'gemini';
 };
 
 /**
  * Streams a chat response from the secure Edge Function
- * The Edge Function handles:
- * - User authentication
- * - Mascot access validation
- * - System prompt injection (hidden from client)
- * - Instructions and skill prompts (if provided)
- * - AI provider routing
  */
 export async function secureChatStream(
   mascotId: string,
@@ -29,19 +20,13 @@ export async function secureChatStream(
   onChunk: (chunk: string) => void,
   conversationId?: string,
   skillId?: string,
-  provider?: 'openai' | 'gemini', // Optional AI provider override
-  deepThinking?: boolean // Optional Deep Thinking mode (uses pro models)
+  provider?: 'openai' | 'gemini',
+  deepThinking?: boolean
 ): Promise<SecureChatResponse> {
-  // Get the current session for auth
+  // Get session
   const { data: { session }, error: sessionError } = await supabase.auth.getSession();
   
-  if (sessionError) {
-    console.error('[SecureChat] Session error:', sessionError);
-    throw new Error('Failed to get session. Please try signing in again.');
-  }
-  
-  if (!session || !session.access_token) {
-    console.error('[SecureChat] No session or access token');
+  if (sessionError || !session?.access_token) {
     throw new Error('Not authenticated. Please sign in.');
   }
 
@@ -49,45 +34,19 @@ export async function secureChatStream(
   const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
   
   if (!supabaseUrl || !supabaseAnonKey) {
-    console.error('[SecureChat] Missing env vars:', { supabaseUrl: !!supabaseUrl, supabaseAnonKey: !!supabaseAnonKey });
-    throw new Error('Supabase URL or anon key not configured. Please check your environment variables.');
+    throw new Error('Supabase configuration missing.');
   }
 
-  console.log('[SecureChat] Making request to:', `${supabaseUrl}/functions/v1/chat`);
-  console.log('[SecureChat] Has access token:', !!session.access_token);
-  console.log('[SecureChat] Has apikey:', !!supabaseAnonKey);
-  console.log('[SecureChat] Provider override parameter:', provider, '(type:', typeof provider, ')');
-
-  // Use fetch for streaming support
-  // Explicitly include provider only if it's defined (not undefined or null)
   const requestBody: any = {
     mascotId,
     messages,
   };
   
-  if (conversationId) {
-    requestBody.conversationId = conversationId;
-  }
-  
-  if (skillId) {
-    requestBody.skillId = skillId;
-  }
-  
-  if (provider && (provider === 'openai' || provider === 'gemini')) {
-    requestBody.provider = provider;
-    console.log('[SecureChat] Including provider in request:', provider);
-  } else {
-    console.log('[SecureChat] No provider override (system will choose)');
-  }
-  
-  if (deepThinking !== undefined) {
-    requestBody.deepThinking = deepThinking;
-    console.log('[SecureChat] Deep Thinking mode:', deepThinking);
-  }
-  
-  console.log('[SecureChat] Request body keys:', Object.keys(requestBody));
-  console.log('[SecureChat] Request body provider value:', requestBody.provider || 'not included');
-  
+  if (conversationId) requestBody.conversationId = conversationId;
+  if (skillId) requestBody.skillId = skillId;
+  if (provider) requestBody.provider = provider;
+  if (deepThinking !== undefined) requestBody.deepThinking = deepThinking;
+
   const response = await fetch(`${supabaseUrl}/functions/v1/chat`, {
     method: 'POST',
     headers: {
@@ -101,26 +60,19 @@ export async function secureChatStream(
   if (!response.ok) {
     const errorText = await response.text();
     let errorMessage = 'Chat request failed';
-    let errorDetails = '';
     
     try {
       const errorJson = JSON.parse(errorText);
       errorMessage = errorJson.error || errorMessage;
-      errorDetails = errorJson.details || '';
     } catch {
       errorMessage = errorText || errorMessage;
     }
     
-    // Provide more helpful error messages
     if (response.status === 401) {
       throw new Error('Authentication failed. Please sign in again.');
-    } else if (response.status === 400) {
-      throw new Error(`Invalid request: ${errorMessage}${errorDetails ? ` - ${errorDetails}` : ''}`);
-    } else if (response.status >= 500) {
-      throw new Error('Server error. Please try again in a moment.');
-    } else {
-      throw new Error(`${errorMessage}${errorDetails ? ` - ${errorDetails}` : ''}`);
     }
+    
+    throw new Error(errorMessage);
   }
 
   // Handle SSE stream
@@ -151,14 +103,12 @@ export async function secureChatStream(
         
         if (data.done) {
           model = data.model || 'unknown';
-          actualProvider = data.provider || undefined; // Get provider from Edge Function response
-          console.log('[SecureChat] Stream complete - Model:', model, 'Provider:', actualProvider);
+          actualProvider = data.provider || undefined;
         } else if (data.content) {
           fullContent += data.content;
           onChunk(data.content);
         }
       } catch (e) {
-        // Skip invalid JSON lines
         if (e instanceof SyntaxError) continue;
         throw e;
       }
@@ -169,7 +119,7 @@ export async function secureChatStream(
 }
 
 /**
- * Non-streaming version for simpler use cases
+ * Non-streaming version
  */
 export async function secureChat(
   mascotId: string,
@@ -180,7 +130,6 @@ export async function secureChat(
   deepThinking?: boolean
 ): Promise<SecureChatResponse> {
   let fullContent = '';
-  let model = '';
 
   const response = await secureChatStream(
     mascotId,
@@ -196,4 +145,3 @@ export async function secureChat(
 
   return response;
 }
-

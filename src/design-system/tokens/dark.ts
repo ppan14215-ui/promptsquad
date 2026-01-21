@@ -36,6 +36,7 @@ export const darkColors = {
   primaryHover: '#2F2777',
   darkButton: '#323232',
   darkButtonHover: '#1B1B1B',
+  error: '#F3ACAF',
 } as const;
 
 export type DarkColors = typeof darkColors;
