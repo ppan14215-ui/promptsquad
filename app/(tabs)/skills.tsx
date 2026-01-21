@@ -176,7 +176,7 @@ export default function SkillsScreen() {
         <Text
           style={[
             styles.headerTitle,
-            { fontFamily: fontFamilies.semibold, color: colors.text },
+            { fontFamily: fontFamilies.figtree.semiBold, color: colors.text },
           ]}
         >
           Skills Management
@@ -220,7 +220,7 @@ export default function SkillsScreen() {
                   style={[
                     styles.mascotPillText,
                     {
-                      fontFamily: fontFamilies.medium,
+                      fontFamily: fontFamilies.figtree.medium,
                       color: isSelected ? '#FFFFFF' : colors.text,
                     },
                   ]}
@@ -256,7 +256,7 @@ export default function SkillsScreen() {
                   <Text
                     style={[
                       styles.editButtonText,
-                      { fontFamily: fontFamilies.medium, color: colors.primary },
+                      { fontFamily: fontFamilies.figtree.medium, color: colors.primary },
                     ]}
                   >
                     Edit
@@ -281,7 +281,7 @@ export default function SkillsScreen() {
                   <Text
                     style={[
                       styles.mascotSubtitle,
-                      { fontFamily: fontFamilies.regular, color: colors.textMuted },
+                      { fontFamily: fontFamilies.figtree.regular, color: colors.textMuted },
                     ]}
                   >
                     {selectedMascot.subtitle}
@@ -291,7 +291,7 @@ export default function SkillsScreen() {
                   <Text
                     style={[
                       styles.mascotMetaText,
-                      { fontFamily: fontFamilies.regular, color: colors.textMuted },
+                      { fontFamily: fontFamilies.figtree.regular, color: colors.textMuted },
                     ]}
                   >
                     ID: {selectedMascot.id} • Color: {selectedMascot.color}
@@ -319,7 +319,7 @@ export default function SkillsScreen() {
                   <Text
                     style={[
                       styles.editButtonText,
-                      { fontFamily: fontFamilies.medium, color: colors.primary },
+                      { fontFamily: fontFamilies.figtree.medium, color: colors.primary },
                     ]}
                   >
                     Edit
@@ -338,7 +338,7 @@ export default function SkillsScreen() {
                   <Text
                     style={[
                       styles.instructionsText,
-                      { fontFamily: fontFamilies.regular, color: colors.text },
+                      { fontFamily: fontFamilies.figtree.regular, color: colors.text },
                     ]}
                   >
                     {mascotPersonality.personality}
@@ -347,7 +347,7 @@ export default function SkillsScreen() {
                   <Text
                     style={[
                       styles.noDataText,
-                      { fontFamily: fontFamilies.regular, color: colors.textMuted },
+                      { fontFamily: fontFamilies.figtree.regular, color: colors.textMuted },
                     ]}
                   >
                     No personality set. Click Edit to add personality.
@@ -383,7 +383,7 @@ export default function SkillsScreen() {
                   <Text
                     style={[
                       styles.emptyText,
-                      { fontFamily: fontFamilies.regular, color: colors.textMuted },
+                      { fontFamily: fontFamilies.figtree.regular, color: colors.textMuted },
                     ]}
                   >
                     No skills yet. Add your first skill!
@@ -409,7 +409,7 @@ export default function SkillsScreen() {
                         <Text
                           style={[
                             styles.editHint,
-                            { fontFamily: fontFamilies.regular, color: colors.primary },
+                            { fontFamily: fontFamilies.figtree.regular, color: colors.primary },
                           ]}
                         >
                           Tap to edit

@@ -12,7 +12,9 @@ const SAMPLE_MASCOT = {
   grayscaleImage: require('../../assets/mascots/Bear-grayscale.png'),
 };
 
-const SAMPLE_CAROUSEL_MASCOTS = [
+import type { MascotCarouselMascot } from '@/components/mascot/MascotCarousel';
+
+const SAMPLE_CAROUSEL_MASCOTS: MascotCarouselMascot[] = [
   {
     id: '1',
     name: 'Analyst Bear',
@@ -46,7 +48,7 @@ const SAMPLE_CAROUSEL_MASCOTS = [
     name: 'Teacher Owl',
     subtitle: 'Lets teach our kids',
     image: require('../../assets/mascots/owl.png'),
-    color: 'purple',
+    color: 'purple' as const,
   },
 ];
 
