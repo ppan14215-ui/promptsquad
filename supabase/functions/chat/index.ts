@@ -47,16 +47,16 @@ serve(async (req: Request) => {
 
     // Extract token (handle "Bearer " prefix with potential whitespace)
     const token = authHeader.replace(/^Bearer\s+/i, '').trim();
-    
+
     console.log('[Edge Function] Extracted token (first 20 chars):', token.substring(0, 20) + '...');
     console.log('[Edge Function] Token length:', token.length);
 
     // Create admin client and validate token
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
     console.log('[Edge Function] Created admin client, validating token...');
-    
+
     const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
-    
+
     console.log('[Edge Function] Auth result - User:', user?.id || 'none');
     console.log('[Edge Function] Auth result - Error:', authError?.message || 'none');
     console.log('[Edge Function] Auth result - Error code:', authError?.code || 'none');
@@ -66,18 +66,20 @@ serve(async (req: Request) => {
         error: authError?.message,
         code: authError?.code,
         hasToken: !!token,
-        tokenLength: token?.length
+        tokenLength: token?.length,
+        hasServiceKey: !!supabaseServiceKey,
       });
       return new Response(
-        JSON.stringify({ 
+        JSON.stringify({
           error: 'Authentication failed',
           details: authError?.message || 'Invalid token',
-          code: authError?.code
+          code: authError?.code,
+          hint: !supabaseServiceKey ? 'SUPABASE_SERVICE_ROLE_KEY is missing' : 'Check if SUPABASE_SERVICE_ROLE_KEY is correctly set in Edge Function secrets'
         }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
-    
+
     console.log('[Edge Function] User authenticated:', user.id);
 
     // Parse request body
@@ -142,7 +144,7 @@ serve(async (req: Request) => {
 
     // Build system prompt
     let systemPrompt = `You are ${mascot.name}, ${mascot.subtitle || 'a helpful AI assistant'}.`;
-    
+
     if (personality) {
       systemPrompt += `\n\n---\n\nYOUR PERSONALITY AND BEHAVIOR:\n\n${personality}`;
     }
@@ -153,9 +155,9 @@ serve(async (req: Request) => {
 
     // Determine provider and model
     const useProvider = provider || 'gemini';
-    const useModel = deepThinking 
-      ? (useProvider === 'openai' ? 'gpt-4o' : 'gemini-1.5-pro')
-      : (useProvider === 'openai' ? 'gpt-4o-mini' : 'gemini-1.5-flash');
+    const useModel = deepThinking
+      ? (useProvider === 'openai' ? 'gpt-4o' : 'gemini-2.5-pro')
+      : (useProvider === 'openai' ? 'gpt-4o-mini' : 'gemini-2.5-flash');
 
     // OpenAI
     if (useProvider === 'openai' && openaiApiKey) {
@@ -189,7 +191,7 @@ serve(async (req: Request) => {
         async transform(chunk, controller) {
           const text = new TextDecoder().decode(chunk);
           const lines = text.split('\n').filter(line => line.startsWith('data: '));
-          
+
           for (const line of lines) {
             const data = line.slice(6);
             if (data === '[DONE]') {
@@ -227,18 +229,32 @@ serve(async (req: Request) => {
     }
 
     const genAI = new GoogleGenerativeAI(geminiApiKey);
-    const model = genAI.getGenerativeModel({ 
+    const model = genAI.getGenerativeModel({
       model: useModel,
       systemInstruction: systemPrompt,
     });
 
     const geminiHistory: Array<{ role: 'user' | 'model'; parts: Array<{ text: string }> }> = [];
-    
+
+    // Build history from all messages except the last one
     for (let i = 0; i < messages.length - 1; i++) {
       const msg = messages[i];
       geminiHistory.push({
         role: msg.role === 'assistant' ? 'model' : 'user',
         parts: [{ text: msg.content }],
+      });
+    }
+
+    // Gemini requires first message in history to be from 'user'
+    // If history is not empty and doesn't start with 'user', prepend a dummy user message
+    if (geminiHistory.length > 0 && geminiHistory[0].role !== 'user') {
+      geminiHistory.unshift({
+        role: 'user',
+        parts: [{ text: 'Hello' }],
+      });
+      geminiHistory.splice(1, 0, {
+        role: 'model',
+        parts: [{ text: 'Hello! How can I help you today?' }],
       });
     }
 
