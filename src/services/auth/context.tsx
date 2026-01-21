@@ -3,6 +3,7 @@ import { Session, User } from '@supabase/supabase-js';
 import { Platform } from 'react-native';
 import * as Linking from 'expo-linking';
 import { supabase } from '@/services/supabase';
+import { validateTokenProject } from './token-validator';
 
 type AuthContextType = {
   session: Session | null;
@@ -24,10 +25,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     // Get initial session (this will parse OAuth callback URL hash/query params)
     supabase.auth.getSession()
-      .then(({ data: { session }, error }) => {
+      .then(async ({ data: { session }, error }) => {
         if (error) {
           console.error('[AuthProvider] Error getting session:', error);
+          setSession(null);
+          setUser(null);
+          setIsLoading(false);
+          return;
         }
+
+        // Validate token is from correct project
+        if (session?.access_token) {
+          const isValid = await validateTokenProject();
+          if (!isValid) {
+            // Token invalid - already signed out by validator
+            setSession(null);
+            setUser(null);
+            setIsLoading(false);
+            return;
+          }
+        }
+
         setSession(session);
         setUser(session?.user ?? null);
         setIsLoading(false);
@@ -40,7 +58,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
 
     // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      // Validate token on sign in
+      if (session?.access_token && event === 'SIGNED_IN') {
+        const isValid = await validateTokenProject();
+        if (!isValid) {
+          // Token invalid - already signed out
+          setSession(null);
+          setUser(null);
+          setIsLoading(false);
+          return;
+        }
+      }
+      
       setSession(session);
       setUser(session?.user ?? null);
       setIsLoading(false);
