@@ -720,11 +720,10 @@ export default function ChatScreen() {
           content: m.content,
         }));
 
-      // Convert chatLLM to provider override ('openai' | 'gemini' | undefined for auto)
+      // Convert chatLLM to provider override ('openai' | 'gemini' | 'perplexity' | undefined for auto)
       // If 'auto', don't pass provider (let system choose based on mascot config or default)
-      // If 'perplexity', treat as 'auto' for now (not supported in Edge Function yet)
-      const providerOverride: 'openai' | 'gemini' | undefined =
-        chatLLM === 'openai' || chatLLM === 'gemini' ? chatLLM : undefined;
+      const providerOverride: 'openai' | 'gemini' | 'perplexity' | undefined =
+        chatLLM === 'openai' || chatLLM === 'gemini' || chatLLM === 'perplexity' ? chatLLM : undefined;
 
       // Log which provider we're using
       console.log('[Chat] Sending message with provider override:', providerOverride || 'auto (system chooses)');
