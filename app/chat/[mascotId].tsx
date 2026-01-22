@@ -1343,11 +1343,12 @@ export default function ChatScreen() {
       const assistantContent = response.content;
 
       // Use the provider from the response (Edge Function tells us what was actually used)
-      const actualProvider: 'openai' | 'gemini' | undefined = response.provider ||
+      const actualProvider: 'openai' | 'gemini' | 'perplexity' | undefined = response.provider ||
         (providerOverride || // Fallback to user override if response doesn't include provider
           (response.model?.toLowerCase().includes('gpt') ? 'openai' :
             response.model?.toLowerCase().includes('gemini') ? 'gemini' :
-              undefined));
+              response.model?.toLowerCase().includes('sonar') ? 'perplexity' :
+                undefined));
 
       console.log('[Chat] Skill response - Model:', response.model, 'Provider:', actualProvider, '(requested:', providerOverride || 'auto', ')');
 
