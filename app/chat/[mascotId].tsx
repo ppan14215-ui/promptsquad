@@ -720,10 +720,36 @@ export default function ChatScreen() {
           content: m.content,
         }));
 
+      // Helper function to detect if query needs real-time/current information
+      const needsRealTimeData = (query: string): boolean => {
+        const lowerQuery = query.toLowerCase();
+        const realTimeKeywords = [
+          'now', 'today', 'current', 'latest', 'recent', 'this week', 'this month',
+          'weather', 'news', 'happening', 'right now', 'currently', 'at the moment',
+          'what happened', 'what\'s going on', 'update', 'breaking', 'live'
+        ];
+        return realTimeKeywords.some(keyword => lowerQuery.includes(keyword));
+      };
+
       // Convert chatLLM to provider override ('openai' | 'gemini' | 'perplexity' | undefined for auto)
-      // If 'auto', don't pass provider (let system choose based on mascot config or default)
-      const providerOverride: 'openai' | 'gemini' | 'perplexity' | undefined =
-        chatLLM === 'openai' || chatLLM === 'gemini' || chatLLM === 'perplexity' ? chatLLM : undefined;
+      // If 'auto', intelligently choose based on query content and mascot task category
+      let providerOverride: 'openai' | 'gemini' | 'perplexity' | undefined;
+
+      if (chatLLM === 'auto') {
+        // Check if query needs real-time data
+        const lastUserMessage = messages[messages.length - 1];
+        if (lastUserMessage && needsRealTimeData(lastUserMessage.content)) {
+          providerOverride = 'perplexity'; // Use web-grounded for current info
+          console.log('[Chat] Auto mode detected real-time query, using Perplexity');
+        } else {
+          // Use task-based selection (OpenAI vs Gemini)
+          providerOverride = undefined; // Let Edge Function decide based on taskCategory
+        }
+      } else if (chatLLM === 'openai' || chatLLM === 'gemini' || chatLLM === 'perplexity') {
+        providerOverride = chatLLM; // Manual selection
+      } else {
+        providerOverride = undefined; // Fallback to auto
+      }
 
       // Log which provider we're using
       console.log('[Chat] Sending message with provider override:', providerOverride || 'auto (system chooses)');
