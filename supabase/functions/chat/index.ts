@@ -14,7 +14,7 @@ interface ChatRequest {
   messages: Array<{ role: 'user' | 'assistant'; content: string }>;
   conversationId?: string;
   skillId?: string;
-  provider?: 'openai' | 'gemini';
+  provider?: 'openai' | 'gemini' | 'perplexity';
   deepThinking?: boolean;
   image?: { mimeType: string; base64: string };
   taskCategory?: string; // For auto provider selection
@@ -30,6 +30,7 @@ serve(async (req: Request) => {
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     const geminiApiKey = Deno.env.get('Gemini_API_KEY') || Deno.env.get('GEMINI_API_KEY');
     const openaiApiKey = Deno.env.get('OPENAI_API_KEY');
+    const perplexityApiKey = Deno.env.get('PERPLEXITY_API_KEY');
 
     if (!supabaseUrl || !supabaseServiceKey) {
       return new Response(
@@ -183,9 +184,13 @@ serve(async (req: Request) => {
       ? selectProviderByTaskCategory(taskCategory)
       : provider;
     const useModel = deepThinking
-      // Using 2026 standard models (2.5 series)
-      ? (useProvider === 'openai' ? 'gpt-4o' : 'gemini-2.5-pro')
-      : (useProvider === 'openai' ? 'gpt-4o-mini' : 'gemini-2.5-flash');
+      // Using 2026 standard models (2.5 series for Gemini, sonar-large for Perplexity)
+      ? (useProvider === 'openai' ? 'gpt-4o' :
+        useProvider === 'perplexity' ? 'llama-3.1-sonar-large-128k-online' :
+          'gemini-2.5-pro')
+      : (useProvider === 'openai' ? 'gpt-4o-mini' :
+        useProvider === 'perplexity' ? 'llama-3.1-sonar-small-128k-online' :
+          'gemini-2.5-flash');
 
     // OpenAI
     if (useProvider === 'openai' && openaiApiKey) {
@@ -247,6 +252,84 @@ serve(async (req: Request) => {
                 const content = parsed.choices?.[0]?.delta?.content;
                 if (content) {
                   controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ content })}\n\n`));
+                }
+              } catch {
+                // Skip invalid JSON
+              }
+            }
+          }
+        },
+      });
+
+      return new Response(response.body?.pipeThrough(transformStream), {
+        headers: {
+          ...corsHeaders,
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+        },
+      });
+    }
+
+    // Perplexity (web-grounded)
+    if (useProvider === 'perplexity' && perplexityApiKey) {
+      const perplexityMessages = [
+        { role: 'system', content: systemPrompt },
+        ...messages.map((m, index) => {
+          // If this is the last message and we have an image, attach it
+          if (index === messages.length - 1 && image) {
+            return {
+              role: m.role,
+              content: [
+                { type: 'text', text: m.content },
+                {
+                  type: 'image_url',
+                  image_url: {
+                    url: `data:${image.mimeType};base64,${image.base64}`
+                  }
+                }
+              ]
+            };
+          }
+          return { role: m.role, content: m.content };
+        }),
+      ];
+
+      const response = await fetch('https://api.perplexity.ai/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${perplexityApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: useModel,
+          messages: perplexityMessages,
+          stream: true,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.text();
+        return new Response(
+          JSON.stringify({ error: `Perplexity error: ${error}` }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const transformStream = new TransformStream({
+        async transform(chunk, controller) {
+          const text = new TextDecoder().decode(chunk);
+          const lines = text.split('\\n').filter(line => line.startsWith('data: '));
+
+          for (const line of lines) {
+            const data = line.slice(6);
+            if (data === '[DONE]') {
+              controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ done: true, model: useModel, provider: 'perplexity' })}\\n\\n`));
+            } else {
+              try {
+                const parsed = JSON.parse(data);
+                const content = parsed.choices?.[0]?.delta?.content;
+                if (content) {
+                  controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ content })}\\n\\n`));
                 }
               } catch {
                 // Skip invalid JSON

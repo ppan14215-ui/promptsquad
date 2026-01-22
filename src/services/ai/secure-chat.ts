@@ -8,7 +8,7 @@ export type ChatMessage = {
 export type SecureChatResponse = {
   content: string;
   model: string;
-  provider?: 'openai' | 'gemini';
+  provider?: 'openai' | 'gemini' | 'perplexity';
 };
 
 /**
@@ -20,7 +20,7 @@ export async function secureChatStream(
   onChunk: (chunk: string) => void,
   conversationId?: string,
   skillId?: string,
-  provider?: 'openai' | 'gemini',
+  provider?: 'openai' | 'gemini' | 'perplexity',
   deepThinking?: boolean,
   image?: { mimeType: string; base64: string },
   taskCategory?: string
@@ -219,7 +219,7 @@ export async function secureChat(
   messages: ChatMessage[],
   conversationId?: string,
   skillId?: string,
-  provider?: 'openai' | 'gemini',
+  provider?: 'openai' | 'gemini' | 'perplexity',
   deepThinking?: boolean,
   image?: { mimeType: string; base64: string },
   taskCategory?: string
