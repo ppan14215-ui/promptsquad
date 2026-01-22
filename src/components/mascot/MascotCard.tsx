@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { View, Text, Image, StyleSheet, Pressable, Platform, ImageSourcePropType } from 'react-native';
+import { View, Text, StyleSheet, Pressable, Platform, ImageSourcePropType } from 'react-native';
+import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme, textStyles, shadowToCSS, shadowToNative, skeuToGradient } from '@/design-system';
 import { MiniButton } from '../ui/MiniButton';
@@ -47,7 +48,7 @@ export function MascotCard({
 
   // Determine effective state
   const effectiveState: MascotCardState = forceState ?? (
-    isLocked 
+    isLocked
       ? (isHoveredInternal ? 'locked-hover' : 'locked')
       : (isHoveredInternal ? 'hover' : 'default')
   );
@@ -131,7 +132,8 @@ export function MascotCard({
               ? { filter: 'grayscale(100%)' } as unknown as object
               : {},
           ]}
-          resizeMode="cover"
+          contentFit="cover"
+          transition={200}
         />
       </View>
 

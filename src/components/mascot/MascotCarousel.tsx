@@ -1,5 +1,6 @@
 import React from 'react';
-import { View, Text, Image, Pressable, StyleSheet, PanResponder, Animated } from 'react-native';
+import { View, Text, Pressable, StyleSheet, PanResponder, Animated } from 'react-native';
+import { Image } from 'expo-image';
 import { useTheme, fontFamilies } from '@/design-system';
 import { Icon } from '@/components';
 import type { MascotColorVariant } from './MascotCard';
@@ -184,7 +185,8 @@ export function MascotCarousel({
                       left: (size - imageSize) / 2,
                     },
                   ]}
-                  resizeMode="contain"
+                  contentFit="contain"
+                  transition={200}
                 />
               </Pressable>
 

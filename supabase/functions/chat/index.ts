@@ -2,7 +2,7 @@
 // Clean Edge Function for chat - Simple authentication
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { GoogleGenerativeAI } from 'https://esm.sh/@google/generative-ai@0.21.0';
+import { GoogleGenerativeAI } from 'https://esm.sh/@google/generative-ai@0.24.1';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -17,6 +17,7 @@ interface ChatRequest {
   provider?: 'openai' | 'gemini';
   deepThinking?: boolean;
   image?: { mimeType: string; base64: string };
+  taskCategory?: string; // For auto provider selection
 }
 
 serve(async (req: Request) => {
@@ -61,6 +62,11 @@ serve(async (req: Request) => {
     console.log('[Edge Function] Auth result - User:', user?.id || 'none');
     console.log('[Edge Function] Auth result - Error:', authError?.message || 'none');
     console.log('[Edge Function] Auth result - Error code:', authError?.code || 'none');
+    console.log('[Edge Function] Internal project ref check:', {
+      supabaseUrl,
+      serviceKeySnippet: supabaseServiceKey?.substring(0, 10) + '...',
+      tokenSnippet: token?.substring(0, 10) + '...'
+    });
 
     if (authError || !user) {
       console.error('[Edge Function] Authentication failed:', {
@@ -75,7 +81,8 @@ serve(async (req: Request) => {
           error: 'Authentication failed',
           details: authError?.message || 'Invalid token',
           code: authError?.code,
-          hint: !supabaseServiceKey ? 'SUPABASE_SERVICE_ROLE_KEY is missing' : 'Check if SUPABASE_SERVICE_ROLE_KEY is correctly set in Edge Function secrets'
+          hint: !supabaseServiceKey ? 'SUPABASE_SERVICE_ROLE_KEY is missing' : 'Check if SUPABASE_SERVICE_ROLE_KEY is correctly set in Edge Function secrets',
+          project: supabaseUrl?.substring(0, 20) // Helpful for debugging project mismatch
         }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
@@ -85,7 +92,7 @@ serve(async (req: Request) => {
 
     // Parse request body
     const body: ChatRequest = await req.json();
-    const { mascotId, messages, skillId, provider, deepThinking, image } = body;
+    const { mascotId, messages, skillId, provider, deepThinking, image, taskCategory } = body;
 
     if (!mascotId || !messages || messages.length === 0) {
       return new Response(
@@ -154,9 +161,29 @@ serve(async (req: Request) => {
       systemPrompt += `\n\n---\n\nSKILL-SPECIFIC INSTRUCTIONS:\n\n${skillPrompt}`;
     }
 
+    // Helper function to select provider based on task category
+    function selectProviderByTaskCategory(category?: string): 'openai' | 'gemini' {
+      switch (category) {
+        case 'analysis':
+        case 'creative':
+        case 'coding':
+        case 'ux':
+        case 'complex':
+          return 'openai';
+        case 'conversation':
+        case 'quick':
+        default:
+          return 'gemini';
+      }
+    }
+
     // Determine provider and model
-    const useProvider = provider || 'gemini';
+    // If provider is not specified or is 'auto', use task category to select
+    const useProvider = !provider || provider === 'auto'
+      ? selectProviderByTaskCategory(taskCategory)
+      : provider;
     const useModel = deepThinking
+      // Using 2026 standard models (2.5 series)
       ? (useProvider === 'openai' ? 'gpt-4o' : 'gemini-2.5-pro')
       : (useProvider === 'openai' ? 'gpt-4o-mini' : 'gemini-2.5-flash');
 

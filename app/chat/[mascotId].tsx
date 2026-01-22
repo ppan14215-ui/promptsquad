@@ -809,7 +809,8 @@ export default function ChatScreen() {
         activeSkillId || undefined, // skillId
         providerOverride, // provider override (undefined = system chooses)
         deepThinkingEnabled, // Deep Thinking mode (uses pro models)
-        attachment && attachment.base64 ? { mimeType: attachment.mimeType || 'image/jpeg', base64: attachment.base64 } : undefined
+        attachment && attachment.base64 ? { mimeType: attachment.mimeType || 'image/jpeg', base64: attachment.base64 } : undefined,
+        mascot.taskCategory // Pass task category for auto provider selection
       );
 
       const assistantContent = response.content;

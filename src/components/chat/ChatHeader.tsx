@@ -1,5 +1,6 @@
 import React from 'react';
-import { View, Text, Image, StyleSheet, Platform, ImageSourcePropType } from 'react-native';
+import { View, Text, StyleSheet, Platform, ImageSourcePropType } from 'react-native';
+import { Image } from 'expo-image';
 import { IconButton, ColoredTab } from '@/components';
 import { useTheme, textStyles, fontFamilies } from '@/design-system';
 
@@ -57,7 +58,12 @@ export function ChatHeader({
         },
       ]}
     >
-      <Image source={mascotImage} style={styles.headerMascotImage} resizeMode="cover" />
+      <Image
+        source={mascotImage}
+        style={styles.headerMascotImage}
+        contentFit="cover"
+        transition={200}
+      />
 
       <View style={styles.headerRow}>
         <View style={styles.headerBackContainer}>
@@ -118,7 +124,7 @@ export function ChatHeader({
             <ColoredTab key={tab.key} label={tab.label} isActive={activeTab === tab.key} onPress={() => onTabChange(tab.key)} />
           ))}
         </View>
-        
+
         {/* Trial Progress Bar - Inline with tabs, right-aligned */}
         {isTrial && (
           <View style={styles.trialProgressInline}>

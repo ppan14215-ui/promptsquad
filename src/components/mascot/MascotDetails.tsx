@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
-import { View, Text, StyleSheet, Image, ScrollView, Platform, ImageSourcePropType, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Platform, ImageSourcePropType, ActivityIndicator } from 'react-native';
+import { Image } from 'expo-image';
 import { useTheme, textStyles, fontFamilies, shadowToCSS, shadowToNative } from '@/design-system';
 import { useI18n } from '@/i18n';
 import { IconButton } from '@/components/ui/IconButton';
@@ -151,7 +152,8 @@ export function MascotDetails({
               // On native, use opacity for locked state
               isLocked && Platform.OS !== 'web' && { opacity: 0.6 },
             ]}
-            resizeMode="cover"
+            contentFit="cover"
+            transition={200}
           />
         </View>
 
