@@ -186,10 +186,10 @@ serve(async (req: Request) => {
     const useModel = deepThinking
       // Using 2026 standard models (2.5 series for Gemini, sonar-large for Perplexity)
       ? (useProvider === 'openai' ? 'gpt-4o' :
-        useProvider === 'perplexity' ? 'llama-3.1-sonar-large-128k-online' :
+        useProvider === 'perplexity' ? 'sonar-pro' :
           'gemini-2.5-pro')
       : (useProvider === 'openai' ? 'gpt-4o-mini' :
-        useProvider === 'perplexity' ? 'llama-3.1-sonar-small-128k-online' :
+        useProvider === 'perplexity' ? 'sonar' :
           'gemini-2.5-flash');
 
     // OpenAI
