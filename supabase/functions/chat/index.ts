@@ -318,18 +318,18 @@ serve(async (req: Request) => {
       const transformStream = new TransformStream({
         async transform(chunk, controller) {
           const text = new TextDecoder().decode(chunk);
-          const lines = text.split('\\n').filter(line => line.startsWith('data: '));
+          const lines = text.split('\n').filter(line => line.startsWith('data: '));
 
           for (const line of lines) {
             const data = line.slice(6);
             if (data === '[DONE]') {
-              controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ done: true, model: useModel, provider: 'perplexity' })}\\n\\n`));
+              controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ done: true, model: useModel, provider: 'perplexity' })}\n\n`));
             } else {
               try {
                 const parsed = JSON.parse(data);
                 const content = parsed.choices?.[0]?.delta?.content;
                 if (content) {
-                  controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ content })}\\n\\n`));
+                  controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ content })}\n\n`));
                 }
               } catch {
                 // Skip invalid JSON
