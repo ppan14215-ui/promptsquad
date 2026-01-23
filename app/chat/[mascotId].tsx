@@ -1942,11 +1942,32 @@ export default function ChatScreen() {
               ) : (
                 <View style={styles.assistantMessage}>
                   {message.content && typeof message.content === 'string' && message.content.trim() ? (
-                    <Markdown
-                      style={markdownStyles}
-                    >
-                      {message.content}
-                    </Markdown>
+                    <>
+                      <Markdown
+                        style={markdownStyles}
+                      >
+                        {message.content}
+                      </Markdown>
+                      {/* Render citations if available (Perplexity) */}
+                      {message.citations && message.citations.length > 0 && (
+                        <View style={{ marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: colors.outline + '40' }}>
+                          <Text style={{ fontFamily: fontFamilies.figtree.semiBold, fontSize: 12, color: colors.textMuted, marginBottom: 6 }}>
+                            Sources:
+                          </Text>
+                          {message.citations.map((url, index) => (
+                            <Pressable
+                              key={index}
+                              onPress={() => Linking.openURL(url)}
+                              style={{ marginBottom: 4 }}
+                            >
+                              <Text style={{ fontFamily: fontFamilies.figtree.regular, fontSize: 12, color: colors.primary }}>
+                                [{index + 1}] {url.length > 60 ? url.substring(0, 60) + '...' : url}
+                              </Text>
+                            </Pressable>
+                          ))}
+                        </View>
+                      )}
+                    </>
                   ) : (
                     <Text style={[styles.messageText, { color: colors.textMuted }]}>
                       (Empty message)
