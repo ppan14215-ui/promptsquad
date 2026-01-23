@@ -95,6 +95,12 @@ serve(async (req: Request) => {
     const body: ChatRequest = await req.json();
     const { mascotId, messages, skillId, provider, deepThinking, image, taskCategory } = body;
 
+    console.log('[Edge Function] Received messages for mascot:', mascotId, 'provider:', provider);
+    console.log('[Edge Function] Message count:', messages?.length);
+    if (messages?.length > 0) {
+      console.log('[Edge Function] First message role:', messages[0].role, 'content:', messages[0].content.substring(0, 50) + '...');
+    }
+
     if (!mascotId || !messages || messages.length === 0) {
       return new Response(
         JSON.stringify({ error: 'Missing required fields' }),
@@ -272,11 +278,22 @@ serve(async (req: Request) => {
 
     // Perplexity (web-grounded)
     if (useProvider === 'perplexity' && perplexityApiKey) {
+      // Perplexity requires the first message after system to be 'user'
+      // Filter out any leading 'assistant' messages from the input
+      let validMessages = messages;
+      let startIndex = 0;
+      while (startIndex < messages.length && messages[startIndex].role === 'assistant') {
+        startIndex++;
+      }
+      if (startIndex > 0) {
+        validMessages = messages.slice(startIndex);
+      }
+
       const perplexityMessages = [
         { role: 'system', content: systemPrompt },
-        ...messages.map((m, index) => {
+        ...validMessages.map((m, index) => {
           // If this is the last message and we have an image, attach it
-          if (index === messages.length - 1 && image) {
+          if (index === validMessages.length - 1 && image) {
             return {
               role: m.role,
               content: [

@@ -22,11 +22,12 @@ const SPEECH_RECOGNITION_AVAILABLE = Platform.OS === 'web';
 import { useTheme, fontFamilies, textStyles, shadowToCSS, shadowToNative } from '@/design-system';
 import { useI18n } from '@/i18n';
 import { usePreferences, selectBestProvider, TaskCategory, LLMPreference } from '@/services/preferences';
+import { supabase } from '@/services/supabase';
 import { ChatHeader, LinkPill, ChatInputBox, SkillPreview, ChatHistory, Icon, BigPrimaryButton } from '@/components';
 import type { ChatInputBoxRef } from '@/components/ui/ChatInputBox';
 import { secureChatStream } from '@/services/ai/secure-chat';
 import type { ChatMessage, AI_CONFIG, WebSource, SecureChatMessage } from '@/services/ai';
-import { useMascotSkills, useMascotPersonality, MascotSkill, getCombinedPrompt, useIsAdmin, updatePersonality, resetPersonalityToDefault } from '@/services/admin';
+import { useMascotSkills, useMascotPersonality, MascotSkill, getCombinedPrompt, useIsAdmin, updatePersonality, resetPersonalityToDefault, MascotBasic } from '@/services/admin';
 import { useMascotLike } from '@/services/mascot-likes';
 import { createConversation, saveMessage, generateConversationTitle, useConversationMessages, deleteConversation, getConversation } from '@/services/chat-history';
 import { useMascotAccess, incrementTrialUsage } from '@/services/mascot-access';
@@ -80,12 +81,14 @@ const MASCOT_DATA: Record<string, {
   skills: string[];
   systemPrompt: string;
   taskCategory: TaskCategory; // Used for auto-selecting the best AI provider
+  subtitle?: string; // Optional subtitle override (defaults to parsing greeting if missing)
 }> = {
   '1': {
     name: 'Analyst Bear',
     image: 'bear',
     color: '#EDB440',
     greeting: 'Hi, there I am analyst bear. I am great at all kinds of analysis.\nWhat can I help you with?',
+    subtitle: 'I am great at all kinds of analysis.',
     skills: ['Stock analysis', 'Competitive analysis', 'Market analysis'],
     systemPrompt: `You are Analyst Bear, a friendly and thorough analytical assistant. Your personality is methodical, patient, and detail-oriented. You excel at:
 - Stock and financial analysis
@@ -100,6 +103,7 @@ Always provide structured, well-reasoned analysis. Use markdown formatting for b
     image: 'fox',
     color: '#ED7437',  // Orange
     greeting: 'Hey! I\'m Writer Fox, your creative writing companion.\nWhat would you like me to write for you?',
+    subtitle: 'Your creative writing companion.',
     skills: ['Blog posts', 'Email drafts', 'Social media'],
     systemPrompt: `You are Writer Fox, a creative and witty writing assistant. Your personality is clever, eloquent, and imaginative. You excel at:
 - Blog posts and articles
@@ -114,6 +118,7 @@ Write with flair and personality. Use markdown formatting when appropriate. Be c
     image: 'panda',
     color: '#74AE58',
     greeting: 'Hello! I\'m UX Panda, here to help with all things user experience.\nWhat design challenge can I help you solve?',
+    subtitle: 'Here to help with all things user experience.',
     skills: ['User research', 'Wireframing', 'Usability testing'],
     systemPrompt: `You are UX Panda, an empathetic and user-focused design assistant. Your personality is thoughtful, detail-oriented, and user-centric. You excel at:
 - User research methodologies
@@ -128,6 +133,7 @@ Always consider the end user's perspective. Use markdown formatting for clarity.
     image: 'zebra',
     color: '#EB3F71',
     greeting: 'Hi there! I\'m Advice Zebra, ready to offer balanced perspectives.\nWhat\'s on your mind?',
+    subtitle: 'Ready to offer balanced perspectives.',
     skills: ['Life coaching', 'Decision making', 'Problem solving'],
     systemPrompt: `You are Advice Zebra, a wise and balanced life advisor. Your personality is supportive, thoughtful, and non-judgmental. You excel at:
 - Life coaching and personal development
@@ -142,6 +148,7 @@ Offer balanced, thoughtful advice. Use markdown formatting when helpful. Ask cla
     image: 'owl',
     color: '#5E24CB',
     greeting: 'Hello! I\'m Teacher Owl, here to help with learning.\nWhat shall we learn today?',
+    subtitle: 'Here to help with learning.',
     skills: ['Lesson planning', 'Homework help', 'Concept explanation'],
     systemPrompt: `You are Teacher Owl, a patient and knowledgeable educational assistant. Your personality is encouraging, thorough, and supportive. You excel at:
 - Lesson planning and curriculum design
@@ -156,6 +163,7 @@ Be clear, patient, and encouraging. Use markdown formatting for better readabili
     image: 'turtle',
     color: '#59C19D',
     greeting: 'Hi! I\'m Prompt Turtle, your AI prompt engineering expert.\nWhat prompt can I help craft?',
+    subtitle: 'Your AI prompt engineering expert.',
     skills: ['Prompt engineering', 'AI optimization', 'Workflow automation'],
     systemPrompt: `You are Prompt Turtle, a methodical and precise prompt engineering assistant. Your personality is helpful, detail-oriented, and systematic. You excel at:
 - Prompt engineering and optimization
@@ -170,6 +178,7 @@ Be thorough and precise. Use markdown formatting. Provide clear, actionable prom
     image: 'badger',
     color: '#826F57',
     greeting: 'Hello! I\'m Data Badger, your analytics expert.\nWhat data shall we explore?',
+    subtitle: 'Your analytics expert.',
     skills: ['Data visualization', 'Statistical analysis', 'Report generation'],
     systemPrompt: `You are Data Badger, an analytical and persistent data expert. Your personality is detail-oriented, thorough, and persistent. You excel at:
 - Data visualization and interpretation
@@ -184,6 +193,7 @@ Be precise and data-driven. Use markdown formatting with tables and charts when 
     image: 'mouse',
     color: '#2D6CF5',
     greeting: 'Hi! I\'m Quick Mouse, your fast problem solver.\nWhat needs a quick fix?',
+    subtitle: 'Your fast problem solver.',
     skills: ['Quick fixes', 'Troubleshooting', 'Time management'],
     systemPrompt: `You are Quick Mouse, a fast and efficient problem solver. Your personality is quick, resourceful, and solution-focused. You excel at:
 - Quick fixes and troubleshooting
@@ -198,6 +208,7 @@ Be concise and action-oriented. Get to solutions quickly. Use markdown for clari
     image: 'pig',
     color: '#EB3F71',
     greeting: 'Hey! I\'m Creative Pig, your design thinking companion.\nWhat shall we create?',
+    subtitle: 'Your design thinking companion.',
     skills: ['Brainstorming', 'Ideation', 'Creative writing'],
     systemPrompt: `You are Creative Pig, a playful and innovative creative assistant. Your personality is creative, playful, and imaginative. You excel at:
 - Brainstorming and ideation
@@ -212,6 +223,7 @@ Be creative and open-minded. Use markdown formatting. Encourage wild ideas and c
     image: 'cat',
     color: '#2D2E66',
     greeting: 'Meow! I\'m Code Cat, your programming wizard.\nWhat code shall we write?',
+    subtitle: 'Your programming wizard.',
     skills: ['Code review', 'Debugging', 'Architecture'],
     systemPrompt: `You are Code Cat, a logical and precise programming assistant. Your personality is patient, precise, and methodical. You excel at:
 - Code review and best practices
@@ -226,6 +238,7 @@ Be precise and technical. Use code blocks and markdown formatting. Provide clear
     image: 'camel',
     color: '#826F57',
     greeting: 'Hello! I\'m Strategy Camel, your planning expert.\nWhat strategy shall we plan?',
+    subtitle: 'Your planning expert.',
     skills: ['Business strategy', 'Goal setting', 'Roadmap planning'],
     systemPrompt: `You are Strategy Camel, a strategic and visionary planning assistant. Your personality is organized, forward-thinking, and methodical. You excel at:
 - Business strategy development
@@ -240,6 +253,7 @@ Be strategic and organized. Use markdown formatting with clear structure. Think 
     image: 'frog',
     color: '#59C19D',
     greeting: 'Hi! I\'m Marketing Frog, your growth hacker.\nWhat marketing challenge can I help with?',
+    subtitle: 'Your growth hacker.',
     skills: ['Campaign planning', 'Copywriting', 'Social strategy'],
     systemPrompt: `You are Marketing Frog, a persuasive and creative marketing assistant. Your personality is data-driven, creative, and persuasive. You excel at:
 - Marketing campaign planning
@@ -254,6 +268,7 @@ Be creative and data-driven. Use markdown formatting. Focus on results and engag
     image: 'giraffe',
     color: '#EDB440',
     greeting: 'Hello! I\'m Product Giraffe, your product management expert.\nWhat product question can I help with?',
+    subtitle: 'Your product management expert.',
     skills: ['PRD writing', 'Feature prioritization', 'Stakeholder management'],
     systemPrompt: `You are Product Giraffe, a user-focused and organized product management assistant. Your personality is collaborative, organized, and user-centric. You excel at:
 - PRD writing and documentation
@@ -268,6 +283,7 @@ Be clear and user-focused. Use markdown formatting. Balance user needs with busi
     image: 'lion',
     color: '#ED7437',
     greeting: 'Hi! I\'m Support Lion, your customer success expert.\nHow can I help your customers?',
+    subtitle: 'Your customer success expert.',
     skills: ['Customer support', 'FAQ creation', 'Escalation handling'],
     systemPrompt: `You are Support Lion, an empathetic and solution-oriented customer support assistant. Your personality is patient, empathetic, and solution-focused. You excel at:
 - Customer support and troubleshooting
@@ -282,6 +298,7 @@ Be empathetic and solution-oriented. Use markdown formatting. Focus on customer 
     image: 'seahorse',
     color: '#2D6CF5',
     greeting: 'Hello! I\'m Mentor Seahorse, your career guidance expert.\nWhat career question can I help with?',
+    subtitle: 'Your career guidance expert.',
     skills: ['Career coaching', 'Resume review', 'Interview prep'],
     systemPrompt: `You are Mentor Seahorse, a wise and encouraging career mentor. Your personality is experienced, encouraging, and supportive. You excel at:
 - Career coaching and guidance
@@ -296,6 +313,7 @@ Be encouraging and practical. Use markdown formatting. Provide actionable career
     image: 'camel',
     color: '#ED7437',
     greeting: 'Hi! I\'m Project Camel, your project management expert.\nWhat project can I help manage?',
+    subtitle: 'Your project management expert.',
     skills: ['Project planning', 'Risk management', 'Status reporting'],
     systemPrompt: `You are Project Camel, a methodical and reliable project management assistant. Your personality is organized, reliable, and methodical. You excel at:
 - Project planning and scheduling
@@ -310,6 +328,7 @@ Be organized and clear. Use markdown formatting with timelines and checklists. K
     image: 'frog',
     color: '#74AE58',
     greeting: 'Hello! I\'m Research Frog, your market research expert.\nWhat research can I help with?',
+    subtitle: 'Your market research expert.',
     skills: ['Market analysis', 'Trend research', 'Competitor analysis'],
     systemPrompt: `You are Research Frog, a curious and thorough research assistant. Your personality is analytical, thorough, and curious. You excel at:
 - Market analysis and insights
@@ -324,6 +343,7 @@ Be thorough and data-driven. Use markdown formatting with clear structure. Provi
     image: 'giraffe',
     color: '#5E24CB',
     greeting: 'Hi! I\'m Agile Giraffe, your Scrum master.\nWhat agile question can I help with?',
+    subtitle: 'Your Scrum master.',
     skills: ['Sprint planning', 'Retrospectives', 'Team facilitation'],
     systemPrompt: `You are Agile Giraffe, an agile and collaborative Scrum master. Your personality is adaptive, collaborative, and facilitative. You excel at:
 - Sprint planning and facilitation
@@ -338,6 +358,7 @@ Be collaborative and adaptive. Use markdown formatting. Focus on team effectiven
     image: 'lion',
     color: '#E64140',
     greeting: 'Hello! I\'m Brand Lion, your brand strategy expert.\nWhat brand question can I help with?',
+    subtitle: 'Your brand strategy expert.',
     skills: ['Brand positioning', 'Voice & tone', 'Visual identity'],
     systemPrompt: `You are Brand Lion, a creative and strategic brand expert. Your personality is visionary, creative, and strategic. You excel at:
 - Brand positioning and strategy
@@ -352,6 +373,7 @@ Be creative and strategic. Use markdown formatting. Build strong, memorable bran
     image: 'seahorse',
     color: '#2D2E66',
     greeting: 'Hi! I\'m Dev Seahorse, your full-stack developer.\nWhat development question can I help with?',
+    subtitle: 'Your full-stack developer.',
     skills: ['Full-stack development', 'API design', 'Code architecture'],
     systemPrompt: `You are Dev Seahorse, a technical and problem-solving development assistant. Your personality is curious, technical, and solution-oriented. You excel at:
 - Full-stack development
@@ -399,16 +421,33 @@ export default function ChatScreen() {
   const scrollViewRef = useRef<ScrollView>(null);
   const chatInputRef = useRef<ChatInputBoxRef>(null);
 
-  const mascot = MASCOT_DATA[mascotId || '1'] || MASCOT_DATA['1'];
+  const staticMascot = MASCOT_DATA[mascotId || '1'] || MASCOT_DATA['1'];
+  const [dbMascot, setDbMascot] = useState<MascotBasic | null>(null);
+
+  // Fetch real-time mascot details from DB
+  useEffect(() => {
+    async function fetchMascot() {
+      if (!mascotId) return;
+      const { data } = await supabase
+        .from('mascots')
+        .select('*')
+        .eq('id', mascotId)
+        .single();
+      if (data) setDbMascot(data);
+    }
+    fetchMascot();
+  }, [mascotId]);
+
+  // Merge DB data with static data
+  const mascot = useMemo(() => ({
+    ...staticMascot,
+    name: dbMascot?.name || staticMascot.name,
+    subtitle: dbMascot?.subtitle || staticMascot.subtitle,
+    greeting: dbMascot?.question_prompt || staticMascot.greeting,
+  }), [staticMascot, dbMascot]);
+
   const mascotImage = mascotImages[mascot.image] || mascotImages.bear; // Fallback to bear if image not found
-  const headerSubtitle =
-    mascot.greeting
-      .split('\n')[0]
-      .replace('Hi, there I am analyst bear. ', '')
-      .replace("Hey! I'm Writer Fox, ", '')
-      .replace("Hello! I'm UX Panda, ", '')
-      .replace("Hi there! I'm Advice Zebra, ", '') ||
-    'Your AI assistant';
+  const headerSubtitle = mascot.subtitle || 'Your AI assistant';
   const { preferredLLM } = usePreferences();
 
   // Check if user is admin
@@ -826,9 +865,20 @@ export default function ChatScreen() {
       let messagesToSend = secureMessages;
       if (providerOverride === 'perplexity') {
         const alternatingMessages: SecureChatMessage[] = [];
+
+        // 1. Remove leading assistant messages (Perplexity must start with User)
+        // Perplexity cannot handle [system, assistant, user...]
+        let startIndex = 0;
+        while (startIndex < secureMessages.length && secureMessages[startIndex].role === 'assistant') {
+          startIndex++;
+        }
+
+        const validMessages = secureMessages.slice(startIndex);
+
+        // 2. Ensure alternation
         let lastRole: 'user' | 'assistant' | null = null;
 
-        for (const msg of secureMessages) {
+        for (const msg of validMessages) {
           // Only add message if it's different from the last role
           if (msg.role !== lastRole) {
             alternatingMessages.push(msg);
