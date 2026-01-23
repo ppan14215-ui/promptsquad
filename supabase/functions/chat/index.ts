@@ -272,27 +272,33 @@ serve(async (req: Request) => {
 
     // Perplexity (web-grounded)
     if (useProvider === 'perplexity' && perplexityApiKey) {
+      // Perplexity requires strict alternation between user and assistant messages
+      // Filter and ensure proper alternation
       const perplexityMessages = [
         { role: 'system', content: systemPrompt },
-        ...messages.map((m, index) => {
-          // If this is the last message and we have an image, attach it
-          if (index === messages.length - 1 && image) {
-            return {
-              role: m.role,
-              content: [
-                { type: 'text', text: m.content },
-                {
-                  type: 'image_url',
-                  image_url: {
-                    url: `data:${image.mimeType};base64,${image.base64}`
-                  }
-                }
-              ]
-            };
-          }
-          return { role: m.role, content: m.content };
-        }),
       ];
+
+      // Add conversation messages, ensuring alternation
+      for (let i = 0; i < messages.length; i++) {
+        const msg = messages[i];
+        // If this is the last message and we have an image, attach it
+        if (i === messages.length - 1 && image) {
+          perplexityMessages.push({
+            role: msg.role,
+            content: [
+              { type: 'text', text: msg.content },
+              {
+                type: 'image_url',
+                image_url: {
+                  url: `data:${image.mimeType};base64,${image.base64}`
+                }
+              }
+            ]
+          });
+        } else {
+          perplexityMessages.push({ role: msg.role, content: msg.content });
+        }
+      }
 
       const response = await fetch('https://api.perplexity.ai/chat/completions', {
         method: 'POST',
