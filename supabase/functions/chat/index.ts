@@ -95,6 +95,9 @@ serve(async (req: Request) => {
     const body: ChatRequest = await req.json();
     const { mascotId, messages, skillId, provider, deepThinking, image, taskCategory } = body;
 
+    console.log('[Edge Function] Received messages:', JSON.stringify(messages, null, 2));
+    console.log('[Edge Function] Provider requested:', provider);
+
     if (!mascotId || !messages || messages.length === 0) {
       return new Response(
         JSON.stringify({ error: 'Missing required fields' }),
@@ -272,38 +275,29 @@ serve(async (req: Request) => {
 
     // Perplexity (web-grounded)
     if (useProvider === 'perplexity' && perplexityApiKey) {
-      // Perplexity doesn't support system messages in the same way
-      // We'll incorporate the system prompt into the first user message
-      const perplexityMessages = [];
-
-      // Add conversation messages
-      for (let i = 0; i < messages.length; i++) {
-        const msg = messages[i];
-        let content = msg.content;
-
-        // For the first user message, prepend system prompt
-        if (i === 0 && msg.role === 'user') {
-          content = `${systemPrompt}\n\n${msg.content}`;
-        }
-
-        // If this is the last message and we have an image, attach it
-        if (i === messages.length - 1 && image) {
-          perplexityMessages.push({
-            role: msg.role,
-            content: [
-              { type: 'text', text: content },
-              {
-                type: 'image_url',
-                image_url: {
-                  url: `data:${image.mimeType};base64,${image.base64}`
+      const perplexityMessages = [
+        { role: 'system', content: systemPrompt },
+        ...messages.map((m, index) => {
+          // If this is the last message and we have an image, attach it
+          if (index === messages.length - 1 && image) {
+            return {
+              role: m.role,
+              content: [
+                { type: 'text', text: m.content },
+                {
+                  type: 'image_url',
+                  image_url: {
+                    url: `data:${image.mimeType};base64,${image.base64}`
+                  }
                 }
-              }
-            ]
-          });
-        } else {
-          perplexityMessages.push({ role: msg.role, content });
-        }
-      }
+              ]
+            };
+          }
+          return { role: m.role, content: m.content };
+        }),
+      ];
+
+      console.log('[Edge Function] Sending to Perplexity:', JSON.stringify(perplexityMessages, null, 2));
 
       const response = await fetch('https://api.perplexity.ai/chat/completions', {
         method: 'POST',
@@ -341,10 +335,6 @@ serve(async (req: Request) => {
                 const content = parsed.choices?.[0]?.delta?.content;
                 if (content) {
                   controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ content })}\n\n`));
-                }
-                // Capture citations from final response
-                if (parsed.choices?.[0]?.finish_reason && parsed.citations) {
-                  controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ citations: parsed.citations })}\n\n`));
                 }
               } catch {
                 // Skip invalid JSON
