@@ -331,6 +331,10 @@ serve(async (req: Request) => {
                 if (content) {
                   controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ content })}\n\n`));
                 }
+                // Capture citations from final response
+                if (parsed.choices?.[0]?.finish_reason && parsed.citations) {
+                  controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ citations: parsed.citations })}\n\n`));
+                }
               } catch {
                 // Skip invalid JSON
               }

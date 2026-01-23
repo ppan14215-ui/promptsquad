@@ -40,6 +40,7 @@ type Message = {
   content: string;
   model?: string;
   provider?: 'openai' | 'gemini' | 'perplexity'; // Provider used for this message
+  citations?: string[]; // Citation URLs from Perplexity
   isThinking?: boolean;
   attachment?: {
     uri: string;

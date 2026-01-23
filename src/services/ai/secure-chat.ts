@@ -9,6 +9,7 @@ export type SecureChatResponse = {
   content: string;
   model: string;
   provider?: 'openai' | 'gemini' | 'perplexity';
+  citations?: string[]; // Citation URLs from Perplexity
 };
 
 /**
@@ -149,7 +150,8 @@ export async function secureChatStream(
       const lines = text.split('\n').filter((line) => line.startsWith('data: '));
       let fullContent = '';
       let model = '';
-      let actualProvider: 'openai' | 'gemini' | undefined = undefined;
+      let actualProvider: 'openai' | 'gemini' | 'perplexity' | undefined = undefined;
+      let citations: string[] | undefined = undefined;
 
       for (const line of lines) {
         try {
@@ -161,13 +163,15 @@ export async function secureChatStream(
           } else if (data.content) {
             fullContent += data.content;
             onChunk(data.content);
+          } else if (data.citations) {
+            citations = data.citations;
           }
         } catch (e) {
           if (e instanceof SyntaxError) continue;
           throw e; // Re-throw actual errors
         }
       }
-      return { content: fullContent, model, provider: actualProvider };
+      return { content: fullContent, model, provider: actualProvider, citations };
     } catch (e: any) {
       console.error('[SecureChat] Fallback failed:', e);
       throw new Error(`No response body and fallback failed: ${e.message}`);
@@ -177,7 +181,8 @@ export async function secureChatStream(
   const decoder = new TextDecoder();
   let fullContent = '';
   let model = '';
-  let actualProvider: 'openai' | 'gemini' | undefined = undefined;
+  let actualProvider: 'openai' | 'gemini' | 'perplexity' | undefined = undefined;
+  let citations: string[] | undefined = undefined;
 
   while (true) {
     const { done, value } = await reader.read();
@@ -200,6 +205,8 @@ export async function secureChatStream(
         } else if (data.content) {
           fullContent += data.content;
           onChunk(data.content);
+        } else if (data.citations) {
+          citations = data.citations;
         }
       } catch (e) {
         if (e instanceof SyntaxError) continue;
@@ -208,7 +215,7 @@ export async function secureChatStream(
     }
   }
 
-  return { content: fullContent, model, provider: actualProvider };
+  return { content: fullContent, model, provider: actualProvider, citations };
 }
 
 /**
