@@ -95,9 +95,6 @@ serve(async (req: Request) => {
     const body: ChatRequest = await req.json();
     const { mascotId, messages, skillId, provider, deepThinking, image, taskCategory } = body;
 
-    console.log('[Edge Function] Received messages:', JSON.stringify(messages, null, 2));
-    console.log('[Edge Function] Provider requested:', provider);
-
     if (!mascotId || !messages || messages.length === 0) {
       return new Response(
         JSON.stringify({ error: 'Missing required fields' }),
@@ -296,8 +293,6 @@ serve(async (req: Request) => {
           return { role: m.role, content: m.content };
         }),
       ];
-
-      console.log('[Edge Function] Sending to Perplexity:', JSON.stringify(perplexityMessages, null, 2));
 
       const response = await fetch('https://api.perplexity.ai/chat/completions', {
         method: 'POST',
