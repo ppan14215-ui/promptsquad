@@ -738,8 +738,8 @@ export default function ChatScreen() {
 
       if (chatLLM === 'auto') {
         // Check if query needs real-time data
-        const lastUserMessage = messages[messages.length - 1];
-        if (lastUserMessage && needsRealTimeData(lastUserMessage.content)) {
+        // Use the current user input, not the last message in the array
+        if (needsRealTimeData(actualMessageContentForLLM)) {
           providerOverride = 'perplexity'; // Use web-grounded for current info
           console.log('[Chat] Auto mode detected real-time query, using Perplexity');
         } else {
