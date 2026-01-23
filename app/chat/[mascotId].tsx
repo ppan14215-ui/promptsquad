@@ -905,6 +905,7 @@ export default function ChatScreen() {
           content: assistantContent,
           model: response.model,
           provider: actualProvider, // Store which provider was used
+          citations: response.citations, // Store Perplexity citations
         },
       ]);
       setStreamingContent('');
