@@ -1966,7 +1966,7 @@ export default function ChatScreen() {
                         ]}
                       >
                         {message.provider ?
-                          `${message.provider === 'openai' ? 'OpenAI' : 'Gemini'} ${message.model ? `(${message.model})` : ''}`.trim() :
+                          `${message.provider === 'openai' ? 'OpenAI' : message.provider === 'perplexity' ? 'Perplexity' : 'Gemini'} ${message.model ? `(${message.model})` : ''}`.trim() :
                           message.model || 'Unknown'}
                       </Text>
                     </View>
