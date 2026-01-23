@@ -821,10 +821,29 @@ export default function ChatScreen() {
         console.warn('[Chat] No conversationId available to save user message');
       }
 
+      // Perplexity requires strict alternation between user and assistant messages
+      // Filter to ensure no consecutive messages with the same role
+      let messagesToSend = secureMessages;
+      if (providerOverride === 'perplexity') {
+        const alternatingMessages: SecureChatMessage[] = [];
+        let lastRole: 'user' | 'assistant' | null = null;
+
+        for (const msg of secureMessages) {
+          // Only add message if it's different from the last role
+          if (msg.role !== lastRole) {
+            alternatingMessages.push(msg);
+            lastRole = msg.role;
+          }
+        }
+
+        messagesToSend = alternatingMessages;
+        console.log('[Chat] Filtered for Perplexity alternation:', secureMessages.length, '→', messagesToSend.length, 'messages');
+      }
+
       // Use secure chat stream through Supabase Edge Function (avoids CORS)
       const response = await secureChatStream(
         mascotId || '1',
-        secureMessages,
+        messagesToSend,
         (chunk) => {
           fullContent += chunk;
           setStreamingContent(fullContent);
