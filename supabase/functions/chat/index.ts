@@ -272,21 +272,26 @@ serve(async (req: Request) => {
 
     // Perplexity (web-grounded)
     if (useProvider === 'perplexity' && perplexityApiKey) {
-      // Perplexity requires strict alternation between user and assistant messages
-      // Filter and ensure proper alternation
-      const perplexityMessages = [
-        { role: 'system', content: systemPrompt },
-      ];
+      // Perplexity doesn't support system messages in the same way
+      // We'll incorporate the system prompt into the first user message
+      const perplexityMessages = [];
 
-      // Add conversation messages, ensuring alternation
+      // Add conversation messages
       for (let i = 0; i < messages.length; i++) {
         const msg = messages[i];
+        let content = msg.content;
+
+        // For the first user message, prepend system prompt
+        if (i === 0 && msg.role === 'user') {
+          content = `${systemPrompt}\n\n${msg.content}`;
+        }
+
         // If this is the last message and we have an image, attach it
         if (i === messages.length - 1 && image) {
           perplexityMessages.push({
             role: msg.role,
             content: [
-              { type: 'text', text: msg.content },
+              { type: 'text', text: content },
               {
                 type: 'image_url',
                 image_url: {
@@ -296,7 +301,7 @@ serve(async (req: Request) => {
             ]
           });
         } else {
-          perplexityMessages.push({ role: msg.role, content: msg.content });
+          perplexityMessages.push({ role: msg.role, content });
         }
       }
 
