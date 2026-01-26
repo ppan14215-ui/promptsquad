@@ -39,12 +39,9 @@ export default function SelectMascotsScreen() {
     return mascots;
   }, [mascots]);
 
-  // Only free mascots (1-10) are selectable
+  // Only free mascots are selectable
   const selectableMascots = useMemo(() => {
-    return allMascots.filter(m => {
-      const id = parseInt(m.id);
-      return id >= 1 && id <= 10;
-    });
+    return allMascots.filter(m => m.is_free === true);
   }, [allMascots]);
 
   const isDesktop = width >= DESKTOP_BREAKPOINT;
@@ -83,13 +80,13 @@ export default function SelectMascotsScreen() {
 
     try {
       console.log('handleConfirm: Starting unlock process for mascots:', selectedMascots);
-      
+
       const { error } = await unlockMascots(selectedMascots);
-      
+
       if (error) {
         console.error('handleConfirm: Unlock failed:', error);
         Alert.alert(
-          'Error', 
+          'Error',
           `Failed to unlock mascots: ${error.message || 'Unknown error'}. Please try again.`
         );
         setIsUnlocking(false);
@@ -97,16 +94,16 @@ export default function SelectMascotsScreen() {
       }
 
       console.log('handleConfirm: Successfully unlocked mascots, navigating to home');
-      
+
       // Small delay to ensure database updates are propagated
       await new Promise(resolve => setTimeout(resolve, 500));
-      
+
       // Navigate to home
       router.replace('/(tabs)');
     } catch (err) {
       console.error('Error in handleConfirm:', err);
       Alert.alert(
-        'Error', 
+        'Error',
         `An unexpected error occurred: ${err instanceof Error ? err.message : 'Unknown error'}. Please try again.`
       );
       setIsUnlocking(false);
@@ -126,7 +123,7 @@ export default function SelectMascotsScreen() {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
       {/* Pinned Header */}
-      <View style={[styles.pinnedHeader, { 
+      <View style={[styles.pinnedHeader, {
         backgroundColor: colors.background,
         borderBottomColor: colors.outline,
       }]}>
@@ -205,8 +202,8 @@ export default function SelectMascotsScreen() {
           {allMascots.map((mascot) => {
             const isSelected = selectedMascots.includes(mascot.id);
             const mascotId = parseInt(mascot.id);
-            const isPro = mascotId >= 11 && mascotId <= 20;
-            const isSelectable = mascotId >= 1 && mascotId <= 10;
+            const isPro = mascot.is_pro || (mascotId >= 11 && mascotId <= 20); // Fallback to ID check if flag missing
+            const isSelectable = mascot.is_free === true; // Use explicit is_free flag
             const isLocked = !isSelectable || (!isSelected && isSelectable);
 
             const imageSource = getMascotImageSource(mascot.image_url || '');
@@ -238,7 +235,7 @@ export default function SelectMascotsScreen() {
       </ScrollView>
 
       {/* Pinned Continue Button */}
-      <View style={[styles.pinnedButtonContainer, { 
+      <View style={[styles.pinnedButtonContainer, {
         backgroundColor: colors.background,
         paddingBottom: Math.max(16, insets.bottom),
         borderTopColor: colors.outline,
@@ -293,7 +290,7 @@ export default function SelectMascotsScreen() {
             >
               Do you wanna confirm the selection? This selection cannot be changed afterwards.
             </Text>
-            
+
             {/* Modal Buttons */}
             <View style={styles.modalButtons}>
               <TextButton

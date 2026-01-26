@@ -88,14 +88,14 @@ export default function SkillsScreen() {
   const handleSkillSaved = async () => {
     console.log('[SkillsScreen] Skill saved, refreshing skills list...');
     console.log('[SkillsScreen] Current skills count before refetch:', skillsRef.current.length);
-    
+
     try {
       // Add a small delay to ensure database commit is complete
       await new Promise(resolve => setTimeout(resolve, 200));
-      
+
       // Force refetch - this should update the skills state
       await refetchSkills();
-      
+
       // Wait a bit for state to update, then log
       setTimeout(() => {
         console.log('[SkillsScreen] Skills list refreshed. New count:', skillsRef.current.length);
@@ -113,11 +113,17 @@ export default function SkillsScreen() {
     refetchPersonality();
   };
 
-  const handleMascotSaved = async (name: string, subtitle: string) => {
+  const handleMascotSaved = async (name: string, subtitle: string, isPro: boolean, isFree: boolean, isReady: boolean) => {
     if (!selectedMascotId) return;
     try {
-      await updateMascot(selectedMascotId, { name, subtitle });
-      // Refresh mascots list to show updated name
+      await updateMascot(selectedMascotId, {
+        name,
+        subtitle,
+        is_pro: isPro,
+        is_free: isFree,
+        is_ready: isReady
+      });
+      // Refresh mascots list to show updated name/status
       window.location.reload(); // Simple refresh for now
     } catch (error) {
       console.error('Error updating mascot:', error);
@@ -196,7 +202,7 @@ export default function SkillsScreen() {
         <Text
           style={[
             styles.sectionLabel,
-              { fontFamily: fontFamilies.figtree.medium, color: colors.text },
+            { fontFamily: fontFamilies.figtree.medium, color: colors.text },
           ]}
         >
           Select Mascot
@@ -296,6 +302,29 @@ export default function SkillsScreen() {
                   >
                     ID: {selectedMascot.id} • Color: {selectedMascot.color}
                   </Text>
+                </View>
+
+                {/* Status Badges */}
+                <View style={styles.badgesRow}>
+                  {/* Pro Status - Only show if true (matches Home screen) */}
+                  {selectedMascot.is_pro && (
+                    <View style={[styles.badge, { backgroundColor: colors.primary, borderColor: colors.primary }]}>
+                      <Text style={[styles.badgeText, { color: colors.buttonText, fontFamily: fontFamilies.figtree.semiBold }]}>
+                        PRO
+                      </Text>
+                    </View>
+                  )}
+
+                  {/* Ready Status - Only show if NOT ready (Hidden) */}
+                  {!selectedMascot.is_ready && (
+                    <View style={[styles.badge, { backgroundColor: colors.surface, borderColor: colors.textMuted }]}>
+                      <Text style={[styles.badgeText, { color: colors.textMuted, fontFamily: fontFamilies.figtree.medium }]}>
+                        Draft (Hidden)
+                      </Text>
+                    </View>
+                  )}
+
+                  {/* If visible/ready, we don't show a badge (standard behavior) */}
                 </View>
               </View>
             </View>
@@ -399,9 +428,9 @@ export default function SkillsScreen() {
                     >
                       <SkillPreview
                         skillLabel={skill.skill_label}
-                        skillPromptPreview={skill.skill_prompt_preview}
-                        isFullAccess={skill.is_full_access}
-                        fullPrompt={skill.skill_prompt}
+                        skillPromptPreview={skill.skill_prompt_preview || ''}
+                        isFullAccess={skill.is_full_access || false}
+                        fullPrompt={skill.skill_prompt || ''}
                         mascotColor={selectedMascot.color}
                       />
                       <View style={styles.skillCardOverlay}>
@@ -451,6 +480,9 @@ export default function SkillsScreen() {
           mascotId={selectedMascot.id}
           currentName={selectedMascot.name}
           currentSubtitle={selectedMascot.subtitle}
+          currentIsPro={selectedMascot.is_pro || false}
+          currentIsFree={selectedMascot.is_free || false}
+          currentIsReady={selectedMascot.is_ready !== false} // Default to true if null/undefined for backward compat
           onClose={() => setMascotEditorVisible(false)}
           onSave={handleMascotSaved}
         />
@@ -625,5 +657,21 @@ const styles = StyleSheet.create({
   },
   mascotMetaText: {
     fontSize: 12,
+  },
+  badgesRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 12,
+  },
+  badge: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  badgeText: {
+    fontSize: 12,
+    fontWeight: '500',
   },
 });

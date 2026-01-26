@@ -99,6 +99,7 @@ type Mascot = {
   isLocked?: boolean;
   isPro?: boolean; // True if mascot is exclusively for pro subscription
   isUnlocked?: boolean; // True if mascot is unlocked for the user
+  isComingSoon?: boolean; // True if mascot is coming soon
   personality: string[];
   models: string[];
   skills: Skill[];
@@ -107,10 +108,10 @@ type Mascot = {
 // 20 mascots: 4 free + 16 locked - distributed across all 10 colors
 const SAMPLE_MASCOTS: Mascot[] = [
   // Free tier (4 mascots)
-  { 
-    id: '1', 
-    name: 'Analyst Bear', 
-    subtitle: 'Great at research', 
+  {
+    id: '1',
+    name: 'Analyst Bear',
+    subtitle: 'Great at research',
     image: mascotImages.bear,
     grayscaleImage: getGrayscaleImage('bear'), // Use grayscale version if available
     color: 'yellow',  // Keep original
@@ -122,11 +123,11 @@ const SAMPLE_MASCOTS: Mascot[] = [
       { id: '1-3', label: 'Market research' },
     ],
   },
-  { 
-    id: '2', 
-    name: 'Writer Fox', 
-    subtitle: 'Best at writing', 
-    image: mascotImages.fox, 
+  {
+    id: '2',
+    name: 'Writer Fox',
+    subtitle: 'Best at writing',
+    image: mascotImages.fox,
     color: 'orange',  // Changed: fox suits orange
     personality: ['Creative', 'Eloquent', 'Witty'],
     models: ['GPT-4o', 'Claude 3'],
@@ -136,11 +137,11 @@ const SAMPLE_MASCOTS: Mascot[] = [
       { id: '2-3', label: 'Social media' },
     ],
   },
-  { 
-    id: '3', 
-    name: 'UX Panda', 
-    subtitle: 'Principal UX skills', 
-    image: mascotImages.panda, 
+  {
+    id: '3',
+    name: 'UX Panda',
+    subtitle: 'Principal UX skills',
+    image: mascotImages.panda,
     color: 'green',  // Keep original
     personality: ['Empathetic', 'Detail-oriented', 'User-focused'],
     models: ['GPT-4o', 'Gemini Pro'],
@@ -150,11 +151,11 @@ const SAMPLE_MASCOTS: Mascot[] = [
       { id: '3-3', label: 'Usability testing' },
     ],
   },
-  { 
-    id: '4', 
-    name: 'Advice Zebra', 
-    subtitle: 'Here to support', 
-    image: mascotImages.zebra, 
+  {
+    id: '4',
+    name: 'Advice Zebra',
+    subtitle: 'Here to support',
+    image: mascotImages.zebra,
     color: 'pink',  // Keep original
     personality: ['Supportive', 'Wise', 'Balanced'],
     models: ['Claude 3', 'Gemini Pro'],
@@ -164,12 +165,12 @@ const SAMPLE_MASCOTS: Mascot[] = [
       { id: '4-3', label: 'Problem solving' },
     ],
   },
-  
+
   // Locked tier (16 mascots) - using all 10 colors
-  { 
-    id: '5', 
-    name: 'Teacher Owl', 
-    subtitle: 'Lets teach our kids', 
+  {
+    id: '5',
+    name: 'Teacher Owl',
+    subtitle: 'Lets teach our kids',
     image: mascotImages.owl,
     grayscaleImage: getGrayscaleImage('owl'),
     color: 'purple',  // Changed: wise owl suits purple
@@ -182,10 +183,10 @@ const SAMPLE_MASCOTS: Mascot[] = [
       { id: '5-3', label: 'Concept explanation' },
     ],
   },
-  { 
-    id: '6', 
-    name: 'Prompt Turtle', 
-    subtitle: 'Get the most out of AI', 
+  {
+    id: '6',
+    name: 'Prompt Turtle',
+    subtitle: 'Get the most out of AI',
     image: mascotImages.turtle,
     grayscaleImage: getGrayscaleImage('turtle'),
     color: 'teal',  // Changed: turtle suits teal
@@ -198,10 +199,10 @@ const SAMPLE_MASCOTS: Mascot[] = [
       { id: '6-3', label: 'Workflow automation' },
     ],
   },
-  { 
-    id: '7', 
-    name: 'Data Badger', 
-    subtitle: 'Analytics expert', 
+  {
+    id: '7',
+    name: 'Data Badger',
+    subtitle: 'Analytics expert',
     image: mascotImages.badger,
     grayscaleImage: getGrayscaleImage('badger'),
     color: 'brown',  // Changed: badger suits brown
@@ -214,10 +215,10 @@ const SAMPLE_MASCOTS: Mascot[] = [
       { id: '7-3', label: 'Report generation' },
     ],
   },
-  { 
-    id: '8', 
-    name: 'Quick Mouse', 
-    subtitle: 'Fast problem solver', 
+  {
+    id: '8',
+    name: 'Quick Mouse',
+    subtitle: 'Fast problem solver',
     image: mascotImages.mouse,
     grayscaleImage: getGrayscaleImage('mouse'),
     color: 'blue',  // Changed: quick mouse suits blue
@@ -230,10 +231,10 @@ const SAMPLE_MASCOTS: Mascot[] = [
       { id: '8-3', label: 'Time management' },
     ],
   },
-  { 
-    id: '9', 
-    name: 'Creative Pig', 
-    subtitle: 'Design thinking', 
+  {
+    id: '9',
+    name: 'Creative Pig',
+    subtitle: 'Design thinking',
     image: mascotImages.pig,
     grayscaleImage: getGrayscaleImage('pig'),
     color: 'pink',  // Changed: playful pig suits pink
@@ -246,11 +247,11 @@ const SAMPLE_MASCOTS: Mascot[] = [
       { id: '9-3', label: 'Creative writing' },
     ],
   },
-  { 
-    id: '10', 
-    name: 'Code Cat', 
-    subtitle: 'Programming wizard', 
-    image: mascotImages.cat, 
+  {
+    id: '10',
+    name: 'Code Cat',
+    subtitle: 'Programming wizard',
+    image: mascotImages.cat,
     color: 'darkPurple',  // Changed: code cat suits dark purple
     isLocked: true,
     personality: ['Logical', 'Precise', 'Patient'],
@@ -261,12 +262,12 @@ const SAMPLE_MASCOTS: Mascot[] = [
       { id: '10-3', label: 'Architecture' },
     ],
   },
-  
+
   // Additional locked mascots (using new images)
-  { 
-    id: '11', 
-    name: 'Strategy Camel', 
-    subtitle: 'Planning expert', 
+  {
+    id: '11',
+    name: 'Strategy Camel',
+    subtitle: 'Planning expert',
     image: mascotImages.camel,
     grayscaleImage: getGrayscaleImage('camel'),
     color: 'brown',  // Changed: desert camel suits brown
@@ -279,10 +280,10 @@ const SAMPLE_MASCOTS: Mascot[] = [
       { id: '11-3', label: 'Roadmap planning' },
     ],
   },
-  { 
-    id: '12', 
-    name: 'Marketing Frog', 
-    subtitle: 'Growth hacker', 
+  {
+    id: '12',
+    name: 'Marketing Frog',
+    subtitle: 'Growth hacker',
     image: mascotImages.frog,
     grayscaleImage: getGrayscaleImage('frog'),
     color: 'teal',  // Changed: frog suits teal
@@ -295,10 +296,10 @@ const SAMPLE_MASCOTS: Mascot[] = [
       { id: '12-3', label: 'Social strategy' },
     ],
   },
-  { 
-    id: '13', 
-    name: 'Product Giraffe', 
-    subtitle: 'Product management', 
+  {
+    id: '13',
+    name: 'Product Giraffe',
+    subtitle: 'Product management',
     image: mascotImages.giraffe,
     grayscaleImage: getGrayscaleImage('giraffe'),
     color: 'yellow',  // Giraffe with yellow spots
@@ -311,10 +312,10 @@ const SAMPLE_MASCOTS: Mascot[] = [
       { id: '13-3', label: 'Stakeholder management' },
     ],
   },
-  { 
-    id: '14', 
-    name: 'Support Lion', 
-    subtitle: 'Customer success', 
+  {
+    id: '14',
+    name: 'Support Lion',
+    subtitle: 'Customer success',
     image: mascotImages.lion,
     grayscaleImage: getGrayscaleImage('lion'),
     color: 'orange',  // Changed: lion suits orange
@@ -327,10 +328,10 @@ const SAMPLE_MASCOTS: Mascot[] = [
       { id: '14-3', label: 'Escalation handling' },
     ],
   },
-  { 
-    id: '15', 
-    name: 'Mentor Seahorse', 
-    subtitle: 'Career guidance', 
+  {
+    id: '15',
+    name: 'Mentor Seahorse',
+    subtitle: 'Career guidance',
     image: mascotImages.seahorse,
     grayscaleImage: getGrayscaleImage('seahorse'),
     color: 'blue',  // Changed: seahorse suits blue
@@ -343,10 +344,10 @@ const SAMPLE_MASCOTS: Mascot[] = [
       { id: '15-3', label: 'Interview prep' },
     ],
   },
-  { 
-    id: '16', 
-    name: 'Project Camel', 
-    subtitle: 'Project management', 
+  {
+    id: '16',
+    name: 'Project Camel',
+    subtitle: 'Project management',
     image: mascotImages.camel,
     grayscaleImage: getGrayscaleImage('camel'),
     color: 'orange',  // Changed: endurance/project suits orange
@@ -359,10 +360,10 @@ const SAMPLE_MASCOTS: Mascot[] = [
       { id: '16-3', label: 'Status reporting' },
     ],
   },
-  { 
-    id: '17', 
-    name: 'Research Frog', 
-    subtitle: 'Market research', 
+  {
+    id: '17',
+    name: 'Research Frog',
+    subtitle: 'Market research',
     image: mascotImages.frog,
     grayscaleImage: getGrayscaleImage('frog'),
     color: 'green',  // Changed: research frog suits green
@@ -375,10 +376,10 @@ const SAMPLE_MASCOTS: Mascot[] = [
       { id: '17-3', label: 'Competitor analysis' },
     ],
   },
-  { 
-    id: '18', 
-    name: 'Agile Giraffe', 
-    subtitle: 'Scrum master', 
+  {
+    id: '18',
+    name: 'Agile Giraffe',
+    subtitle: 'Scrum master',
     image: mascotImages.giraffe,
     grayscaleImage: getGrayscaleImage('giraffe'),
     color: 'purple',  // Changed: agile suits purple
@@ -391,10 +392,10 @@ const SAMPLE_MASCOTS: Mascot[] = [
       { id: '18-3', label: 'Team facilitation' },
     ],
   },
-  { 
-    id: '19', 
-    name: 'Brand Lion', 
-    subtitle: 'Brand strategy', 
+  {
+    id: '19',
+    name: 'Brand Lion',
+    subtitle: 'Brand strategy',
     image: mascotImages.lion,
     grayscaleImage: getGrayscaleImage('lion'),
     color: 'red',  // Changed: bold brand lion suits red
@@ -407,10 +408,10 @@ const SAMPLE_MASCOTS: Mascot[] = [
       { id: '19-3', label: 'Visual identity' },
     ],
   },
-  { 
-    id: '20', 
-    name: 'Dev Seahorse', 
-    subtitle: 'Full-stack developer', 
+  {
+    id: '20',
+    name: 'Dev Seahorse',
+    subtitle: 'Full-stack developer',
     image: mascotImages.seahorse,
     grayscaleImage: getGrayscaleImage('seahorse'),
     color: 'darkPurple',  // Changed: dev suits dark purple
@@ -437,10 +438,10 @@ export default function StoreScreen() {
   const insets = useSafeAreaInsets();
   const [selectedMascotId, setSelectedMascotId] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<'default' | 'most-liked'>('default');
-  
+
   // Fetch mascots from database with fallback to hardcoded
   const { mascots: dbMascots, isLoading: isLoadingMascots, error: mascotsError } = useMascots();
-  
+
   // Convert database mascots to Mascot type with fallback to hardcoded
   const allMascots: Mascot[] = useMemo(() => {
     if (dbMascots.length > 0) {
@@ -451,16 +452,18 @@ export default function StoreScreen() {
         // Find matching hardcoded mascot for fallback data
         const hardcodedMascot = SAMPLE_MASCOTS.find((hm) => hm.id === m.id);
         const mascotId = parseInt(m.id);
-        const isPro = mascotId >= 11 && mascotId <= 20;
-        const isFree = mascotId >= 1 && mascotId <= 10;
-        
+        // Use DB flags if available, fallback to ID logic, handle nulls
+        const isFree = (m.is_free != null) ? m.is_free : (mascotId >= 1 && mascotId <= 10);
+        const isPro = (m.is_pro != null) ? m.is_pro : (mascotId >= 11 && mascotId <= 20);
+        const isComingSoon = m.is_active === false;
+
         // Determine unlock status:
-        // - For free mascots (1-10): unlocked only if in unlockedMascotIds
-        // - For pro mascots (11-20): unlocked if subscribed or admin
-        const isUnlocked = isFree 
+        // - For free mascots: unlocked only if in unlockedMascotIds
+        // - For pro mascots: unlocked if subscribed or admin
+        const isUnlocked = isFree
           ? unlockedMascotIds.includes(m.id)
           : (isSubscribed || isAdmin);
-        
+
         return {
           id: m.id,
           name: m.name,
@@ -472,8 +475,9 @@ export default function StoreScreen() {
           models: hardcodedMascot?.models || [],
           skills: hardcodedMascot?.skills || [],
           isLocked: !isUnlocked, // Locked if not unlocked
-          isPro: isPro, // Mascots 11-20 are PRO
+          isPro: isPro,
           isUnlocked: isUnlocked,
+          isComingSoon: isComingSoon,
         };
       });
     }
@@ -482,14 +486,14 @@ export default function StoreScreen() {
       const mascotId = parseInt(m.id);
       const isPro = mascotId >= 11 && mascotId <= 20;
       const isFree = mascotId >= 1 && mascotId <= 10;
-      
+
       // Determine unlock status:
       // - For free mascots (1-10): unlocked only if in unlockedMascotIds
       // - For pro mascots (11-20): unlocked if subscribed or admin
-      const isUnlocked = isFree 
+      const isUnlocked = isFree
         ? unlockedMascotIds.includes(m.id)
         : (isSubscribed || isAdmin);
-      
+
       return {
         ...m,
         isLocked: !isUnlocked,
@@ -498,7 +502,7 @@ export default function StoreScreen() {
       };
     });
   }, [dbMascots, isAdmin, isSubscribed, unlockedMascotIds]);
-  
+
   // Fetch like counts for all mascots using their IDs
   const mascotIds = allMascots.map(m => m.id);
   const { likeCounts } = useMascotLikeCounts(mascotIds);
@@ -507,7 +511,7 @@ export default function StoreScreen() {
 
   // Get selected mascot from list
   const selectedMascot = selectedMascotId ? allMascots.find(m => m.id === selectedMascotId) : null;
-  
+
   // For admin, all mascots are unlocked (purchased state)
   // For regular users, check isLocked property (already set in allMascots)
   const getMascotLockStatus = (mascot: Mascot | MascotBasic) => {
@@ -585,27 +589,27 @@ export default function StoreScreen() {
   };
 
   // Component to fetch and display mascot details with all data
-  const MascotDetailsWithData = React.memo(function MascotDetailsWithData({ 
-    mascot, 
-    onClose, 
-    onStartChat, 
-    onTryOut, 
-    onUnlock, 
+  const MascotDetailsWithData = React.memo(function MascotDetailsWithData({
+    mascot,
+    onClose,
+    onStartChat,
+    onTryOut,
+    onUnlock,
     onSkillPress,
-    getMascotLockStatus 
-  }: { 
-    mascot: Mascot; 
-    onClose: () => void; 
-    onStartChat: () => void; 
-    onTryOut: () => void; 
-    onUnlock: () => void; 
+    getMascotLockStatus
+  }: {
+    mascot: Mascot;
+    onClose: () => void;
+    onStartChat: () => void;
+    onTryOut: () => void;
+    onUnlock: () => void;
     onSkillPress: (skill: Skill) => void;
     getMascotLockStatus: (mascot: Mascot | MascotBasic) => boolean;
   }) {
     // Try to fetch from database if using database mascots
     const dbMascot = dbMascots.find(m => m.id === mascot.id);
     const { skills: dbSkills } = useMascotSkills(mascot.id);
-    
+
     // Use database skills if available, otherwise use hardcoded
     const displaySkills: Skill[] = React.useMemo(() => {
       if (dbSkills && dbSkills.length > 0) {
@@ -617,15 +621,15 @@ export default function StoreScreen() {
       // Fallback to hardcoded skills
       return mascot.skills || [];
     }, [dbSkills, mascot.skills]);
-    
+
     // Use database personality/models if available, otherwise use hardcoded
-    const personality = mascot.personality && mascot.personality.length > 0 
-      ? mascot.personality 
+    const personality = mascot.personality && mascot.personality.length > 0
+      ? mascot.personality
       : ['Helpful', 'Friendly', 'Knowledgeable'];
-    const models = mascot.models && mascot.models.length > 0 
-      ? mascot.models 
+    const models = mascot.models && mascot.models.length > 0
+      ? mascot.models
       : ['Gemini', 'GPT-4o'];
-    
+
     return (
       <MascotDetails
         name={mascot.name}
@@ -683,7 +687,7 @@ export default function StoreScreen() {
             >
               Unlock new skills and capabilities
             </Text>
-            
+
             {/* Sort Options */}
             <View style={styles.sortContainer}>
               <Pressable
@@ -749,6 +753,7 @@ export default function StoreScreen() {
                     isLocked={getMascotLockStatus(mascot)}
                     isPro={mascot.isPro || false}
                     isUnlocked={mascot.isUnlocked || false}
+                    isComingSoon={mascot.isComingSoon}
                     onPress={() => handleMascotPress(mascot.id)}
                   />
                 );
@@ -781,11 +786,11 @@ export default function StoreScreen() {
         animationType="fade"
         onRequestClose={handleCloseModal}
       >
-        <Pressable 
-          style={styles.modalOverlay} 
+        <Pressable
+          style={styles.modalOverlay}
           onPress={handleCloseModal}
         >
-          <Pressable 
+          <Pressable
             onPress={(e) => e.stopPropagation()}
             style={styles.modalContent}
           >

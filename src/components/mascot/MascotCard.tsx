@@ -21,6 +21,7 @@ export type MascotCardProps = {
   isLocked?: boolean;
   isPro?: boolean; // True if mascot is exclusively for pro subscription
   isUnlocked?: boolean; // True if mascot is unlocked for the user (affects badge color)
+  isComingSoon?: boolean; // True if mascot is not yet active/ready
   /** Force a specific state for preview purposes */
   forceState?: MascotCardState;
   /** Color variant for hover border (defaults to yellow) */
@@ -41,17 +42,23 @@ export function MascotCard({
   isUnlocked = false,
   forceState,
   colorVariant = 'yellow',
+  isComingSoon = false,
   forceGrayscale = false,
 }: MascotCardProps) {
   const { colors } = useTheme();
   const [isHoveredInternal, setIsHoveredInternal] = useState(false);
 
+  // If coming soon, it's effectively locked but with special visuals
+  const effectiveIsComingSoon = isComingSoon;
+
   // Determine effective state
   const effectiveState: MascotCardState = forceState ?? (
-    isLocked
-      ? (isHoveredInternal ? 'locked-hover' : 'locked')
-      : (isHoveredInternal ? 'hover' : 'default')
+    effectiveIsComingSoon ? 'locked' : // Treated as locked for interactions
+      (isLocked
+        ? (isHoveredInternal ? 'locked-hover' : 'locked')
+        : (isHoveredInternal ? 'hover' : 'default'))
   );
+
   const isHovered = effectiveState === 'hover';
   const isLockedState = effectiveState === 'locked' || effectiveState === 'locked-hover';
   const isLockedHover = effectiveState === 'locked-hover';
@@ -74,16 +81,13 @@ export function MascotCard({
   });
 
   // Grayscale filter for locked state or when forceGrayscale is true
-  // forceGrayscale can override this if needed, but by default only locked mascots are grayscale
   const shouldGrayscale = forceGrayscale !== undefined ? forceGrayscale : isLockedState;
 
   return (
     <Pressable
-      onPress={onPress}
-      onHoverIn={() => !forceState && setIsHoveredInternal(true)}
+      onPress={effectiveIsComingSoon ? undefined : onPress} // Disable press if coming soon
+      onHoverIn={() => !forceState && !effectiveIsComingSoon && setIsHoveredInternal(true)}
       onHoverOut={(e) => {
-        // Only trigger hover out if we're actually leaving the card
-        // This prevents flickering when hovering over child elements like the button
         if (!forceState) {
           setIsHoveredInternal(false);
         }
@@ -93,42 +97,37 @@ export function MascotCard({
         webTransitionStyle,
         {
           backgroundColor: colors.background,
-          // Native: 1px border
           borderWidth: Platform.OS === 'web' ? 0 : 1,
           borderColor: colors.outline,
+          opacity: effectiveIsComingSoon ? 0.7 : 1, // Reduce opacity for coming soon
         },
-        // Web: Use inset box-shadow for border (inside the element, no layout shift)
         Platform.OS === 'web' && ({
           boxShadow: isHovered
             ? `inset 0 0 0 2px ${hoverBorderColor}, ${shadowToCSS('md')}`
             : `inset 0 0 0 1px ${colors.outline}`,
         } as unknown as object),
-        // Native: Apply hover shadow separately
         Platform.OS !== 'web' && isHovered && hoverShadowStyle,
       ]}
     >
-      {/* Mascot image - scaled up in hover and locked-hover states */}
+      {/* Mascot image */}
       <View
         style={[
           styles.imageContainer,
           (isHovered || isLockedHover) && styles.imageContainerHover,
           Platform.OS === 'web' && ({ transition: 'all 200ms ease-out' } as unknown as object),
-          // Locked state: reduced opacity only if not using grayscale image (which has embedded opacity)
           isLockedState && !grayscaleImageSource && { opacity: 0.3 },
         ]}
       >
         <Image
           source={
-            // If locked and grayscale image is available, use it
-            isLockedState && grayscaleImageSource
+            // Use grayscale if available and locked (including coming soon)
+            (isLockedState || effectiveIsComingSoon) && grayscaleImageSource
               ? grayscaleImageSource
-              // Otherwise, use regular image
               : (imageSource || { uri: imageUrl })
           }
           style={[
             styles.image,
-            // Apply grayscale filter on web only if locked but no grayscale image provided
-            Platform.OS === 'web' && isLockedState && !grayscaleImageSource
+            Platform.OS === 'web' && (isLockedState || effectiveIsComingSoon) && !grayscaleImageSource
               ? { filter: 'grayscale(100%)' } as unknown as object
               : {},
           ]}
@@ -137,7 +136,7 @@ export function MascotCard({
         />
       </View>
 
-      {/* Text content - zIndex ensures it's above image on hover */}
+      {/* Text content */}
       <View style={[styles.textContainer, isHovered && styles.textContainerHover]}>
         <Text
           style={[
@@ -147,7 +146,7 @@ export function MascotCard({
               fontSize: textStyles.cardTitle.fontSize,
               lineHeight: textStyles.cardTitle.lineHeight,
               letterSpacing: textStyles.cardTitle.letterSpacing,
-              color: isLockedState ? colors.textMuted : colors.text,
+              color: isLockedState || effectiveIsComingSoon ? colors.textMuted : colors.text,
             },
           ]}
           numberOfLines={1}
@@ -170,17 +169,12 @@ export function MascotCard({
         </Text>
       </View>
 
-      {/* MiniButton for locked-hover state only - positioned at bottom of card with 16px padding */}
-      {isLockedHover && (
+      {/* Unlock Button - Only for locked-hover, NOT for coming soon */}
+      {isLockedHover && !effectiveIsComingSoon && (
         <View
           style={styles.buttonContainer}
           {...(Platform.OS === 'web' && {
-            onMouseEnter: () => {
-              // Maintain hover state when mouse enters button
-              if (!forceState) {
-                setIsHoveredInternal(true);
-              }
-            },
+            onMouseEnter: () => !forceState && setIsHoveredInternal(true),
           })}
         >
           <MiniButton
@@ -190,15 +184,17 @@ export function MascotCard({
         </View>
       )}
 
-      {/* Pro Badge - Only show for PRO mascots, primary/purple color always */}
-      {isPro && (
-        <View style={[
-          styles.proBadge,
-          {
-            backgroundColor: colors.primary,
-          }
-        ]}>
+      {/* Pro Badge */}
+      {isPro && !effectiveIsComingSoon && (
+        <View style={[styles.proBadge, { backgroundColor: colors.primary }]}>
           <Text style={[styles.proBadgeText, { color: colors.buttonText }]}>PRO</Text>
+        </View>
+      )}
+
+      {/* Coming Soon Badge */}
+      {effectiveIsComingSoon && (
+        <View style={[styles.proBadge, { backgroundColor: colors.textMuted }]}>
+          <Text style={[styles.proBadgeText, { color: colors.buttonText }]}>SOON</Text>
         </View>
       )}
     </Pressable>

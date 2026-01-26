@@ -11,6 +11,8 @@ export type MascotCarouselMascot = {
   subtitle: string;
   image: any;
   color: MascotColorVariant;
+  isPro?: boolean;
+  isComingSoon?: boolean;
 };
 
 export type MascotCarouselProps = {
@@ -119,6 +121,8 @@ export function MascotCarousel({
           const paddingTop = (isDesktop ? (isSelected ? 24 : 12) : (isSelected ? 12 : 6)) * scale;
           const paddingHorizontal = (isDesktop ? (isSelected ? 24 : 12) : (isSelected ? 12 : 6)) * scale;
 
+          const isComingSoon = mascot.isComingSoon;
+
           return (
             <View key={`${mascot.id}-${position}`} style={[styles.mascotWrapper, { alignItems: 'flex-end' }]}>
               {position === 0 && (
@@ -133,7 +137,7 @@ export function MascotCarousel({
                   {
                     width: size,
                     height: size,
-                    opacity,
+                    opacity: isComingSoon ? opacity * 0.7 : opacity,
                     borderColor: isSelected ? COLOR_MAP[mascot.color] : colors.outline,
                     borderWidth: isSelected ? 2 : 0.25,
                     borderRadius,
@@ -142,9 +146,55 @@ export function MascotCarousel({
                     paddingHorizontal,
                   },
                 ]}
-                onPress={() => onMascotPress(mascot, actualIndex, isSelected)}
+                onPress={isComingSoon ? undefined : () => onMascotPress(mascot, actualIndex, isSelected)}
               >
-                <View style={styles.mascotTextContainer}>
+                {/* Pro Badge */}
+                {mascot.isPro && !isComingSoon && (
+                  <View style={[
+                    styles.proBadge,
+                    {
+                      backgroundColor: colors.primary,
+                      top: isSelected ? 8 * scale : 4 * scale,
+                      right: isSelected ? 8 * scale : 4 * scale,
+                      paddingHorizontal: (isSelected ? 6 : 4) * scale,
+                      paddingVertical: (isSelected ? 2 : 1) * scale,
+                      borderRadius: (isSelected ? 8 : 4) * scale,
+                    }
+                  ]}>
+                    <Text style={[
+                      styles.proBadgeText,
+                      {
+                        color: colors.buttonText,
+                        fontSize: (isSelected ? 8 : 6) * scale,
+                      }
+                    ]}>PRO</Text>
+                  </View>
+                )}
+
+                {/* Coming Soon Badge */}
+                {isComingSoon && (
+                  <View style={[
+                    styles.proBadge,
+                    {
+                      backgroundColor: colors.textMuted,
+                      top: isSelected ? 8 * scale : 4 * scale,
+                      right: isSelected ? 8 * scale : 4 * scale,
+                      paddingHorizontal: (isSelected ? 6 : 4) * scale,
+                      paddingVertical: (isSelected ? 2 : 1) * scale,
+                      borderRadius: (isSelected ? 8 : 4) * scale,
+                    }
+                  ]}>
+                    <Text style={[
+                      styles.proBadgeText,
+                      {
+                        color: colors.buttonText,
+                        fontSize: (isSelected ? 8 : 6) * scale,
+                      }
+                    ]}>SOON</Text>
+                  </View>
+                )}
+
+                <View style={[styles.mascotTextContainer, { opacity: isComingSoon ? 0.7 : 1 }]}>
                   <Text
                     style={[
                       styles.mascotName,
@@ -183,6 +233,7 @@ export function MascotCarousel({
                       width: imageSize,
                       height: imageSize,
                       left: (size - imageSize) / 2,
+                      opacity: isComingSoon ? 0.5 : 1, // Make detailed image fainter if coming soon
                     },
                   ]}
                   contentFit="contain"
@@ -238,5 +289,19 @@ const styles = StyleSheet.create({
   arrowButton: {
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  proBadge: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+    zIndex: 10,
+  },
+  proBadgeText: {
+    fontSize: 8,
+    fontWeight: '700',
+    letterSpacing: 0.3,
   },
 });

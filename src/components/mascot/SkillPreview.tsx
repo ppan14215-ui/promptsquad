@@ -63,7 +63,7 @@ export function SkillPreview({
               fontFamily: textStyles.body.fontFamily,
               fontSize: textStyles.body.fontSize,
               lineHeight: textStyles.body.lineHeight,
-              color: colors.textMuted,
+              color: colors.text, // Use theme text color
             },
           ]}
           numberOfLines={isFullAccess ? undefined : 8}

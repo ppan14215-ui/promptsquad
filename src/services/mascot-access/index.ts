@@ -2,6 +2,7 @@ import React from 'react';
 import { supabase } from '@/services/supabase';
 import { useAuth } from '@/services/auth';
 import { logger } from '@/lib/utils/logger';
+import { useIsAdmin } from '@/services/admin';
 
 export type UserMascot = {
   id: string;
@@ -23,10 +24,9 @@ export async function getUnlockedMascots(): Promise<string[]> {
     .eq('user_id', user.id);
 
   if (error) {
-    // Self-healing: If unauthorized (401) or Not Acceptable (406 - often auth related), force sign out
-    if (error.code === '401' || error.code === '406' || (error as any).status === 401 || (error as any).status === 406) {
-      logger.error('Auth error in getUnlockedMascots, forcing sign out:', error);
-      await supabase.auth.signOut();
+    // Self-healing: If unauthorized (401), just return empty
+    if (error.code === '401' || (error as any).status === 401) {
+      logger.warn('Auth error in getUnlockedMascots:', error);
       return [];
     }
 
@@ -134,10 +134,9 @@ export async function hasCompletedOnboarding(): Promise<boolean> {
 
     // PGRST116 = no rows (profile doesn't exist yet) - treat as not completed
     if (error && error.code !== 'PGRST116') {
-      // Self-healing: If unauthorized, force sign out
-      if (error.code === '401' || error.code === '406' || (error as any).status === 401 || (error as any).status === 406) {
-        logger.error('Auth error in hasCompletedOnboarding, forcing sign out:', error);
-        await supabase.auth.signOut();
+      // Self-healing: If unauthorized, just return false
+      if (error.code === '401' || (error as any).status === 401) {
+        logger.warn('Auth error in hasCompletedOnboarding:', error);
         return false;
       }
 
@@ -306,6 +305,7 @@ export function useMascotAccess(mascotId: string | null): {
   refresh: () => Promise<void>;
 } {
   const { user } = useAuth();
+  const { isAdmin } = useIsAdmin();
   const [canUse, setCanUse] = React.useState(false);
   const [reason, setReason] = React.useState<'unlocked' | 'trial' | 'trial_exhausted' | 'locked'>('locked');
   const [trialCount, setTrialCount] = React.useState(0);
@@ -314,6 +314,14 @@ export function useMascotAccess(mascotId: string | null): {
   const [refreshTrigger, setRefreshTrigger] = React.useState(0);
 
   const checkAccess = React.useCallback(async () => {
+    if (isAdmin) {
+      setCanUse(true);
+      setReason('unlocked');
+      setTrialCount(0);
+      setIsLoading(false);
+      return;
+    }
+
     if (!user || !mascotId) {
       setCanUse(false);
       setReason('locked');
@@ -328,7 +336,7 @@ export function useMascotAccess(mascotId: string | null): {
     setReason(access.reason);
     setTrialCount(access.trialCount || 0);
     setIsLoading(false);
-  }, [user, mascotId]);
+  }, [user, mascotId, isAdmin]);
 
   React.useEffect(() => {
     checkAccess();

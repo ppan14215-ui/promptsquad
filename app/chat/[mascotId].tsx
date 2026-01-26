@@ -385,6 +385,13 @@ Be technical and precise. Use code blocks and markdown formatting. Provide clear
   },
 };
 
+// Helper to clean message content (remove thought chains, etc.)
+const cleanMessageContent = (content: string) => {
+  if (!content) return '';
+  // Remove Perplexity "||| thought |||" blocks
+  return content.replace(/\|\|\| thought \|\|\|[\s\S]*?\|\|\|/gi, '').trim();
+};
+
 export default function ChatScreen() {
   const {
     mascotId,
@@ -482,6 +489,9 @@ export default function ChatScreen() {
   const [editedPersonality, setEditedPersonality] = useState('');
   const [isSavingPersonality, setIsSavingPersonality] = useState(false);
   const [isResettingPersonality, setIsResettingPersonality] = useState(false);
+
+  // Smart auto-scroll: Use ref to avoid closure issues in streaming callback
+  const isUserScrollingRef = useRef(false);
 
   // Sync editedPersonality when dbPersonality changes (but not when editing)
   useEffect(() => {
@@ -629,7 +639,7 @@ export default function ChatScreen() {
   const [chatLLM, setChatLLM] = useState<LLMPreference>(llm || 'auto');
   const [showLLMPicker, setShowLLMPicker] = useState(false);
   const [webSearchEnabled, setWebSearchEnabled] = useState(false);
-  const [autoScroll, setAutoScroll] = useState(true);
+  // Removed old autoScroll state - now using isUserScrollingRef for scroll control
   const [showWebSearchTooltip, setShowWebSearchTooltip] = useState(false);
   const [deepThinkingEnabled, setDeepThinkingEnabled] = useState(deepThinking === 'true');
   const [showDeepThinkingTooltip, setShowDeepThinkingTooltip] = useState(false);
@@ -642,6 +652,45 @@ export default function ChatScreen() {
     return sources
       .map((source, index) => `${index + 1}. [${source.title}](${source.url})`)
       .join('\n');
+  }, []);
+
+  // Handle scroll events to detect if user has scrolled away from bottom
+  const lastScrollY = useRef(0);
+  const handleScroll = useCallback((event: any) => {
+    const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
+    const currentScrollY = contentOffset.y;
+    const paddingToBottom = 50; // Reduced threshold - be more precise
+    const isAtBottom = layoutMeasurement.height + contentOffset.y >= contentSize.height - paddingToBottom;
+
+    // Detect if user is scrolling UP (reading previous messages)
+    const scrollDelta = currentScrollY - lastScrollY.current;
+    const isScrollingUp = scrollDelta < -2; // Reduced from 5px to 2px - catch smaller scrolls
+    lastScrollY.current = currentScrollY;
+
+    // Debug logging (less verbose - only on state changes)
+    if (isScrollingUp || (isAtBottom && isUserScrollingRef.current)) {
+      // Debug logging (removed for performance)
+      /*
+      console.log('[Scroll]', {
+        currentY: Math.round(currentScrollY),
+        delta: Math.round(scrollDelta),
+        isAtBottom,
+        isScrollingUp,
+        currentLockState: isUserScrollingRef.current
+      });
+      */
+    }
+
+    // STICKY BEHAVIOR: Once user scrolls up, keep locked until they're AT the bottom
+    if (isScrollingUp && !isAtBottom) {
+      // console.log('[Scroll] 🔒 User scrolled up - LOCKING scroll');
+      isUserScrollingRef.current = true;
+    }
+    // Only unlock when user is AT the bottom (not just near) AND currently locked
+    else if (isAtBottom && isUserScrollingRef.current) {
+      // console.log('[Scroll] 🔓 At bottom - UNLOCKING scroll');
+      isUserScrollingRef.current = false;
+    }
   }, []);
 
   // Core function to send a message (used by handleSend and auto-send from home)
@@ -678,10 +727,11 @@ export default function ChatScreen() {
     const assistantMessageId = (Date.now() + 1).toString();
 
     setMessages((prev) => [...prev, userMessage]);
-    setAutoScroll(true);
     setInputText('');
     setIsLoading(true);
     setStreamingContent('');
+    // Reset scroll lock when user sends a new message
+    isUserScrollingRef.current = false;
 
     // Focus input immediately after clearing (user can start typing right away)
     // Use requestAnimationFrame for web to ensure DOM is ready
@@ -797,25 +847,7 @@ export default function ChatScreen() {
 
       // Create or use existing conversation
       // isFirstUserMessage was already checked at the start of the function
-      let conversationId = currentConversationId;
-      let isNewConversation = false;
-      if (!conversationId) {
-        try {
-          console.log('[Chat] Creating new conversation for mascot:', mascotId || '1');
-          const newConversation = await createConversation(mascotId || '1');
-          conversationId = newConversation.id;
-          console.log('[Chat] New conversation created:', conversationId);
-          setCurrentConversationId(conversationId);
-          isNewConversation = true;
-        } catch (error) {
-          console.error('[Chat] Error creating conversation:', error);
-          // Continue without conversationId - messages won't be saved but chat will work
-        }
-      } else {
-        console.log('[Chat] Using existing conversation:', conversationId);
-      }
-
-      // count user messages to see if we should increment trial usage
+      // Calculate user message count (including new one)
       const userMessageCount = [
         ...messages.filter(m => m.role === 'user'),
         { role: 'user', content: messageContent }
@@ -823,21 +855,50 @@ export default function ChatScreen() {
 
       console.log('[Chat] User message count:', userMessageCount);
 
-      // Increment trial usage if this conversation reaches 3 user messages
-      // and we haven't incremented it for this conversation yet
-      if (isTrial && mascotId && conversationId && userMessageCount >= 3 && !hasIncrementedTrial) {
+      // DELAYED SAVING LOGIC:
+      let conversationId = currentConversationId;
+      let isNewConversation = false;
+
+      // Check if we need to create the conversation (Message #5)
+      if (!conversationId && userMessageCount >= 5) {
         try {
-          console.log('[Chat] 3rd+ user message reached - incrementing trial usage for mascot:', mascotId);
-          const { error: trialError, usage } = await incrementTrialUsage(mascotId, conversationId);
-          if (trialError) {
-            console.error('[Chat] Error incrementing trial usage:', trialError);
-          } else {
-            console.log('[Chat] Trial usage incremented successfully:', usage);
-            setHasIncrementedTrial(true);
-            // Update local trial count immediately for UI feedback
-            if (usage) {
-              setLocalTrialCount(usage.conversationCount);
-              await refreshAccess();
+          console.log('[Chat] 5th message reached - Creating conversation and flushing history...');
+          const newConversation = await createConversation(mascotId || '1', messages[0]?.content?.substring(0, 50) || 'New Conversation');
+          conversationId = newConversation.id;
+          setCurrentConversationId(conversationId);
+          isNewConversation = true;
+
+          // FLUSH: Save previous messages
+          const messagesToFlush = messages.filter(m => !m.isThinking && (m.role === 'user' || m.role === 'assistant'));
+
+          for (const msg of messagesToFlush) {
+            await saveMessage(conversationId, msg.role as 'user' | 'assistant', msg.content);
+          }
+
+          await generateConversationTitle(conversationId, messages, mascotId || '1');
+        } catch (error) {
+          console.error('[Chat] Error processing delayed conversation creation:', error);
+        }
+      } else if (!conversationId) {
+        console.log('[Chat] Count < 5. Logic continues (no DB save yet)...');
+      } else {
+        console.log('[Chat] Using existing conversation:', conversationId);
+      }
+
+      // Trial Check (Using existing count >= 5)
+      if (isTrial && mascotId && conversationId && userMessageCount >= 5 && !hasIncrementedTrial && !isAdmin) {
+        try {
+          console.log('[Chat] 5th+ user message reached - incrementing trial usage for mascot:', mascotId);
+          if (!isAdmin) {
+            const { error: trialError, usage } = await incrementTrialUsage(mascotId, conversationId);
+            if (trialError) {
+              console.error('[Chat] Error incrementing trial usage:', trialError);
+            } else {
+              setHasIncrementedTrial(true);
+              if (usage) {
+                setLocalTrialCount(usage.conversationCount);
+                await refreshAccess();
+              }
             }
           }
         } catch (error) {
@@ -845,7 +906,7 @@ export default function ChatScreen() {
         }
       }
 
-      // Save user message to database
+      // Save user message to database (ONLY if we have a conversation ID)
       if (conversationId) {
         try {
           console.log('[Chat] Saving user message to conversation:', conversationId);
@@ -854,10 +915,9 @@ export default function ChatScreen() {
           setHasSavedFirstMessage(true);
         } catch (error) {
           console.error('[Chat] Error saving user message:', error);
-          // Don't block the chat flow if saving fails, but log it
         }
       } else {
-        console.warn('[Chat] No conversationId available to save user message');
+        // console.warn('[Chat] No conversationId available - message kept in local state');
       }
 
       // Perplexity requires strict alternation between user and assistant messages
@@ -897,8 +957,13 @@ export default function ChatScreen() {
         (chunk) => {
           fullContent += chunk;
           setStreamingContent(fullContent);
-          // Auto-scroll while streaming
-          scrollViewRef.current?.scrollToEnd({ animated: false });
+          // Auto-scroll while streaming - but only if user hasn't scrolled away
+          if (!isUserScrollingRef.current) {
+            console.log('[Stream] Auto-scrolling to bottom');
+            scrollViewRef.current?.scrollToEnd({ animated: false });
+          } else {
+            console.log('[Stream] Skipping auto-scroll - user is reading');
+          }
         },
         conversationId || undefined, // Pass conversationId to Edge Function
         activeSkillId || undefined, // skillId
@@ -1273,7 +1338,22 @@ export default function ChatScreen() {
 
       // CRITICAL: For skill clicks, we have two scenarios:
       // 1. Admin users: We have skillPrompt (full prompt) - send it to LLM
-      // 2. Non-admin users: We don't have skillPrompt - send skillLabel, Edge Function will fetch full prompt
+      // 2. Non-admin users: We don't have skillPrompt (PREVIOUSLY) - NOW we do because we query raw table
+      // 3. Placeholders: If prompt has [placeholder] or (placeholder), DO NOT AUTO SEND.
+
+      const hasPlaceholders = skillPrompt && /\[.*?\]|\(.*?\)/.test(skillPrompt);
+
+      if (hasPlaceholders) {
+        console.log('[Chat] Skill prompt has placeholders - preventing auto-send. Populating input.');
+        setInputText(skillPrompt || skillLabel);
+        setIsLoading(false);
+        setShowSkills(false);
+        setActiveTab('chat');
+        // Focus input if possible (ref needed)
+        setTimeout(() => chatInputRef.current?.focus(), 100);
+        return; // STOP HERE
+      }
+
       // NEVER send skill_prompt_preview - it's incomplete and shouldn't be shown to LLM
       const actualMessageContentForLLM = skillPrompt || skillLabel;
 
@@ -1355,7 +1435,7 @@ export default function ChatScreen() {
 
       // Increment trial usage if this conversation reaches 3 user messages
       // and we haven't incremented it for this conversation yet
-      if (isTrial && mascotId && conversationId && userMessageCount >= 3 && !hasIncrementedTrial) {
+      if (isTrial && mascotId && conversationId && userMessageCount >= 3 && !hasIncrementedTrial && !isAdmin) {
         try {
           console.log('[Chat] handleSkillPress - 3rd+ user message reached - incrementing trial usage for mascot:', mascotId);
           const { error: trialError, usage } = await incrementTrialUsage(mascotId, conversationId);
@@ -1509,13 +1589,13 @@ export default function ChatScreen() {
   const markdownStyles = useMemo(() => ({
     body: {
       fontFamily: fontFamilies.figtree.regular, // Regular weight for body text
-      fontSize: Platform.OS === 'web' ? 14 : 13,
-      lineHeight: Platform.OS === 'web' ? 22 : 20, // More breathing room
+      fontSize: Platform.OS === 'web' ? 15 : 14, // Slightly larger font
+      lineHeight: Platform.OS === 'web' ? 26 : 22, // Much more breathing room
       color: colors.text,
     },
     paragraph: {
       marginTop: 0,
-      marginBottom: Platform.OS === 'web' ? 12 : 10, // More spacing between paragraphs
+      marginBottom: Platform.OS === 'web' ? 16 : 12, // More spacing between paragraphs
     },
     strong: {
       fontFamily: fontFamilies.figtree.semiBold,
@@ -1752,26 +1832,45 @@ export default function ChatScreen() {
                 {!isEditingPersonality ? (
                   <Pressable
                     onPress={() => {
+                      if (!isAdmin) return;
                       setEditedPersonality(dbPersonality.personality);
                       setIsEditingPersonality(true);
                     }}
-                    style={styles.editButton}
+                    style={[styles.editButton, !isAdmin && { opacity: 0.5 }]}
                   >
-                    <Icon name="edit" size={18} color={colors.primary} />
+                    <Icon
+                      name={isAdmin ? "edit" : "lock"}
+                      size={18}
+                      color={isAdmin ? colors.primary : colors.textMuted}
+                    />
                     <Text
                       style={[
                         styles.editButtonText,
                         {
                           fontFamily: fontFamilies.figtree.medium,
-                          color: colors.primary,
+                          color: isAdmin ? colors.primary : colors.textMuted,
                         },
                       ]}
                     >
-                      Edit
+                      {isAdmin ? "Edit" : "Locked"}
                     </Text>
                   </Pressable>
                 ) : null}
               </View>
+
+              {/* Pro Disclaimer for non-admins */}
+              {!isAdmin && (
+                <View style={{ paddingHorizontal: 16, paddingBottom: 12 }}>
+                  <Text style={{
+                    fontFamily: fontFamilies.figtree.regular,
+                    fontSize: 13,
+                    color: colors.textMuted,
+                    fontStyle: 'italic'
+                  }}>
+                    Editing personality is exclusive to the Pro subscription.
+                  </Text>
+                </View>
+              )}
 
               {/* Content: Edit mode or View mode */}
               {isEditingPersonality ? (
@@ -1910,7 +2009,7 @@ export default function ChatScreen() {
               ) : (
                 dbPersonality.personality && typeof dbPersonality.personality === 'string' && dbPersonality.personality.trim() ? (
                   <Markdown style={markdownStyles}>
-                    {dbPersonality.personality}
+                    {cleanMessageContent(dbPersonality.personality)}
                   </Markdown>
                 ) : (
                   <Text style={[styles.messageText, { color: colors.textMuted }]}>
@@ -1957,15 +2056,11 @@ export default function ChatScreen() {
           ref={scrollViewRef}
           style={styles.messagesContainer}
           contentContainerStyle={styles.messagesContent}
-          onScroll={(event) => {
-            const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
-            const paddingToBottom = 40;
-            const isAtBottom = contentOffset.y + layoutMeasurement.height >= contentSize.height - paddingToBottom;
-            setAutoScroll(isAtBottom);
-          }}
+          onScroll={handleScroll}
           scrollEventThrottle={16}
           onContentSizeChange={() => {
-            if (autoScroll) {
+            // Only auto-scroll if user hasn't manually scrolled away
+            if (!isUserScrollingRef.current) {
               scrollViewRef.current?.scrollToEnd({ animated: true });
             }
           }}
@@ -2016,7 +2111,7 @@ export default function ChatScreen() {
                       <Markdown
                         style={markdownStyles}
                       >
-                        {message.content}
+                        {cleanMessageContent(message.content)}
                       </Markdown>
                       {/* Render citations if available (Perplexity) */}
                       {message.citations && message.citations.length > 0 && (
@@ -2137,7 +2232,7 @@ export default function ChatScreen() {
       }]}>
         {activeTab === 'chat' && (
           <>
-            {isTrialExhausted ? (
+            {isTrialExhausted && !isAdmin ? (
               <View style={styles.purchaseContainer}>
                 <Text
                   style={[

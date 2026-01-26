@@ -296,7 +296,7 @@ export async function getConversationMessages(conversationId: string): Promise<C
     return [];
   }
 
-  return data || [];
+  return (data || []) as ConversationMessage[];
 }
 
 /**

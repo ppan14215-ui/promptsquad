@@ -9,12 +9,12 @@ export type MascotSkill = {
   mascot_id: string;
   skill_label: string;
   skill_prompt: string | null; // Full prompt (only for admins)
-  skill_prompt_preview: string; // 25% preview (for everyone)
-  is_full_access: boolean;
-  sort_order: number;
-  is_active: boolean;
-  created_at: string;
-  updated_at: string;
+  skill_prompt_preview: string | null; // 25% preview (for everyone)
+  is_full_access: boolean | null;
+  sort_order: number | null;
+  is_active: boolean | null;
+  created_at: string | null;
+  updated_at: string | null;
 };
 
 export type MascotPersonality = {
@@ -22,8 +22,8 @@ export type MascotPersonality = {
   mascot_id: string;
   personality: string;
   default_personality?: string | null;
-  created_at: string;
-  updated_at: string;
+  created_at: string | null;
+  updated_at: string | null;
 };
 
 export type MascotBasic = {
@@ -33,9 +33,54 @@ export type MascotBasic = {
   image_url: string | null;
   color: string;
   question_prompt?: string | null;
-  sort_order?: number;
-  is_free?: boolean;
+  sort_order?: number | null;
+  is_free?: boolean | null;
+  is_pro?: boolean | null;
+  is_ready?: boolean | null;
+  is_active?: boolean | null;
 };
+
+// ... existing code ...
+
+// Update mascot details
+export async function updateMascot(
+  mascotId: string,
+  updates: {
+    name?: string;
+    subtitle?: string | null;
+    image_url?: string | null;
+    color?: string;
+    question_prompt?: string | null;
+    sort_order?: number;
+    is_free?: boolean;
+    is_pro?: boolean;
+    is_ready?: boolean;
+  }
+): Promise<MascotBasic> {
+  // Sanitize updates to exclude columns that might not exist yet (is_pro, is_ready)
+  // But strictly map is_ready to is_active to handle "Coming Soon" visibility toggling
+  const safeUpdates: any = { ...updates };
+
+  if (updates.is_ready !== undefined) {
+    safeUpdates.is_active = updates.is_ready;
+  }
+
+  delete safeUpdates.is_pro;
+  delete safeUpdates.is_ready;
+
+  const { data, error } = await supabase
+    .from('mascots')
+    .update({
+      ...safeUpdates,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', mascotId)
+    .select('id, name, subtitle, image_url, color, question_prompt, sort_order, is_free, is_active')
+    .single();
+
+  if (error) throw new Error(error.message);
+  return data;
+}
 
 export type SkillQuestion = {
   id: string;
@@ -72,7 +117,6 @@ export function useIsAdmin() {
           .eq('id', user.id)
           .maybeSingle();
 
-        // PGRST116 = no rows (profile doesn't exist yet) - this is OK, just not admin
         if (error && error.code !== 'PGRST116') {
           logger.error('Error checking admin role:', error);
           setIsAdmin(false);
@@ -104,8 +148,7 @@ export function useMascots() {
       try {
         const { data, error } = await supabase
           .from('mascots')
-          .select('id, name, subtitle, image_url, color, question_prompt, sort_order, is_free')
-          .eq('is_active', true)
+          .select('id, name, subtitle, image_url, color, question_prompt, sort_order, is_free, is_active')
           .order('sort_order', { ascending: true });
 
         if (error) {
@@ -119,7 +162,11 @@ export function useMascots() {
           setError(error.message);
           setMascots([]);
         } else {
-          setMascots(data || []);
+          setMascots((data || []).map((m: any) => ({
+            ...m,
+            is_pro: m.is_pro !== undefined ? m.is_pro : !m.is_free,
+            is_ready: m.is_active // Map ready status from active status
+          })));
           setError(null);
         }
       } catch (err: any) {
@@ -138,58 +185,112 @@ export function useMascots() {
 
 // Hook to get skills for a mascot
 export function useMascotSkills(mascotId: string | null) {
+  const { user } = useAuth();
+  const [isAdmin, setIsAdmin] = useState(false);
   const [skills, setSkills] = useState<MascotSkill[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchSkills = useCallback(async () => {
-    if (!mascotId) {
-      setSkills([]);
-      setIsLoading(false);
-      return;
-    }
-
-    setIsLoading(true);
-    setError(null);
-    try {
-      logger.debug('[useMascotSkills] Fetching skills for mascot:', mascotId);
-      const { data, error } = await supabase.rpc('get_mascot_skills', {
-        p_mascot_id: mascotId,
-      });
-
-      if (error) {
-        logger.error('[useMascotSkills] RPC error:', error);
-        // Code 42883 = function does not exist (RPC not deployed)
-        if (error.code === '42883') {
-          setSkills([]);
-          setError(null);
-        } else {
-          setError(error.message);
-          setSkills([]);
-        }
-      } else {
-        logger.debug('[useMascotSkills] Fetched skills:', data?.length || 0, 'skills');
-        setSkills(data || []);
-        setError(null);
+  // Check admin status first
+  useEffect(() => {
+    async function checkRole() {
+      if (!user) {
+        setIsAdmin(false);
+        return;
       }
-    } catch (err: any) {
-      logger.error('[useMascotSkills] Exception:', err);
-      setError(err.message);
-      setSkills([]);
-    } finally {
-      setIsLoading(false);
+      try {
+        const { data } = await supabase.from('profiles').select('role').eq('id', user.id).single();
+        setIsAdmin(data?.role === 'admin');
+      } catch (e) {
+        setIsAdmin(false);
+      }
     }
-  }, [mascotId]);
+    checkRole();
+  }, [user]);
+
+  // Force refresh trigger
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
-    fetchSkills();
-  }, [fetchSkills]);
+    let isActive = true;
 
-  // Create a refetch function that forces a fresh fetch
+    async function fetchSkills() {
+      if (!mascotId) {
+        if (isActive) {
+          setSkills([]);
+          setIsLoading(false);
+        }
+        return;
+      }
+
+      if (isActive) {
+        setIsLoading(true);
+        setError(null);
+      }
+
+      try {
+        logger.debug('[useMascotSkills] Fetching skills for mascot:', mascotId);
+
+        // Security: Admins query raw table, Users query secure view (fallback since migration failed)
+        const tableName = isAdmin ? 'mascot_skills' : 'public_mascot_skills';
+        logger.debug(`[useMascotSkills] Querying table: ${tableName} (Admin: ${isAdmin})`);
+
+        const { data, error } = await supabase
+          .from(tableName as any)
+          .select('*')
+          .eq('mascot_id', mascotId)
+          .eq('is_active', true)
+          .order('sort_order', { ascending: true })
+          .order('created_at', { ascending: true });
+
+        if (error) {
+          if (!isActive) return;
+
+          if (error.code === '42P01') {
+            logger.warn('Secure view not found, please run migration.');
+            setError('System update in progress. Please try again later.');
+          } else {
+            logger.error('[useMascotSkills] DB error:', error);
+            setError(error.message);
+          }
+          setSkills([]);
+        } else {
+          if (!isActive) return;
+
+          logger.debug('[useMascotSkills] Fetched skills:', data?.length || 0, 'skills');
+
+          const enrichedData = (data || []).map((skill: any) => ({
+            ...skill,
+            skill_prompt: skill.skill_prompt || null,
+            skill_prompt_preview: skill.skill_prompt_preview
+              || (skill.skill_prompt ? skill.skill_prompt.substring(0, Math.max(1, Math.floor(skill.skill_prompt.length / 4))) : ''),
+            is_full_access: isAdmin
+          }));
+
+          setSkills(enrichedData as MascotSkill[]);
+          setError(null);
+        }
+      } catch (err: any) {
+        if (!isActive) return;
+        logger.error('[useMascotSkills] Exception:', err);
+        setError(err.message);
+        setSkills([]);
+      } finally {
+        if (isActive) setIsLoading(false);
+      }
+    }
+
+    fetchSkills();
+
+    return () => {
+      isActive = false;
+    };
+  }, [mascotId, isAdmin, refreshKey]);
+
+  // Refetch simply increments the key to re-trigger the effect
   const refetch = useCallback(async () => {
-    logger.debug('[useMascotSkills] Refetch called for mascot:', mascotId);
-    await fetchSkills();
-  }, [fetchSkills, mascotId]);
+    setRefreshKey(prev => prev + 1);
+  }, []);
 
   return { skills, isLoading, error, refetch };
 }
@@ -275,7 +376,7 @@ export async function createSkill(
     logger.error('[Admin] Error creating skill:', error);
     throw new Error(error.message || 'Failed to create skill');
   }
-  
+
   logger.debug('[Admin] Skill created successfully:', data);
   return data;
 }
@@ -285,7 +386,7 @@ export async function updateSkill(
   updates: { skill_label?: string; skill_prompt?: string; sort_order?: number; is_active?: boolean }
 ): Promise<MascotSkill> {
   logger.debug('[Admin] Updating skill:', skillId, 'with updates:', updates);
-  
+
   const { data, error } = await supabase
     .from('mascot_skills')
     .update({
@@ -300,7 +401,7 @@ export async function updateSkill(
     logger.error('[Admin] Error updating skill:', error);
     throw new Error(error.message || 'Failed to update skill');
   }
-  
+
   logger.debug('[Admin] Skill updated successfully:', data);
   return data;
 }
@@ -314,32 +415,6 @@ export async function deleteSkill(skillId: string): Promise<void> {
   if (error) throw new Error(error.message);
 }
 
-// Update mascot details
-export async function updateMascot(
-  mascotId: string,
-  updates: {
-    name?: string;
-    subtitle?: string | null;
-    image_url?: string | null;
-    color?: string;
-    question_prompt?: string | null;
-    sort_order?: number;
-    is_free?: boolean;
-  }
-): Promise<MascotBasic> {
-  const { data, error } = await supabase
-    .from('mascots')
-    .update({
-      ...updates,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', mascotId)
-    .select('id, name, subtitle, image_url, color, question_prompt, sort_order, is_free')
-    .single();
-
-  if (error) throw new Error(error.message);
-  return data;
-}
 
 // Admin CRUD operations for personality
 // When admin sets personality, both personality and default_personality are set
@@ -390,22 +465,22 @@ export async function upsertPersonality(
           logger.error('[Admin] Error upserting personality:', errorWithoutDefault);
           throw new Error(errorWithoutDefault.message || 'Failed to save personality');
         }
-        
+
         if (!dataWithoutDefault) {
           throw new Error('No data returned from upsert');
         }
-        
+
         return dataWithoutDefault;
       }
-      
+
       logger.error('[Admin] Error upserting personality:', error);
       throw new Error(error.message || 'Failed to save personality');
     }
-    
+
     if (!data) {
       throw new Error('No data returned from upsert');
     }
-    
+
     return data;
   } catch (err: any) {
     // Fallback: try without default_personality
@@ -423,14 +498,14 @@ export async function upsertPersonality(
         logger.error('[Admin] Error upserting personality (fallback):', fallbackError);
         throw new Error(fallbackError.message || 'Failed to save personality');
       }
-      
+
       if (!fallbackData) {
         throw new Error('No data returned from upsert');
       }
-      
+
       return fallbackData;
     }
-    
+
     throw err;
   }
 }
@@ -457,11 +532,11 @@ export async function updatePersonality(
     logger.error('[Admin] Error updating personality:', error);
     throw new Error(error.message || 'Failed to update personality');
   }
-  
+
   if (!data) {
     throw new Error('No data returned from update');
   }
-  
+
   return data;
 }
 
@@ -507,7 +582,7 @@ export const resetInstructionsToDefault = resetPersonalityToDefault;
 export async function getCombinedPrompt(
   mascotId: string,
   skillId: string
-): Promise<{ personality: string; skillPrompt: string; combined: string }> {
+): Promise<{ personality: string; skillPrompt: string | null; combined: string | null }> {
   if (!mascotId) {
     throw new Error('Invalid mascot ID');
   }
@@ -523,10 +598,12 @@ export async function getCombinedPrompt(
     throw new Error(personalityError.message);
   }
 
-  // Fetch skill (using RPC to get full prompt for admins)
-  const { data: skillsData, error: skillsError } = await supabase.rpc('get_mascot_skills', {
-    p_mascot_id: mascotId,
-  });
+  // Fetch skill (using direct DB query)
+  const { data: skillsData, error: skillsError } = await supabase
+    .from('mascot_skills')
+    .select('*')
+    .eq('mascot_id', mascotId)
+    .eq('is_active', true);
 
   if (skillsError) throw new Error(skillsError.message);
 
@@ -538,7 +615,7 @@ export async function getCombinedPrompt(
   const personality = personalityData?.personality || '';
 
   // Combine: personality first, then skill prompt
-  const combined = personality 
+  const combined = personality
     ? `${personality}\n\n---\n\n${skillPrompt}`
     : skillPrompt;
 
@@ -558,9 +635,11 @@ export async function getSkillById(
     return null;
   }
 
-  const { data, error } = await supabase.rpc('get_mascot_skills', {
-    p_mascot_id: mascotId,
-  });
+  const { data, error } = await supabase
+    .from('mascot_skills')
+    .select('*')
+    .eq('mascot_id', mascotId)
+    .eq('is_active', true);
 
   if (error) {
     return null;

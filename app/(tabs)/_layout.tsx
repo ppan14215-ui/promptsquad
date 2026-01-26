@@ -20,10 +20,10 @@ export default function TabsLayout() {
           backgroundColor: colors.background,
           borderTopColor: colors.outline,
           borderTopWidth: 1,
-          height: Platform.OS === 'ios' ? 84 + insets.bottom : 64 + insets.bottom,
-          paddingTop: 8,
-          // Use safe area insets for bottom padding to avoid native navigation overlap
-          paddingBottom: Math.max(insets.bottom, Platform.OS === 'ios' ? 8 : 8),
+          // Standard height + safe area
+          height: Platform.OS === 'ios' ? 60 + insets.bottom : 70,
+          paddingTop: 10,
+          paddingBottom: Platform.OS === 'ios' ? insets.bottom : 10,
         },
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.textMuted,

@@ -9,6 +9,7 @@ import {
   Platform,
   ScrollView,
   KeyboardAvoidingView,
+  Switch,
 } from 'react-native';
 import { useTheme, fontFamilies, shadowToCSS } from '@/design-system';
 import { Icon } from '../ui/Icon';
@@ -21,8 +22,11 @@ type MascotEditorProps = {
   mascotId: string;
   currentName: string;
   currentSubtitle: string | null;
+  currentIsPro?: boolean;
+  currentIsFree?: boolean; // New Prop
+  currentIsReady?: boolean;
   onClose: () => void;
-  onSave: (name: string, subtitle: string) => Promise<void>;
+  onSave: (name: string, subtitle: string, isPro: boolean, isFree: boolean, isReady: boolean) => Promise<void>;
 };
 
 export function MascotEditor({
@@ -30,21 +34,30 @@ export function MascotEditor({
   mascotId,
   currentName,
   currentSubtitle,
+  currentIsPro = false,
+  currentIsFree = false, // Default
+  currentIsReady = false,
   onClose,
   onSave,
 }: MascotEditorProps) {
   const { colors } = useTheme();
   const [name, setName] = useState(currentName);
   const [subtitle, setSubtitle] = useState(currentSubtitle || '');
+  const [isPro, setIsPro] = useState(currentIsPro);
+  const [isFree, setIsFree] = useState(currentIsFree); // State
+  const [isReady, setIsReady] = useState(currentIsReady);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (visible) {
       setName(currentName);
       setSubtitle(currentSubtitle || '');
+      setIsPro(currentIsPro);
+      setIsFree(currentIsFree);
+      setIsReady(currentIsReady);
       setError(null);
     }
-  }, [visible, currentName, currentSubtitle]);
+  }, [visible, currentName, currentSubtitle, currentIsPro, currentIsFree, currentIsReady]);
 
   const handleSave = async () => {
     if (!name.trim()) {
@@ -53,7 +66,7 @@ export function MascotEditor({
     }
 
     try {
-      await onSave(name.trim(), subtitle.trim());
+      await onSave(name.trim(), subtitle.trim(), isPro, isFree, isReady);
       onClose();
     } catch (error) {
       // Error handling is done in the parent component
@@ -80,11 +93,11 @@ export function MascotEditor({
               <Icon name="edit" size={24} color={colors.buttonText} />
             </View>
             <View style={styles.headerText}>
-              <Text style={[styles.modalTitle, { fontFamily: fontFamilies.semibold, color: colors.text }]}>
+              <Text style={[styles.modalTitle, { fontFamily: fontFamilies.figtree.semiBold, color: colors.text }]}>
                 Edit Mascot
               </Text>
-              <Text style={[styles.modalSubtitle, { fontFamily: fontFamilies.regular, color: colors.textMuted }]}>
-                Update mascot details
+              <Text style={[styles.modalSubtitle, { fontFamily: fontFamilies.figtree.regular, color: colors.textMuted }]}>
+                Update properties and visibility
               </Text>
             </View>
             <Pressable onPress={onClose} style={styles.closeButton}>
@@ -103,10 +116,7 @@ export function MascotEditor({
                   setError(null);
                 }}
                 placeholder="Enter mascot name"
-                error={error && error.includes('Name') ? error : undefined}
               />
-
-              <View style={styles.spacer} />
 
               <InputField
                 label="Subtitle"
@@ -119,17 +129,77 @@ export function MascotEditor({
                 multiline
                 numberOfLines={2}
               />
+
+              <View style={styles.spacer} />
+
+              <View style={[styles.switchContainer, { borderColor: colors.outline }]}>
+                <View style={styles.switchInfo}>
+                  <Text style={[styles.switchLabel, { fontFamily: fontFamilies.figtree.medium, color: colors.text }]}>
+                    Pro Mascot
+                  </Text>
+                  <Text style={[styles.switchDescription, { fontFamily: fontFamilies.figtree.regular, color: colors.textMuted }]}>
+                    Requires subscription or purchase
+                  </Text>
+                </View>
+                <Switch
+                  value={isPro}
+                  onValueChange={(value) => {
+                    setIsPro(value);
+                    if (value) setIsFree(false); // Turn off Free when Pro is turned on
+                  }}
+                  trackColor={{ false: colors.outline, true: colors.primary }}
+                  thumbColor={'#ffffff'}
+                />
+              </View>
+
+              <View style={[styles.switchContainer, { borderColor: colors.outline }]}>
+                <View style={styles.switchInfo}>
+                  <Text style={[styles.switchLabel, { fontFamily: fontFamilies.figtree.medium, color: colors.text }]}>
+                    Free Mascot
+                  </Text>
+                  <Text style={[styles.switchDescription, { fontFamily: fontFamilies.figtree.regular, color: colors.textMuted }]}>
+                    Available for free users (cheaper models)
+                  </Text>
+                </View>
+                <Switch
+                  value={isFree}
+                  onValueChange={(value) => {
+                    setIsFree(value);
+                    if (value) setIsPro(false); // Turn off Pro when Free is turned on
+                  }}
+                  trackColor={{ false: colors.outline, true: colors.green }}
+                  thumbColor={'#ffffff'}
+                />
+              </View>
+
+              <View style={[styles.switchContainer, { borderColor: colors.outline }]}>
+                <View style={styles.switchInfo}>
+                  <Text style={[styles.switchLabel, { fontFamily: fontFamilies.figtree.medium, color: colors.text }]}>
+                    Mascot Ready
+                  </Text>
+                  <Text style={[styles.switchDescription, { fontFamily: fontFamilies.figtree.regular, color: colors.textMuted }]}>
+                    Visible to normal users in the app
+                  </Text>
+                </View>
+                <Switch
+                  value={isReady}
+                  onValueChange={setIsReady}
+                  trackColor={{ false: colors.outline, true: colors.primary }}
+                  thumbColor={'#ffffff'}
+                />
+              </View>
+
             </View>
           </ScrollView>
 
           {/* Footer */}
           <View style={[styles.footer, { borderTopColor: colors.outline }]}>
             <BigSecondaryButton label="Cancel" onPress={onClose} />
-            <BigPrimaryButton label="Save" onPress={handleSave} />
+            <BigPrimaryButton label="Save Details" onPress={handleSave} />
           </View>
-        </View>
-      </KeyboardAvoidingView>
-    </Modal>
+        </View >
+      </KeyboardAvoidingView >
+    </Modal >
   );
 }
 
@@ -193,5 +263,25 @@ const styles = StyleSheet.create({
     padding: 20,
     borderTopWidth: 1,
     gap: 12,
+  },
+  switchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 16,
+    borderWidth: 1,
+    borderRadius: 12,
+    marginTop: 8,
+  },
+  switchInfo: {
+    flex: 1,
+    paddingRight: 16,
+  },
+  switchLabel: {
+    fontSize: 16,
+    marginBottom: 4,
+  },
+  switchDescription: {
+    fontSize: 13,
   },
 });
