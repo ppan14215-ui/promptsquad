@@ -1294,7 +1294,7 @@ export default function ChatScreen() {
     setMessages((prev) => [...prev, userMessage]);
     setIsLoading(true);
     setStreamingContent('');
-    setShowSkills(false);
+    // setShowSkills(false); // Keep skills visible
 
     // Switch to chat tab to show the message
     setActiveTab('chat');
@@ -1347,7 +1347,7 @@ export default function ChatScreen() {
         console.log('[Chat] Skill prompt has placeholders - preventing auto-send. Populating input.');
         setInputText(skillPrompt || skillLabel);
         setIsLoading(false);
-        setShowSkills(false);
+        // setShowSkills(false); // Keep skills visible
         setActiveTab('chat');
         // Focus input if possible (ref needed)
         setTimeout(() => chatInputRef.current?.focus(), 100);
