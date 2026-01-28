@@ -1004,7 +1004,8 @@ export default function ChatScreen() {
         providerOverride, // provider override (undefined = system chooses)
         deepThinkingEnabled, // Deep Thinking mode (uses pro models)
         attachment && attachment.base64 ? { mimeType: attachment.mimeType || 'image/jpeg', base64: attachment.base64 } : undefined,
-        mascot.taskCategory // Pass task category for auto provider selection
+        mascot.taskCategory, // Pass task category for auto provider selection
+        webSearchEnabled // Enable web grounding
       );
 
       const assistantContent = response.content;
@@ -1532,7 +1533,10 @@ export default function ChatScreen() {
         conversationId || undefined, // Pass conversationId to Edge Function
         skillIdToActivate || undefined, // skillId - pass it as backup (though prompt is in user message)
         providerOverride, // provider override (undefined = system chooses)
-        deepThinkingEnabled // Deep Thinking mode (uses pro models)
+        deepThinkingEnabled, // Deep Thinking mode (uses pro models)
+        undefined, // No image for skills
+        mascot.taskCategory, // Pass task category for auto provider selection
+        webSearchEnabled // Enable web grounding
       );
 
       const assistantContent = response.content;

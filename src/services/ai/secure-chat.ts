@@ -24,7 +24,8 @@ export async function secureChatStream(
   provider?: 'openai' | 'gemini' | 'perplexity',
   deepThinking?: boolean,
   image?: { mimeType: string; base64: string },
-  taskCategory?: string
+  taskCategory?: string,
+  webSearch?: boolean
 ): Promise<SecureChatResponse> {
   // Get fresh session (getUser refreshes token if needed)
   const { data: { user: currentUser }, error: userError } = await supabase.auth.getUser();
@@ -63,6 +64,7 @@ export async function secureChatStream(
   if (deepThinking !== undefined) requestBody.deepThinking = deepThinking;
   if (image) requestBody.image = image;
   if (taskCategory) requestBody.taskCategory = taskCategory;
+  if (webSearch !== undefined) requestBody.webSearch = webSearch;
 
   console.log('[SecureChat] Sending request to Edge Function:', {
     url: `${supabaseUrl}/functions/v1/chat`,
@@ -229,7 +231,8 @@ export async function secureChat(
   provider?: 'openai' | 'gemini' | 'perplexity',
   deepThinking?: boolean,
   image?: { mimeType: string; base64: string },
-  taskCategory?: string
+  taskCategory?: string,
+  webSearch?: boolean
 ): Promise<SecureChatResponse> {
   let fullContent = '';
 
@@ -244,7 +247,8 @@ export async function secureChat(
     provider,
     deepThinking,
     image,
-    taskCategory
+    taskCategory,
+    webSearch
   );
 
   return response;
