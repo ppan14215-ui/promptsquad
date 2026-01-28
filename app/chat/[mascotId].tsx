@@ -429,7 +429,7 @@ export default function ChatScreen() {
   const { t } = useI18n();
   const scrollViewRef = useRef<ScrollView>(null);
   const chatInputRef = useRef<ChatInputBoxRef>(null);
-  const lastMessageRef = useRef<View>(null);
+  const contentHeightRef = useRef(0);
   const scrollViewHeightRef = useRef(0);
 
   const staticMascot = MASCOT_DATA[mascotId || '1'] || MASCOT_DATA['1'];
@@ -755,26 +755,21 @@ export default function ChatScreen() {
       }, 100);
     }
 
-    // Smart scroll: Position the new message at the top (Gemini-style)
-    // This gives maximum space for the answer below
+    // Smart scroll: Position to show the latest user message at top with space below
+    // Wait for the message to be added to the DOM, then scroll
     setTimeout(() => {
-      if (scrollViewRef.current && lastMessageRef.current) {
-        lastMessageRef.current.measureLayout(
-          scrollViewRef.current as any,
-          (x, y) => {
-            // Scroll so the message appears near the top (with some padding)
-            scrollViewRef.current?.scrollTo({ y: y - 100, animated: true });
-          },
-          () => {
-            // Fallback to scrollToEnd if measurement fails
-            scrollViewRef.current?.scrollToEnd({ animated: true });
-          }
-        );
-      } else {
-        // Fallback if refs aren't ready
-        scrollViewRef.current?.scrollToEnd({ animated: true });
+      if (scrollViewRef.current) {
+        // Get the current content height and scroll view height
+        const contentHeight = contentHeightRef.current;
+        const viewportHeight = scrollViewHeightRef.current;
+
+        // Calculate scroll position to show latest messages at top
+        // Leave some padding (100px) from the top
+        const targetScrollY = Math.max(0, contentHeight - viewportHeight + 100);
+
+        scrollViewRef.current.scrollTo({ y: targetScrollY, animated: true });
       }
-    }, 100);
+    }, 150);
 
     try {
       // Clear web sources if web search is disabled
@@ -1332,25 +1327,20 @@ export default function ChatScreen() {
     // Switch to chat tab to show the message
     setActiveTab('chat');
 
-    // Smart scroll: Position the new message at the top (Gemini-style)
+    // Smart scroll: Position to show the latest user message at top with space below
     setTimeout(() => {
-      if (scrollViewRef.current && lastMessageRef.current) {
-        lastMessageRef.current.measureLayout(
-          scrollViewRef.current as any,
-          (x, y) => {
-            // Scroll so the message appears near the top (with some padding)
-            scrollViewRef.current?.scrollTo({ y: y - 100, animated: true });
-          },
-          () => {
-            // Fallback to scrollToEnd if measurement fails
-            scrollViewRef.current?.scrollToEnd({ animated: true });
-          }
-        );
-      } else {
-        // Fallback if refs aren't ready
-        scrollViewRef.current?.scrollToEnd({ animated: true });
+      if (scrollViewRef.current) {
+        // Get the current content height and scroll view height
+        const contentHeight = contentHeightRef.current;
+        const viewportHeight = scrollViewHeightRef.current;
+
+        // Calculate scroll position to show latest messages at top
+        // Leave some padding (100px) from the top
+        const targetScrollY = Math.max(0, contentHeight - viewportHeight + 100);
+
+        scrollViewRef.current.scrollTo({ y: targetScrollY, animated: true });
       }
-    }, 200);
+    }, 250);
 
     try {
       // Clear web sources if web search is disabled
@@ -2102,120 +2092,117 @@ export default function ChatScreen() {
           onLayout={(event) => {
             scrollViewHeightRef.current = event.nativeEvent.layout.height;
           }}
-          onContentSizeChange={() => {
+          onContentSizeChange={(width, height) => {
+            contentHeightRef.current = height;
             // Only auto-scroll if user hasn't manually scrolled away
             if (!isUserScrollingRef.current) {
               scrollViewRef.current?.scrollToEnd({ animated: true });
             }
           }}
         >
-          {messages.map((message, index) => {
-            const isLastMessage = index === messages.length - 1;
-            return (
-              <View
-                key={message.id}
-                ref={isLastMessage ? lastMessageRef : null}
-                style={[
-                  styles.messageWrapper,
-                  message.role === 'user' ? styles.userMessageWrapper : styles.assistantMessageWrapper,
-                ]}
-              >
-                {message.role === 'user' ? (
-                  <View
+          {messages.map((message, index) => (
+            <View
+              key={message.id}
+              style={[
+                styles.messageWrapper,
+                message.role === 'user' ? styles.userMessageWrapper : styles.assistantMessageWrapper,
+              ]}
+            >
+              {message.role === 'user' ? (
+                <View
+                  style={[
+                    styles.userBubble,
+                    { backgroundColor: colors.chatBubble }, // Reverted to default grey
+                  ]}
+                >
+                  {message.attachment && (
+                    <Pressable onPress={() => setPreviewImage(message.attachment!.uri)}>
+                      <Image
+                        source={{ uri: message.attachment.uri }}
+                        style={{
+                          width: 200,
+                          height: 200,
+                          borderRadius: 12,
+                          marginBottom: 8,
+                          ...Platform.select({
+                            web: { cursor: 'pointer' } as any,
+                            default: {},
+                          }),
+                        }}
+                        resizeMode="cover"
+                      />
+                    </Pressable>
+                  )}
+                  <Text
                     style={[
-                      styles.userBubble,
-                      { backgroundColor: colors.chatBubble }, // Reverted to default grey
+                      styles.messageText,
+                      {
+                        fontFamily: fontFamilies.figtree.medium,
+                        color: colors.text, // Reverted to default text color
+                      },
                     ]}
                   >
-                    {message.attachment && (
-                      <Pressable onPress={() => setPreviewImage(message.attachment!.uri)}>
-                        <Image
-                          source={{ uri: message.attachment.uri }}
-                          style={{
-                            width: 200,
-                            height: 200,
-                            borderRadius: 12,
-                            marginBottom: 8,
-                            ...Platform.select({
-                              web: { cursor: 'pointer' } as any,
-                              default: {},
-                            }),
-                          }}
-                          resizeMode="cover"
-                        />
-                      </Pressable>
-                    )}
-                    <Text
-                      style={[
-                        styles.messageText,
-                        {
-                          fontFamily: fontFamilies.figtree.medium,
-                          color: colors.text, // Reverted to default text color
-                        },
-                      ]}
-                    >
-                      {message.content}
+                    {message.content}
+                  </Text>
+                </View>
+              ) : (
+                <View style={styles.assistantMessage}>
+                  {message.content && typeof message.content === 'string' && message.content.trim() ? (
+                    <>
+                      <Markdown
+                        style={markdownStyles}
+                      >
+                        {cleanMessageContent(message.content)}
+                      </Markdown>
+                      {/* Render citations if available (Perplexity) */}
+                      {message.citations && message.citations.length > 0 && (
+                        <View style={{ marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: colors.outline + '40' }}>
+                          <Text style={{ fontFamily: fontFamilies.figtree.semiBold, fontSize: 12, color: colors.textMuted, marginBottom: 6 }}>
+                            Sources:
+                          </Text>
+                          {message.citations.map((url, index) => (
+                            <Pressable
+                              key={index}
+                              onPress={() => Linking.openURL(url)}
+                              style={{ marginBottom: 4 }}
+                            >
+                              <Text style={{ fontFamily: fontFamilies.figtree.regular, fontSize: 12, color: colors.primary }}>
+                                [{index + 1}] {url.length > 60 ? url.substring(0, 60) + '...' : url}
+                              </Text>
+                            </Pressable>
+                          ))}
+                        </View>
+                      )}
+                    </>
+                  ) : (
+                    <Text style={[styles.messageText, { color: colors.textMuted }]}>
+                      (Empty message)
                     </Text>
-                  </View>
-                ) : (
-                  <View style={styles.assistantMessage}>
-                    {message.content && typeof message.content === 'string' && message.content.trim() ? (
-                      <>
-                        <Markdown
-                          style={markdownStyles}
-                        >
-                          {cleanMessageContent(message.content)}
-                        </Markdown>
-                        {/* Render citations if available (Perplexity) */}
-                        {message.citations && message.citations.length > 0 && (
-                          <View style={{ marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: colors.outline + '40' }}>
-                            <Text style={{ fontFamily: fontFamilies.figtree.semiBold, fontSize: 12, color: colors.textMuted, marginBottom: 6 }}>
-                              Sources:
-                            </Text>
-                            {message.citations.map((url, index) => (
-                              <Pressable
-                                key={index}
-                                onPress={() => Linking.openURL(url)}
-                                style={{ marginBottom: 4 }}
-                              >
-                                <Text style={{ fontFamily: fontFamilies.figtree.regular, fontSize: 12, color: colors.primary }}>
-                                  [{index + 1}] {url.length > 60 ? url.substring(0, 60) + '...' : url}
-                                </Text>
-                              </Pressable>
-                            ))}
-                          </View>
-                        )}
-                      </>
-                    ) : (
-                      <Text style={[styles.messageText, { color: colors.textMuted }]}>
-                        (Empty message)
+                  )}
+                  {(message.model || message.provider) && (
+                    <View style={[
+                      styles.modelLabelContainer,
+                      { borderTopColor: colors.outline + '40' }, // 40 = 25% opacity in hex
+                    ]}>
+                      <Text
+                        style={[
+                          styles.modelLabel,
+                          {
+                            fontFamily: fontFamilies.figtree.medium,
+                            color: colors.textMuted,
+                          },
+                        ]}
+                      >
+                        {message.provider ?
+                          `${message.provider === 'openai' ? 'OpenAI' : message.provider === 'perplexity' ? 'Perplexity' : 'Gemini'} ${message.model ? `(${message.model})` : ''}`.trim() :
+                          message.model || 'Unknown'}
                       </Text>
-                    )}
-                    {(message.model || message.provider) && (
-                      <View style={[
-                        styles.modelLabelContainer,
-                        { borderTopColor: colors.outline + '40' }, // 40 = 25% opacity in hex
-                      ]}>
-                        <Text
-                          style={[
-                            styles.modelLabel,
-                            {
-                              fontFamily: fontFamilies.figtree.medium,
-                              color: colors.textMuted,
-                            },
-                          ]}
-                        >
-                          {message.provider ?
-                            `${message.provider === 'openai' ? 'OpenAI' : message.provider === 'perplexity' ? 'Perplexity' : 'Gemini'} ${message.model ? `(${message.model})` : ''}`.trim() :
-                            message.model || 'Unknown'}
-                        </Text>
-                      </View>
-                    )}
-                  </View>
-                )}
-              </View>
-            );
-          })}
+                    </View>
+                  )}
+                </View>
+              )}
+            </View>
+          ))}
 
           {/* Streaming response */}
           {isLoading && streamingContent && typeof streamingContent === 'string' && streamingContent.trim() && (
