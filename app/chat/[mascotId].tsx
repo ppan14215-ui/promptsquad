@@ -12,6 +12,7 @@ import {
   Linking,
   ActivityIndicator,
   TextInput,
+  Modal,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -651,6 +652,7 @@ export default function ChatScreen() {
   const [webSources, setWebSources] = useState<WebSource[]>([]);
   const [webSearchError, setWebSearchError] = useState<string | null>(null);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
 
   const formatSourcesForMessage = useCallback((sources: WebSource[]) => {
     return sources
@@ -2094,16 +2096,22 @@ export default function ChatScreen() {
                   ]}
                 >
                   {message.attachment && (
-                    <Image
-                      source={{ uri: message.attachment.uri }}
-                      style={{
-                        width: 200,
-                        height: 200,
-                        borderRadius: 12,
-                        marginBottom: 8,
-                      }}
-                      resizeMode="cover"
-                    />
+                    <Pressable onPress={() => setPreviewImage(message.attachment!.uri)}>
+                      <Image
+                        source={{ uri: message.attachment.uri }}
+                        style={{
+                          width: 200,
+                          height: 200,
+                          borderRadius: 12,
+                          marginBottom: 8,
+                          ...Platform.select({
+                            web: { cursor: 'pointer' } as any,
+                            default: {},
+                          }),
+                        }}
+                        resizeMode="cover"
+                      />
+                    </Pressable>
                   )}
                   <Text
                     style={[
@@ -2308,6 +2316,60 @@ export default function ChatScreen() {
           {content}
         </View>
       )}
+
+      {/* Image Preview Modal */}
+      <Modal
+        visible={!!previewImage}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPreviewImage(null)}
+      >
+        <Pressable
+          style={{
+            flex: 1,
+            backgroundColor: 'rgba(0, 0, 0, 0.9)',
+            justifyContent: 'center',
+            alignItems: 'center',
+          }}
+          onPress={() => setPreviewImage(null)}
+        >
+          <Pressable
+            onPress={(e) => e.stopPropagation()}
+            style={{
+              width: '90%',
+              height: '90%',
+              position: 'relative',
+            }}
+          >
+            {previewImage && (
+              <Image
+                source={{ uri: previewImage }}
+                style={{
+                  width: '100%',
+                  height: '100%',
+                }}
+                resizeMode="contain"
+              />
+            )}
+            <Pressable
+              style={{
+                position: 'absolute',
+                top: 20,
+                right: 20,
+                backgroundColor: 'rgba(0, 0, 0, 0.6)',
+                borderRadius: 20,
+                width: 40,
+                height: 40,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+              onPress={() => setPreviewImage(null)}
+            >
+              <Icon name="close" size={20} color="#FFFFFF" />
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
