@@ -7,6 +7,7 @@ import {
   Platform,
   Text,
   Image,
+  Modal,
 } from 'react-native';
 import { useTheme, fontFamilies, shadowToCSS, shadowToNative, textStyles } from '@/design-system';
 import { Icon } from './Icon';
@@ -69,6 +70,7 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
   const [showDeepThinkingTooltip, setShowDeepThinkingTooltip] = useState(false);
   const [inputHeight, setInputHeight] = useState(48); // Start with min height
   const [attachedImage, setAttachedImage] = useState<{ uri: string; base64?: string; mimeType?: string } | null>(null);
+  const [showImagePreview, setShowImagePreview] = useState(false);
   const inputRef = useRef<TextInput>(null);
 
   // Expose focus method to parent component
@@ -214,16 +216,45 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
       {/* Image Preview */}
       {attachedImage && (
         <View style={styles.previewContainer}>
-          <Image
-            source={{ uri: attachedImage.uri }}
-            style={styles.previewImage}
-            resizeMode="cover"
-          />
+          <Pressable onPress={() => setShowImagePreview(true)}>
+            <Image
+              source={{ uri: attachedImage.uri }}
+              style={styles.previewImage}
+              resizeMode="cover"
+            />
+          </Pressable>
           <Pressable style={styles.removePreviewButton} onPress={clearAttachment}>
             <Icon name="close" size={12} color="#FFFFFF" />
           </Pressable>
         </View>
       )}
+
+      {/* Full Image Preview Modal */}
+      <Modal
+        visible={showImagePreview}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowImagePreview(false)}
+      >
+        <Pressable
+          style={styles.modalOverlay}
+          onPress={() => setShowImagePreview(false)}
+        >
+          <Pressable onPress={(e) => e.stopPropagation()} style={styles.modalImageContainer}>
+            <Image
+              source={{ uri: attachedImage?.uri || '' }}
+              style={styles.modalImage}
+              resizeMode="contain"
+            />
+            <Pressable
+              style={styles.modalCloseButton}
+              onPress={() => setShowImagePreview(false)}
+            >
+              <Icon name="close" size={20} color="#FFFFFF" />
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       <TextInput
         ref={inputRef}
@@ -562,5 +593,31 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: '#FFFFFF',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.9)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalImageContainer: {
+    width: '90%',
+    height: '90%',
+    position: 'relative',
+  },
+  modalImage: {
+    width: '100%',
+    height: '100%',
+  },
+  modalCloseButton: {
+    position: 'absolute',
+    top: 20,
+    right: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    borderRadius: 20,
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });
