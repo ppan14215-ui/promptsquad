@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useImperativeHandle, forwardRef } from 'react';
+import React, { useState, useRef, useEffect, useImperativeHandle, forwardRef, useCallback } from 'react';
 import {
   View,
   TextInput,
@@ -140,7 +140,7 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
     }
   }, [value]);
 
-  const handlePaste = (e: any) => {
+  const handlePaste = useCallback((e: any) => {
     if (Platform.OS !== 'web') return;
 
     // Check for image data in clipboard
@@ -170,7 +170,19 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
         return;
       }
     }
-  };
+  }, []);
+
+  // Attach paste event listener on web
+  useEffect(() => {
+    if (Platform.OS !== 'web' || !inputRef.current) return;
+
+    const inputElement = inputRef.current as any;
+    inputElement.addEventListener('paste', handlePaste);
+
+    return () => {
+      inputElement.removeEventListener('paste', handlePaste);
+    };
+  }, [handlePaste]);
 
   const handleKeyPress = (e: any) => {
     // Send on Enter (without Shift for new line)
@@ -232,7 +244,6 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
         blurOnSubmit={false}
         editable={!disabled}
         scrollEnabled={inputHeight >= MAX_INPUT_HEIGHT}
-        {...((Platform.OS === 'web' ? { onPaste: handlePaste } : {}) as any)}
       />
 
       {/* Bottom row: LLM picker on left, buttons on right */}
