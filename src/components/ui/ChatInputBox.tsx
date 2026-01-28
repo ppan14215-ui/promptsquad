@@ -203,33 +203,230 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
   };
 
   return (
-    <View
-      style={[
-        styles.container,
-        {
-          backgroundColor: colors.background,
-          borderColor: colors.outline,
-          maxWidth,
-        },
-      ]}
-    >
-      {/* Image Preview */}
-      {attachedImage && (
-        <View style={styles.previewContainer}>
-          <Pressable onPress={() => setShowImagePreview(true)}>
-            <Image
-              source={{ uri: attachedImage.uri }}
-              style={styles.previewImage}
-              resizeMode="cover"
-            />
-          </Pressable>
-          <Pressable style={styles.removePreviewButton} onPress={clearAttachment}>
-            <Icon name="close" size={12} color="#FFFFFF" />
-          </Pressable>
-        </View>
-      )}
+    <>
+      <View
+        style={[
+          styles.container,
+          {
+            backgroundColor: colors.background,
+            borderColor: colors.outline,
+            maxWidth,
+          },
+        ]}
+      >
+        {/* Image Preview */}
+        {attachedImage && (
+          <View style={styles.previewContainer}>
+            <Pressable onPress={() => {
+              console.log('[ChatInputBox] Opening image preview');
+              setShowImagePreview(true);
+            }}>
+              <Image
+                source={{ uri: attachedImage.uri }}
+                style={styles.previewImage}
+                resizeMode="cover"
+              />
+            </Pressable>
+            <Pressable style={styles.removePreviewButton} onPress={clearAttachment}>
+              <Icon name="close" size={12} color="#FFFFFF" />
+            </Pressable>
+          </View>
+        )}
 
-      {/* Full Image Preview Modal */}
+        <TextInput
+          ref={inputRef}
+          style={[
+            styles.input,
+            {
+              fontFamily: fontFamilies.figtree.regular,
+              color: colors.text,
+              outlineStyle: 'none',
+              height: inputHeight,
+              maxHeight: MAX_INPUT_HEIGHT,
+            } as any,
+          ]}
+          placeholder={placeholder}
+          placeholderTextColor={colors.textMuted}
+          value={value}
+          onChangeText={onChangeText}
+          multiline
+          textAlignVertical="top"
+          selectionColor={colors.primary}
+          onKeyPress={handleKeyPress}
+          onContentSizeChange={handleContentSizeChange}
+          blurOnSubmit={false}
+          editable={!disabled}
+          scrollEnabled={inputHeight >= MAX_INPUT_HEIGHT}
+        />
+
+        {/* Bottom row: LLM picker on left, buttons on right */}
+        <View style={styles.bottomRow}>
+          {/* Left Side: LLM Picker */}
+          {showLLMPickerProp && onLLMChange && (
+            <View style={styles.llmPickerContainer}>
+              <Pressable
+                style={[
+                  styles.llmPickerButton,
+                  {
+                    backgroundColor: colors.background,
+                    borderColor: colors.outline,
+                  },
+                ]}
+                onPress={() => setShowLLMDropdown(!showLLMDropdown)}
+              >
+                <Text
+                  style={[
+                    styles.llmPickerText,
+                    {
+                      fontFamily: fontFamilies.figtree.medium,
+                      color: colors.textMuted,
+                    },
+                  ]}
+                >
+                  {chatLLM === 'auto' ? 'Auto' : chatLLM === 'gemini' ? 'Gemini' : chatLLM === 'perplexity' ? 'Perplexity' : chatLLM === 'openai' ? 'GPT' : 'Auto'}
+                </Text>
+              </Pressable>
+
+              {/* Dropdown */}
+              {showLLMDropdown && (
+                <View
+                  style={[
+                    styles.llmDropdown,
+                    {
+                      backgroundColor: colors.background,
+                      borderColor: colors.outline,
+                      left: 0, // Align left since it's on the left side now
+                      right: 'auto', // Reset right
+                    },
+                    Platform.OS === 'web' && ({ boxShadow: shadowToCSS('md') } as unknown as object),
+                  ]}
+                >
+                  {LLM_OPTIONS.map((option) => {
+                    const isPerplexity = option.code === 'perplexity';
+                    const isLocked = isPerplexity && !isPro && !isAdmin;
+
+                    return (
+                      <Pressable
+                        key={option.code}
+                        style={[
+                          styles.llmDropdownItem,
+                          chatLLM === option.code && { backgroundColor: colors.primaryBg },
+                          isLocked && { opacity: 0.6 },
+                        ]}
+                        onPress={() => {
+                          if (isLocked) {
+                            // TODO: Show upgrade modal?
+                            return;
+                          }
+                          onLLMChange(option.code);
+                          setShowLLMDropdown(false);
+                        }}
+                      >
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <Text
+                            style={[
+                              styles.llmDropdownItemText,
+                              {
+                                fontFamily: fontFamilies.figtree.semiBold,
+                                color: chatLLM === option.code ? colors.primary : colors.text,
+                              },
+                            ]}
+                          >
+                            {option.name}
+                          </Text>
+                          {isPerplexity && !isPro && !isAdmin && (
+                            <View style={{ backgroundColor: colors.primary, paddingHorizontal: 4, paddingVertical: 2, borderRadius: 4, marginLeft: 6 }}>
+                              <Text style={{ fontFamily: fontFamilies.figtree.semiBold, fontSize: 9, color: '#FFFFFF' }}>PRO</Text>
+                            </View>
+                          )}
+                        </View>
+                        <Text
+                          style={[
+                            styles.llmDropdownItemDesc,
+                            {
+                              fontFamily: fontFamilies.figtree.regular,
+                              color: colors.textMuted,
+                            },
+                          ]}
+                        >
+                          {option.description}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              )}
+            </View>
+          )}
+
+          {/* Right Side: Add Image, Deep Thinking, Voice, Send */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            {/* Add Image Button */}
+            <Pressable
+              style={styles.iconButton}
+              onPress={handlePickImage}
+              disabled={disabled}
+            >
+              <Icon name="add" size={20} color={colors.icon} />
+            </Pressable>
+
+            {/* Buttons Container */}
+            <View style={styles.buttonsContainer}>
+              {/* Deep thinking toggle - only for admins */}
+              {isAdmin && onDeepThinkingToggle && (
+                <View style={styles.tooltipWrapper}>
+                  {showDeepThinkingTooltip && (
+                    <View style={[styles.tooltip, { backgroundColor: colors.darkButtonHover }]}>
+                      <Text style={[styles.tooltipText, { color: colors.buttonText, fontFamily: fontFamilies.figtree.medium }]}>
+                        Deep thinking
+                      </Text>
+                    </View>
+                  )}
+                  <Pressable
+                    style={[
+                      styles.iconButton,
+                      deepThinkingEnabled && { backgroundColor: colors.primaryBg },
+                    ]}
+                    onPress={onDeepThinkingToggle}
+                    disabled={disabled}
+                    {...(Platform.OS === 'web' && {
+                      onHoverIn: () => setShowDeepThinkingTooltip(true),
+                      onHoverOut: () => setShowDeepThinkingTooltip(false),
+                    })}
+                  >
+                    <Icon
+                      name="idea"
+                      size={18}
+                      color={deepThinkingEnabled ? colors.primary : colors.icon}
+                    />
+                  </Pressable>
+                </View>
+              )}
+
+              {/* Send button - colored bubble */}
+              <Pressable
+                style={[
+                  styles.sendButton,
+                  {
+                    backgroundColor: mascotColor,
+                    opacity: isSendDisabled ? 0.4 : 1, // Lower opacity when disabled
+                  },
+                ]}
+                onPress={handleSend}
+                disabled={isSendDisabled}
+              >
+                <Icon
+                  name="send"
+                  size={16}
+                  color="#FFFFFF"
+                />
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </View>
+
+      {/* Full Image Preview Modal - Outside container */}
       <Modal
         visible={showImagePreview}
         transparent
@@ -238,7 +435,10 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
       >
         <Pressable
           style={styles.modalOverlay}
-          onPress={() => setShowImagePreview(false)}
+          onPress={() => {
+            console.log('[ChatInputBox] Closing image preview');
+            setShowImagePreview(false);
+          }}
         >
           <Pressable onPress={(e) => e.stopPropagation()} style={styles.modalImageContainer}>
             <Image
@@ -255,217 +455,7 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
           </Pressable>
         </Pressable>
       </Modal>
-
-      <TextInput
-        ref={inputRef}
-        style={[
-          styles.input,
-          {
-            fontFamily: fontFamilies.figtree.regular,
-            color: colors.text,
-            outlineStyle: 'none',
-            height: inputHeight,
-            maxHeight: MAX_INPUT_HEIGHT,
-          } as any,
-        ]}
-        placeholder={placeholder}
-        placeholderTextColor={colors.textMuted}
-        value={value}
-        onChangeText={onChangeText}
-        multiline
-        textAlignVertical="top"
-        selectionColor={colors.primary}
-        onKeyPress={handleKeyPress}
-        onContentSizeChange={handleContentSizeChange}
-        blurOnSubmit={false}
-        editable={!disabled}
-        scrollEnabled={inputHeight >= MAX_INPUT_HEIGHT}
-      />
-
-      {/* Bottom row: LLM picker on left, buttons on right */}
-      <View style={styles.bottomRow}>
-        {/* Left Side: LLM Picker */}
-        {showLLMPickerProp && onLLMChange && (
-          <View style={styles.llmPickerContainer}>
-            <Pressable
-              style={[
-                styles.llmPickerButton,
-                {
-                  backgroundColor: colors.background,
-                  borderColor: colors.outline,
-                },
-              ]}
-              onPress={() => setShowLLMDropdown(!showLLMDropdown)}
-            >
-              <Text
-                style={[
-                  styles.llmPickerText,
-                  {
-                    fontFamily: fontFamilies.figtree.medium,
-                    color: colors.textMuted,
-                  },
-                ]}
-              >
-                {chatLLM === 'auto' ? 'Auto' : chatLLM === 'gemini' ? 'Gemini' : chatLLM === 'perplexity' ? 'Perplexity' : chatLLM === 'openai' ? 'GPT' : 'Auto'}
-              </Text>
-            </Pressable>
-
-            {/* Dropdown */}
-            {showLLMDropdown && (
-              <View
-                style={[
-                  styles.llmDropdown,
-                  {
-                    backgroundColor: colors.background,
-                    borderColor: colors.outline,
-                    left: 0, // Align left since it's on the left side now
-                    right: 'auto', // Reset right
-                  },
-                  Platform.OS === 'web' && ({ boxShadow: shadowToCSS('md') } as unknown as object),
-                ]}
-              >
-                {LLM_OPTIONS.map((option) => {
-                  const isPerplexity = option.code === 'perplexity';
-                  const isLocked = isPerplexity && !isPro && !isAdmin;
-
-                  return (
-                    <Pressable
-                      key={option.code}
-                      style={[
-                        styles.llmDropdownItem,
-                        chatLLM === option.code && { backgroundColor: colors.primaryBg },
-                        isLocked && { opacity: 0.6 },
-                      ]}
-                      onPress={() => {
-                        if (isLocked) {
-                          // TODO: Show upgrade modal?
-                          return;
-                        }
-                        onLLMChange(option.code);
-                        setShowLLMDropdown(false);
-                      }}
-                    >
-                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <Text
-                          style={[
-                            styles.llmDropdownItemText,
-                            {
-                              fontFamily: fontFamilies.figtree.semiBold,
-                              color: chatLLM === option.code ? colors.primary : colors.text,
-                            },
-                          ]}
-                        >
-                          {option.name}
-                        </Text>
-                        {isPerplexity && !isPro && !isAdmin && (
-                          <View style={{ backgroundColor: colors.primary, paddingHorizontal: 4, paddingVertical: 2, borderRadius: 4, marginLeft: 6 }}>
-                            <Text style={{ fontFamily: fontFamilies.figtree.semiBold, fontSize: 9, color: '#FFFFFF' }}>PRO</Text>
-                          </View>
-                        )}
-                      </View>
-                      <Text
-                        style={[
-                          styles.llmDropdownItemDesc,
-                          {
-                            fontFamily: fontFamilies.figtree.regular,
-                            color: colors.textMuted,
-                          },
-                        ]}
-                      >
-                        {option.description}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
-            )}
-          </View>
-        )}
-
-        {/* Right Side: Add Image, Deep Thinking, Voice, Send */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          {/* Add Image Button */}
-          <Pressable
-            style={styles.iconButton}
-            onPress={handlePickImage}
-            disabled={disabled}
-          >
-            <Icon name="add" size={20} color={colors.icon} />
-          </Pressable>
-
-          {/* Buttons Container */}
-          <View style={styles.buttonsContainer}>
-            {/* Deep thinking toggle - only for admins */}
-            {isAdmin && onDeepThinkingToggle && (
-              <View style={styles.tooltipWrapper}>
-                {showDeepThinkingTooltip && (
-                  <View style={[styles.tooltip, { backgroundColor: colors.darkButtonHover }]}>
-                    <Text style={[styles.tooltipText, { color: colors.buttonText, fontFamily: fontFamilies.figtree.medium }]}>
-                      Deep thinking
-                    </Text>
-                  </View>
-                )}
-                <Pressable
-                  style={[
-                    styles.iconButton,
-                    deepThinkingEnabled && { backgroundColor: colors.primaryBg },
-                  ]}
-                  onPress={onDeepThinkingToggle}
-                  disabled={disabled}
-                  {...(Platform.OS === 'web' && {
-                    onHoverIn: () => setShowDeepThinkingTooltip(true),
-                    onHoverOut: () => setShowDeepThinkingTooltip(false),
-                  })}
-                >
-                  <Icon
-                    name="idea"
-                    size={18}
-                    color={deepThinkingEnabled ? colors.primary : colors.icon}
-                  />
-                </Pressable>
-              </View>
-            )}
-
-            {/* Voice input button - Hidden for now as it's unstable */}
-            {/* {onVoicePress && (
-              <Pressable
-                style={[
-                  styles.iconButton,
-                  isRecording && { backgroundColor: colors.red + '20' },
-                ]}
-                onPress={onVoicePress}
-                disabled={disabled}
-              >
-                <Icon
-                  name={isRecording ? 'stop' : 'mic'}
-                  size={18}
-                  color={isRecording ? colors.red : colors.icon}
-                />
-              </Pressable>
-            )} */}
-
-            {/* Send button - colored bubble */}
-            <Pressable
-              style={[
-                styles.sendButton,
-                {
-                  backgroundColor: mascotColor,
-                  opacity: isSendDisabled ? 0.4 : 1, // Lower opacity when disabled
-                },
-              ]}
-              onPress={handleSend}
-              disabled={isSendDisabled}
-            >
-              <Icon
-                name="send"
-                size={16}
-                color="#FFFFFF"
-              />
-            </Pressable>
-          </View>
-        </View>
-      </View>
-    </View>
+    </>
   );
 });
 
