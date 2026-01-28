@@ -2326,6 +2326,8 @@ export default function ChatScreen() {
                 showLLMPicker={true}
                 chatLLM={chatLLM}
                 onLLMChange={setChatLLM}
+                webSearchEnabled={webSearchEnabled}
+                onWebSearchToggle={() => setWebSearchEnabled((prev) => !prev)}
                 deepThinkingEnabled={deepThinkingEnabled}
                 onDeepThinkingToggle={() => setDeepThinkingEnabled((prev) => !prev)}
                 isAdmin={isAdmin}

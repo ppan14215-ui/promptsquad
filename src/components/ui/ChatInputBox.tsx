@@ -384,6 +384,37 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
 
             {/* Buttons Container */}
             <View style={styles.buttonsContainer}>
+              {/* Web Search toggle */}
+              {onWebSearchToggle && (
+                <View style={styles.tooltipWrapper}>
+                  {showWebSearchTooltip && (
+                    <View style={[styles.tooltip, { backgroundColor: colors.darkButtonHover }]}>
+                      <Text style={[styles.tooltipText, { color: colors.buttonText, fontFamily: fontFamilies.figtree.medium }]}>
+                        Web search
+                      </Text>
+                    </View>
+                  )}
+                  <Pressable
+                    style={[
+                      styles.iconButton,
+                      webSearchEnabled && { backgroundColor: colors.primaryBg },
+                    ]}
+                    onPress={onWebSearchToggle}
+                    disabled={disabled}
+                    {...(Platform.OS === 'web' && {
+                      onHoverIn: () => setShowWebSearchTooltip(true),
+                      onHoverOut: () => setShowWebSearchTooltip(false),
+                    })}
+                  >
+                    <Icon
+                      name="globe"
+                      size={18}
+                      color={webSearchEnabled ? colors.primary : colors.icon}
+                    />
+                  </Pressable>
+                </View>
+              )}
+
               {/* Deep thinking toggle - only for admins */}
               {isAdmin && onDeepThinkingToggle && (
                 <View style={styles.tooltipWrapper}>
