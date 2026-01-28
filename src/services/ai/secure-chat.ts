@@ -35,19 +35,13 @@ export async function secureChatStream(
     throw new Error('Not authenticated. Please sign in.');
   }
 
-  // Force refresh session to get a fresh token
-  const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
+  // Get session with fresh token
+  const { data: { session }, error: sessionError } = await supabase.auth.getSession();
 
-  if (refreshError) {
-    console.warn('[SecureChat] Token refresh failed, trying existing session:', refreshError.message);
-  }
-
-  // Get session (will be fresh if refresh succeeded, or use existing)
-  const session = refreshData?.session || (await supabase.auth.getSession()).data.session;
-
-  if (!session?.access_token) {
-    console.error('[SecureChat] No valid session after refresh');
-    throw new Error('Session expired. Please sign in again.');
+  if (sessionError || !session?.access_token) {
+    console.error('[SecureChat] Session error:', sessionError);
+    console.error('[SecureChat] Has session:', !!session);
+    throw new Error('Failed to get session. Please try signing in again.');
   }
 
   console.log('[SecureChat] Using access token (first 20 chars):', session.access_token.substring(0, 20) + '...');
