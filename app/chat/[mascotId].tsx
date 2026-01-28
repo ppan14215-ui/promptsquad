@@ -755,21 +755,27 @@ export default function ChatScreen() {
       }, 100);
     }
 
-    // Smart scroll: Position to show the latest user message at top with space below
-    // Wait for the message to be added to the DOM, then scroll
+    // Smart scroll: Position to show the latest user message at top with space below\n    // Wait for the message to be added to the DOM, then scroll
     setTimeout(() => {
       if (scrollViewRef.current) {
+        // Reset scroll lock so our manual scroll works
+        isUserScrollingRef.current = false;
+
         // Get the current content height and scroll view height
         const contentHeight = contentHeightRef.current;
         const viewportHeight = scrollViewHeightRef.current;
 
-        // Calculate scroll position to show latest messages at top
-        // Leave some padding (100px) from the top
-        const targetScrollY = Math.max(0, contentHeight - viewportHeight + 100);
+        console.log('[Chat] Smart scroll - Content:', contentHeight, 'Viewport:', viewportHeight);
 
-        scrollViewRef.current.scrollTo({ y: targetScrollY, animated: true });
+        // If content is larger than viewport, scroll to show bottom content at top
+        if (contentHeight > viewportHeight) {
+          // Scroll so the bottom content appears near the top with padding
+          const targetScrollY = contentHeight - viewportHeight + 150;
+          console.log('[Chat] Scrolling to:', targetScrollY);
+          scrollViewRef.current.scrollTo({ y: targetScrollY, animated: true });
+        }
       }
-    }, 150);
+    }, 200);
 
     try {
       // Clear web sources if web search is disabled
@@ -1330,17 +1336,24 @@ export default function ChatScreen() {
     // Smart scroll: Position to show the latest user message at top with space below
     setTimeout(() => {
       if (scrollViewRef.current) {
+        // Reset scroll lock so our manual scroll works
+        isUserScrollingRef.current = false;
+
         // Get the current content height and scroll view height
         const contentHeight = contentHeightRef.current;
         const viewportHeight = scrollViewHeightRef.current;
 
-        // Calculate scroll position to show latest messages at top
-        // Leave some padding (100px) from the top
-        const targetScrollY = Math.max(0, contentHeight - viewportHeight + 100);
+        console.log('[Chat] Smart scroll (skill) - Content:', contentHeight, 'Viewport:', viewportHeight);
 
-        scrollViewRef.current.scrollTo({ y: targetScrollY, animated: true });
+        // If content is larger than viewport, scroll to show bottom content at top
+        if (contentHeight > viewportHeight) {
+          // Scroll so the bottom content appears near the top with padding
+          const targetScrollY = contentHeight - viewportHeight + 150;
+          console.log('[Chat] Scrolling to:', targetScrollY);
+          scrollViewRef.current.scrollTo({ y: targetScrollY, animated: true });
+        }
       }
-    }, 250);
+    }, 300);
 
     try {
       // Clear web sources if web search is disabled
@@ -2094,10 +2107,9 @@ export default function ChatScreen() {
           }}
           onContentSizeChange={(width, height) => {
             contentHeightRef.current = height;
-            // Only auto-scroll if user hasn't manually scrolled away
-            if (!isUserScrollingRef.current) {
-              scrollViewRef.current?.scrollToEnd({ animated: true });
-            }
+            // Don't auto-scroll during streaming - let user read in peace
+            // Only auto-scroll if explicitly not scrolled away AND not currently loading
+            // This prevents the annoying force-scroll-down while reading
           }}
         >
           {messages.map((message, index) => (
