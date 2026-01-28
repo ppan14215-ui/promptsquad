@@ -435,7 +435,28 @@ serve(async (req: Request) => {
       });
     }
 
-    const result = await chat.sendMessageStream(messageParts);
+    let result;
+    let groundingEnabled = webSearch;
+
+    try {
+      result = await chat.sendMessageStream(messageParts);
+    } catch (groundingError: any) {
+      // If grounding fails (e.g., not available), retry without grounding
+      if (webSearch && groundingError.message?.includes('grounding') || groundingError.message?.includes('tool')) {
+        console.log('[Edge Function] Grounding failed, retrying without grounding:', groundingError.message);
+        groundingEnabled = false;
+
+        // Recreate model without grounding
+        const fallbackModel = genAI.getGenerativeModel({
+          model: useModel,
+          systemInstruction: systemPrompt,
+        });
+        const fallbackChat = fallbackModel.startChat({ history: geminiHistory });
+        result = await fallbackChat.sendMessageStream(messageParts);
+      } else {
+        throw groundingError;
+      }
+    }
 
     const stream = new ReadableStream({
       async start(controller) {
