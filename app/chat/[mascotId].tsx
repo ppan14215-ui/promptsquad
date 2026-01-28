@@ -769,9 +769,10 @@ export default function ChatScreen() {
 
       // Build chat history for AI
       // CRITICAL: If this is a skill prompt, send the FULL prompt to LLM, not the label
-      const actualMessageContentForLLM = isSkillPrompt
-        ? messageContent.trim() // Send full skill prompt
-        : messageContent.trim(); // Regular message
+      // Use the actualMessageContentForLLM calculated at buffer start, OR check again
+      const contentForLLM = isSkillPrompt || (isSkillLabel && activeSkill?.skill_prompt)
+        ? (activeSkill?.skill_prompt || messageContent.trim())
+        : messageContent.trim();
 
       const currentMessages = [...messages];
 
@@ -801,7 +802,7 @@ export default function ChatScreen() {
             role: m.role as 'system' | 'user' | 'assistant',
             content: m.content,
           })),
-        { role: 'user', content: actualMessageContentForLLM }, // Send full skill prompt to LLM
+        { role: 'user', content: contentForLLM }, // Send full skill prompt to LLM
       ];
 
       let fullContent = '';
@@ -832,7 +833,9 @@ export default function ChatScreen() {
       if (chatLLM === 'auto') {
         // Check if query needs real-time data
         // Use the current user input, not the last message in the array
-        if (needsRealTimeData(actualMessageContentForLLM) && (isSubscribed || isAdmin)) {
+        // Check if query needs real-time data
+        // Use the current user input, not the last message in the array
+        if (needsRealTimeData(contentForLLM) && (isSubscribed || isAdmin)) {
           providerOverride = 'perplexity'; // Use web-grounded for current info
           console.log('[Chat] Auto mode detected real-time query, using Perplexity (Pro/Admin)');
         } else {
@@ -920,7 +923,7 @@ export default function ChatScreen() {
       if (conversationId) {
         try {
           console.log('[Chat] Saving user message to conversation:', conversationId);
-          const savedMessage = await saveMessage(conversationId, 'user', actualMessageContentForLLM);
+          const savedMessage = await saveMessage(conversationId, 'user', contentForLLM);
           console.log('[Chat] User message saved successfully:', savedMessage.id);
           setHasSavedFirstMessage(true);
         } catch (error) {
@@ -1025,7 +1028,7 @@ export default function ChatScreen() {
                   .filter(m => !m.isThinking && (m.role === 'user' || m.role === 'assistant'))
                   .slice(-2) // Previous messages
                   .map(m => ({ role: m.role as 'user' | 'assistant', content: m.content })),
-                { role: 'user' as const, content: actualMessageContentForLLM },
+                { role: 'user' as const, content: contentForLLM },
                 { role: 'assistant' as const, content: assistantContent },
               ];
               console.log('[Chat] Generating conversation title for:', conversationId);
@@ -1349,9 +1352,9 @@ export default function ChatScreen() {
       // CRITICAL: For skill clicks, we have two scenarios:
       // 1. Admin users: We have skillPrompt (full prompt) - send it to LLM
       // 2. Non-admin users: We don't have skillPrompt (PREVIOUSLY) - NOW we do because we query raw table
-      // 3. Placeholders: If prompt has [placeholder] or (placeholder), DO NOT AUTO SEND.
-
-      const hasPlaceholders = skillPrompt && /\[.*?\]|\(.*?\)/.test(skillPrompt);
+      // 3. Placeholders: If prompt has [placeholder], DO NOT AUTO SEND.
+      // Relaxed check: Only check for square brackets [], assume () are normal text
+      const hasPlaceholders = skillPrompt && /\[.*?\]/.test(skillPrompt);
 
       if (hasPlaceholders) {
         console.log('[Chat] Skill prompt has placeholders - preventing auto-send. Populating input.');

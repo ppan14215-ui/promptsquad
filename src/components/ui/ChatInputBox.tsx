@@ -140,6 +140,38 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
     }
   }, [value]);
 
+  const handlePaste = (e: any) => {
+    if (Platform.OS !== 'web') return;
+
+    // Check for image data in clipboard
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.indexOf('image') !== -1) {
+        // Found an image
+        e.preventDefault(); // Prevent default paste behavior for images
+
+        const blob = items[i].getAsFile();
+        const reader = new FileReader();
+
+        reader.onload = (event) => {
+          if (event.target?.result) {
+            const uri = event.target.result as string;
+            setAttachedImage({
+              uri,
+              mimeType: items[i].type,
+              base64: uri.split(',')[1],
+            });
+          }
+        };
+
+        reader.readAsDataURL(blob);
+        return;
+      }
+    }
+  };
+
   const handleKeyPress = (e: any) => {
     // Send on Enter (without Shift for new line)
     // Only if not disabled (has text or image)
@@ -200,6 +232,7 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
         blurOnSubmit={false}
         editable={!disabled}
         scrollEnabled={inputHeight >= MAX_INPUT_HEIGHT}
+        {...((Platform.OS === 'web' ? { onPaste: handlePaste } : {}) as any)}
       />
 
       {/* Bottom row: LLM picker on left, buttons on right */}
