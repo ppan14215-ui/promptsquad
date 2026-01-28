@@ -176,7 +176,7 @@ export default function ComponentsScreen() {
           userName="Julian"
           questionPrompt="What should we analyze?"
           skills={SAMPLE_MASCOT_DETAILS.skills}
-          onSkillPress={() => {}}
+          onSkillPress={() => { }}
           skillsLoading={false}
           isDesktop={false}
         />
@@ -208,7 +208,7 @@ export default function ComponentsScreen() {
           mascotImage={require('../../assets/mascots/Bear.png')}
           isLiked={isChatLiked}
           likeCount={12}
-          onBack={() => {}}
+          onBack={() => { }}
           onToggleLike={() => setIsChatLiked((prev) => !prev)}
           tabs={CHAT_TABS}
           activeTab={activeChatTab}
@@ -263,8 +263,8 @@ export default function ComponentsScreen() {
                 subtitle={SAMPLE_MASCOT.subtitle}
                 imageSource={SAMPLE_MASCOT.image}
                 grayscaleImageSource={
-                  (state === 'locked' || state === 'locked-hover') 
-                    ? SAMPLE_MASCOT.grayscaleImage 
+                  (state === 'locked' || state === 'locked-hover')
+                    ? SAMPLE_MASCOT.grayscaleImage
                     : undefined
                 }
                 isLocked={state === 'locked' || state === 'locked-hover'}
@@ -658,7 +658,7 @@ export default function ComponentsScreen() {
             <SegmentedToggle
               options={SEGMENTED_OPTIONS}
               selectedKey="first"
-              onChange={() => {}}
+              onChange={() => { }}
             />
           </View>
         </View>
@@ -705,7 +705,7 @@ export default function ComponentsScreen() {
               label="Email"
               placeholder="Enter your email"
               value=""
-              onChangeText={() => {}}
+              onChangeText={() => { }}
             />
           </View>
         </View>
@@ -763,6 +763,7 @@ export default function ComponentsScreen() {
               deepThinkingEnabled={deepThinkingEnabled}
               onDeepThinkingToggle={() => setDeepThinkingEnabled(!deepThinkingEnabled)}
               onVoicePress={() => console.log('Voice input pressed')}
+              isPro={true} // Enabled for demo
               maxWidth={480}
             />
           </View>
