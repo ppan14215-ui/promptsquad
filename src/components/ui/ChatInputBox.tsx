@@ -147,12 +147,17 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
     const items = e.clipboardData?.items;
     if (!items) return;
 
-    for (let i = 0; i < items.length; i++) {
-      if (items[i].type.indexOf('image') !== -1) {
+    // Convert DataTransferItemList to array
+    const itemsArray = Array.from(items) as DataTransferItem[];
+
+    for (const item of itemsArray) {
+      if (item.type && item.type.indexOf('image') !== -1) {
         // Found an image
         e.preventDefault(); // Prevent default paste behavior for images
 
-        const blob = items[i].getAsFile();
+        const blob = item.getAsFile();
+        if (!blob) continue;
+
         const reader = new FileReader();
 
         reader.onload = (event) => {
@@ -160,7 +165,7 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
             const uri = event.target.result as string;
             setAttachedImage({
               uri,
-              mimeType: items[i].type,
+              mimeType: item.type,
               base64: uri.split(',')[1],
             });
           }
