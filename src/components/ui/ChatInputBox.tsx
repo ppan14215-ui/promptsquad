@@ -217,17 +217,29 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
         {/* Image Preview */}
         {attachedImage && (
           <View style={styles.previewContainer}>
-            <Pressable onPress={() => {
-              console.log('[ChatInputBox] Opening image preview');
-              setShowImagePreview(true);
-            }}>
+            <Pressable
+              onPress={() => {
+                console.log('[ChatInputBox] Opening image preview');
+                setShowImagePreview(true);
+              }}
+              style={({ pressed }) => [
+                styles.previewImagePressable,
+                pressed && { opacity: 0.8 },
+              ]}
+            >
               <Image
                 source={{ uri: attachedImage.uri }}
                 style={styles.previewImage}
                 resizeMode="cover"
               />
             </Pressable>
-            <Pressable style={styles.removePreviewButton} onPress={clearAttachment}>
+            <Pressable
+              style={styles.removePreviewButton}
+              onPress={(e) => {
+                e.stopPropagation();
+                clearAttachment();
+              }}
+            >
               <Icon name="close" size={12} color="#FFFFFF" />
             </Pressable>
           </View>
@@ -563,6 +575,15 @@ const styles = StyleSheet.create({
     marginBottom: 4,
     width: 60,
     height: 60,
+  },
+  previewImagePressable: {
+    width: 60,
+    height: 60,
+    borderRadius: 8,
+    ...Platform.select({
+      web: { cursor: 'pointer' } as any,
+      default: {},
+    }),
   },
   previewImage: {
     width: 60,
