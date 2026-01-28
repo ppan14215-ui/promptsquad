@@ -5,6 +5,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Icon, Skill, ChatInputBox, MascotDetails, LinkPill, HomeHeader, MascotCarousel } from '@/components';
 import { useTheme, fontFamilies } from '@/design-system';
 import { useAuth } from '@/services/auth';
+import { useSubscription } from '@/services/subscription';
 import { useMascotSkills, MascotSkill, useIsAdmin, useMascots, MascotBasic } from '@/services/admin';
 import { getMascotImageSource, getMascotGrayscaleImageSource } from '@/services/admin/mascot-images';
 import { useUnlockedMascots } from '@/services/mascot-access';
@@ -27,6 +28,7 @@ const DESKTOP_BREAKPOINT = 768;
 export default function HomeScreen() {
   const { colors } = useTheme();
   const { user } = useAuth();
+  const { isSubscribed } = useSubscription();
   const { isAdmin } = useIsAdmin();
   const router = useRouter();
   const { width } = useWindowDimensions();
@@ -288,6 +290,7 @@ export default function HomeScreen() {
               deepThinkingEnabled={deepThinkingEnabled}
               onDeepThinkingToggle={() => setDeepThinkingEnabled(!deepThinkingEnabled)}
               isAdmin={isAdmin}
+              isPro={isSubscribed || isAdmin}
               onVoicePress={() => console.log('Voice input not implemented on home screen')}
               maxWidth={800} // Slightly wider on home screen
             />

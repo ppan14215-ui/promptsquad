@@ -38,7 +38,8 @@ type ChatInputBoxProps = {
   // Voice
   isRecording?: boolean;
   onVoicePress?: () => void;
-  // Max width
+  // Pro status
+  isPro?: boolean;
   maxWidth?: number;
 };
 
@@ -59,6 +60,7 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
   isAdmin = false,
   isRecording = false,
   onVoicePress,
+  isPro = false,
   maxWidth = 720,
 }, ref) => {
   const { colors } = useTheme();
@@ -242,42 +244,59 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
                   Platform.OS === 'web' && ({ boxShadow: shadowToCSS('md') } as unknown as object),
                 ]}
               >
-                {LLM_OPTIONS.map((option) => (
-                  <Pressable
-                    key={option.code}
-                    style={[
-                      styles.llmDropdownItem,
-                      chatLLM === option.code && { backgroundColor: colors.primaryBg },
-                    ]}
-                    onPress={() => {
-                      onLLMChange(option.code);
-                      setShowLLMDropdown(false);
-                    }}
-                  >
-                    <Text
+                {LLM_OPTIONS.map((option) => {
+                  const isPerplexity = option.code === 'perplexity';
+                  const isLocked = isPerplexity && !isPro && !isAdmin;
+
+                  return (
+                    <Pressable
+                      key={option.code}
                       style={[
-                        styles.llmDropdownItemText,
-                        {
-                          fontFamily: fontFamilies.figtree.semiBold,
-                          color: chatLLM === option.code ? colors.primary : colors.text,
-                        },
+                        styles.llmDropdownItem,
+                        chatLLM === option.code && { backgroundColor: colors.primaryBg },
+                        isLocked && { opacity: 0.6 },
                       ]}
+                      onPress={() => {
+                        if (isLocked) {
+                          // TODO: Show upgrade modal?
+                          return;
+                        }
+                        onLLMChange(option.code);
+                        setShowLLMDropdown(false);
+                      }}
                     >
-                      {option.name}
-                    </Text>
-                    <Text
-                      style={[
-                        styles.llmDropdownItemDesc,
-                        {
-                          fontFamily: fontFamilies.figtree.regular,
-                          color: colors.textMuted,
-                        },
-                      ]}
-                    >
-                      {option.description}
-                    </Text>
-                  </Pressable>
-                ))}
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Text
+                          style={[
+                            styles.llmDropdownItemText,
+                            {
+                              fontFamily: fontFamilies.figtree.semiBold,
+                              color: chatLLM === option.code ? colors.primary : colors.text,
+                            },
+                          ]}
+                        >
+                          {option.name}
+                        </Text>
+                        {isPerplexity && !isPro && !isAdmin && (
+                          <View style={{ backgroundColor: colors.primary, paddingHorizontal: 4, paddingVertical: 2, borderRadius: 4, marginLeft: 6 }}>
+                            <Text style={{ fontFamily: fontFamilies.figtree.semiBold, fontSize: 9, color: '#FFFFFF' }}>PRO</Text>
+                          </View>
+                        )}
+                      </View>
+                      <Text
+                        style={[
+                          styles.llmDropdownItemDesc,
+                          {
+                            fontFamily: fontFamilies.figtree.regular,
+                            color: colors.textMuted,
+                          },
+                        ]}
+                      >
+                        {option.description}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
               </View>
             )}
           </View>

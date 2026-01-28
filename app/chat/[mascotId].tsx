@@ -22,6 +22,7 @@ const SPEECH_RECOGNITION_AVAILABLE = Platform.OS === 'web';
 import { useTheme, fontFamilies, textStyles, shadowToCSS, shadowToNative } from '@/design-system';
 import { useI18n } from '@/i18n';
 import { usePreferences, selectBestProvider, TaskCategory, LLMPreference } from '@/services/preferences';
+import { useSubscription } from '@/services/subscription';
 import { supabase } from '@/services/supabase';
 import { ChatHeader, LinkPill, ChatInputBox, SkillPreview, ChatHistory, Icon, BigPrimaryButton } from '@/components';
 import type { ChatInputBoxRef } from '@/components/ui/ChatInputBox';
@@ -460,6 +461,9 @@ export default function ChatScreen() {
   // Check if user is admin
   const { isAdmin } = useIsAdmin();
 
+  // Check subscription status
+  const { isSubscribed } = useSubscription();
+
   // Fetch skills and personality from database
   const { skills: dbSkills, isLoading: skillsLoading } = useMascotSkills(mascotId || '1');
   const { personality: dbPersonality, isLoading: personalityLoading, refetch: refetchPersonality } = useMascotPersonality(mascotId || '1');
@@ -828,15 +832,21 @@ export default function ChatScreen() {
       if (chatLLM === 'auto') {
         // Check if query needs real-time data
         // Use the current user input, not the last message in the array
-        if (needsRealTimeData(actualMessageContentForLLM)) {
+        if (needsRealTimeData(actualMessageContentForLLM) && (isSubscribed || isAdmin)) {
           providerOverride = 'perplexity'; // Use web-grounded for current info
-          console.log('[Chat] Auto mode detected real-time query, using Perplexity');
+          console.log('[Chat] Auto mode detected real-time query, using Perplexity (Pro/Admin)');
         } else {
           // Use task-based selection (OpenAI vs Gemini)
           providerOverride = undefined; // Let Edge Function decide based on taskCategory
         }
       } else if (chatLLM === 'openai' || chatLLM === 'gemini' || chatLLM === 'perplexity') {
-        providerOverride = chatLLM; // Manual selection
+        // Enforce Perplexity lock for non-pro users
+        if (chatLLM === 'perplexity' && !isSubscribed && !isAdmin) {
+          console.log('[Chat] User requested Perplexity but is not Pro/Admin - falling back to undefined (Auto)');
+          providerOverride = undefined;
+        } else {
+          providerOverride = chatLLM; // Manual selection
+        }
       } else {
         providerOverride = undefined; // Fallback to auto
       }
@@ -1095,7 +1105,7 @@ export default function ChatScreen() {
         }, 200);
       }
     }
-  }, [isLoading, messages, mascotId, formatSourcesForMessage, chatLLM, activeSkill, dbPersonality, activeSkillId]);
+  }, [isLoading, messages, mascotId, formatSourcesForMessage, chatLLM, activeSkill, dbPersonality, activeSkillId, isSubscribed, isAdmin]);
 
   // Auto-send initial message from home screen
   // IMPORTANT: If skillId is provided, send the skill label
@@ -1775,8 +1785,8 @@ export default function ChatScreen() {
                 >
                   <SkillPreview
                     skillLabel={skill.skill_label}
-                    skillPromptPreview={skill.skill_prompt_preview}
-                    isFullAccess={skill.is_full_access}
+                    skillPromptPreview={skill.skill_prompt_preview || ''}
+                    isFullAccess={skill.is_full_access || false}
                     fullPrompt={skill.skill_prompt}
                     mascotColor={mascot.color}
                   />
@@ -2272,6 +2282,7 @@ export default function ChatScreen() {
                 deepThinkingEnabled={deepThinkingEnabled}
                 onDeepThinkingToggle={() => setDeepThinkingEnabled((prev) => !prev)}
                 isAdmin={isAdmin}
+                isPro={isSubscribed || isAdmin}
                 isRecording={isRecording}
                 onVoicePress={SPEECH_RECOGNITION_AVAILABLE ? handleVoiceInput : undefined}
                 maxWidth={CHAT_MAX_WIDTH}
