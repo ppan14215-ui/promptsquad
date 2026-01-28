@@ -282,7 +282,7 @@ export default function HomeScreen() {
               value={message}
               onChangeText={setMessage}
               onSend={(text, attachment) => handleSendMessage(text, attachment)}
-              placeholder="Ask anything..."
+              placeholder={selectedMascot?.questionPrompt || 'Ask anything...'}
               mascotColor={COLOR_MAP[selectedMascot.color]}
               showLLMPicker={true}
               chatLLM={chatLLM}
