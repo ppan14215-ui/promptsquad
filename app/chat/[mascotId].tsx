@@ -645,7 +645,7 @@ export default function ChatScreen() {
   const [isRecording, setIsRecording] = useState(false);
   const [chatLLM, setChatLLM] = useState<LLMPreference>(llm || 'auto');
   const [showLLMPicker, setShowLLMPicker] = useState(false);
-  const [webSearchEnabled, setWebSearchEnabled] = useState(false);
+  const [webSearchEnabled, setWebSearchEnabled] = useState(true);
   // Removed old autoScroll state - now using isUserScrollingRef for scroll control
   const [showWebSearchTooltip, setShowWebSearchTooltip] = useState(false);
   const [deepThinkingEnabled, setDeepThinkingEnabled] = useState(deepThinking === 'true');
