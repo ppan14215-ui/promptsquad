@@ -18,7 +18,6 @@ interface ChatRequest {
   deepThinking?: boolean;
   image?: { mimeType: string; base64: string };
   taskCategory?: string; // For auto provider selection
-  webSearch?: boolean; // Enable web grounding
 }
 
 serve(async (req: Request) => {
@@ -94,9 +93,9 @@ serve(async (req: Request) => {
 
     // Parse request body
     const body: ChatRequest = await req.json();
-    const { mascotId, messages, skillId, provider, deepThinking, image, taskCategory, webSearch } = body;
+    const { mascotId, messages, skillId, provider, deepThinking, image, taskCategory } = body;
 
-    console.log('[Edge Function] Received messages for mascot:', mascotId, 'provider:', provider, 'webSearch:', webSearch);
+    console.log('[Edge Function] Received messages for mascot:', mascotId, 'provider:', provider);
     console.log('[Edge Function] Message count:', messages?.length);
     if (messages?.length > 0) {
       console.log('[Edge Function] First message role:', messages[0].role, 'content:', messages[0].content.substring(0, 50) + '...');
@@ -375,20 +374,10 @@ serve(async (req: Request) => {
     }
 
     const genAI = new GoogleGenerativeAI(geminiApiKey);
-
-    // Build model config with optional grounding
-    const modelConfig: any = {
+    const model = genAI.getGenerativeModel({
       model: useModel,
       systemInstruction: systemPrompt,
-    };
-
-    // Enable Google Search grounding if webSearch is enabled
-    if (webSearch) {
-      console.log('[Edge Function] Enabling Google Search grounding for Gemini');
-      modelConfig.tools = [{ googleSearchRetrieval: {} }];
-    }
-
-    const model = genAI.getGenerativeModel(modelConfig);
+    });
 
     const geminiHistory: Array<{ role: 'user' | 'model'; parts: Array<{ text: string }> }> = [];
 
@@ -435,61 +424,18 @@ serve(async (req: Request) => {
       });
     }
 
-    let result;
-    let groundingEnabled = webSearch;
-
-    try {
-      result = await chat.sendMessageStream(messageParts);
-    } catch (groundingError: any) {
-      // If grounding fails (e.g., not available), retry without grounding
-      if (webSearch && groundingError.message?.includes('grounding') || groundingError.message?.includes('tool')) {
-        console.log('[Edge Function] Grounding failed, retrying without grounding:', groundingError.message);
-        groundingEnabled = false;
-
-        // Recreate model without grounding
-        const fallbackModel = genAI.getGenerativeModel({
-          model: useModel,
-          systemInstruction: systemPrompt,
-        });
-        const fallbackChat = fallbackModel.startChat({ history: geminiHistory });
-        result = await fallbackChat.sendMessageStream(messageParts);
-      } else {
-        throw groundingError;
-      }
-    }
+    const result = await chat.sendMessageStream(messageParts);
 
     const stream = new ReadableStream({
       async start(controller) {
         const encoder = new TextEncoder();
-        let groundingSources: string[] = [];
-
         try {
           for await (const chunk of result.stream) {
             const text = chunk.text();
             if (text) {
               controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content: text })}\n\n`));
             }
-
-            // Extract grounding metadata if available
-            const groundingMeta = chunk.candidates?.[0]?.groundingMetadata;
-            if (groundingMeta?.webSearchQueries && groundingMeta.webSearchQueries.length > 0) {
-              console.log('[Edge Function] Grounding queries:', groundingMeta.webSearchQueries);
-            }
-            if (groundingMeta?.groundingChunks) {
-              for (const gChunk of groundingMeta.groundingChunks) {
-                if (gChunk.web?.uri && !groundingSources.includes(gChunk.web.uri)) {
-                  groundingSources.push(gChunk.web.uri);
-                }
-              }
-            }
           }
-
-          // Send citations if we have grounding sources
-          if (groundingSources.length > 0) {
-            console.log('[Edge Function] Sending grounding sources:', groundingSources.length);
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ citations: groundingSources })}\n\n`));
-          }
-
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, model: useModel, provider: 'gemini' })}\n\n`));
           controller.close();
         } catch (error: any) {
