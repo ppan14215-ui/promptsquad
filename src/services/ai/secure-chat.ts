@@ -35,13 +35,41 @@ export async function secureChatStream(
     throw new Error('Not authenticated. Please sign in.');
   }
 
-  // Get session with fresh token
-  const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+  // Get session
+  let { data: { session }, error: sessionError } = await supabase.auth.getSession();
 
   if (sessionError || !session?.access_token) {
     console.error('[SecureChat] Session error:', sessionError);
-    console.error('[SecureChat] Has session:', !!session);
-    throw new Error('Failed to get session. Please try signing in again.');
+    // Try to refresh
+    const refresh = await supabase.auth.refreshSession();
+    session = refresh.data.session;
+
+    if (!session?.access_token) {
+      throw new Error('Failed to get session. Please try signing in again.');
+    }
+  }
+
+  // Check if token is expired or about to expire (within 60 seconds)
+  try {
+    const parts = session.access_token.split('.');
+    if (parts.length === 3) {
+      const payload = JSON.parse(atob(parts[1]));
+      const now = Math.floor(Date.now() / 1000);
+      const timeUntilExpiry = payload.exp - now;
+
+      console.log(`[SecureChat] Token expires in ${timeUntilExpiry}s`);
+
+      if (timeUntilExpiry < 60) {
+        console.log('[SecureChat] Token expiring soon, refreshing...');
+        const refresh = await supabase.auth.refreshSession();
+        if (refresh.data.session) {
+          session = refresh.data.session;
+          console.log('[SecureChat] Token refreshed successfully');
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('[SecureChat] Failed to check token expiry:', e);
   }
 
   console.log('[SecureChat] Using access token (first 20 chars):', session.access_token.substring(0, 20) + '...');

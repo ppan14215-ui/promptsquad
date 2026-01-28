@@ -1,5 +1,6 @@
 // @ts-nocheck - Deno runtime, not Node.js
 // Clean Edge Function for chat - Simple authentication
+// VERSION: 2026-01-28-v2 (reverted grounding, added debug logging)
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { GoogleGenerativeAI } from 'https://esm.sh/@google/generative-ai@0.24.1';
@@ -51,19 +52,44 @@ serve(async (req: Request) => {
     // Extract token (handle "Bearer " prefix with potential whitespace)
     const token = authHeader.replace(/^Bearer\s+/i, '').trim();
 
-    console.log('[Edge Function] Extracted token (first 20 chars):', token.substring(0, 20) + '...');
-    console.log('[Edge Function] Token length:', token.length);
+    console.log('[Edge Function v2] Extracted token (first 20 chars):', token.substring(0, 20) + '...');
+    console.log('[Edge Function v2] Token length:', token.length);
+
+    // Decode token to check expiry (without verifying signature)
+    try {
+      const parts = token.split('.');
+      if (parts.length === 3) {
+        const payload = JSON.parse(atob(parts[1]));
+        const now = Math.floor(Date.now() / 1000);
+        console.log('[Edge Function v2] Token payload:', {
+          iss: payload.iss,
+          aud: payload.aud,
+          exp: payload.exp,
+          iat: payload.iat,
+          sub: payload.sub?.substring(0, 8) + '...',
+          now: now,
+          expired: payload.exp < now,
+          expiresIn: payload.exp - now
+        });
+
+        if (payload.exp < now) {
+          console.error('[Edge Function v2] TOKEN IS EXPIRED! exp:', payload.exp, 'now:', now, 'diff:', payload.exp - now);
+        }
+      }
+    } catch (e) {
+      console.error('[Edge Function v2] Failed to decode token:', e);
+    }
 
     // Create admin client and validate token
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
-    console.log('[Edge Function] Created admin client, validating token...');
+    console.log('[Edge Function v2] Created admin client, validating token...');
 
     const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
 
-    console.log('[Edge Function] Auth result - User:', user?.id || 'none');
-    console.log('[Edge Function] Auth result - Error:', authError?.message || 'none');
-    console.log('[Edge Function] Auth result - Error code:', authError?.code || 'none');
-    console.log('[Edge Function] Internal project ref check:', {
+    console.log('[Edge Function v2] Auth result - User:', user?.id || 'none');
+    console.log('[Edge Function v2] Auth result - Error:', authError?.message || 'none');
+    console.log('[Edge Function v2] Auth result - Error code:', authError?.code || 'none');
+    console.log('[Edge Function v2] Internal project ref check:', {
       supabaseUrl,
       serviceKeySnippet: supabaseServiceKey?.substring(0, 10) + '...',
       tokenSnippet: token?.substring(0, 10) + '...'
