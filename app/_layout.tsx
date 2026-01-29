@@ -4,6 +4,7 @@ import { I18nProvider } from '@/i18n';
 import { AuthProvider, useAuth } from '@/services/auth';
 import { PreferencesProvider } from '@/services/preferences';
 import { hasCompletedOnboarding } from '@/services/mascot-access';
+import { ChatPreferencesProvider } from '@/context/ChatPreferencesContext';
 import { useFonts } from 'expo-font';
 import {
   Figtree_400Regular,
@@ -16,17 +17,11 @@ import React, { useEffect } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 
-// Suppress warning from hugeicons-react-native internal prop spreading
 LogBox.ignoreLogs(['A props object containing a "key" prop is being spread into JSX']);
 
 function StatusBarWrapper() {
   const { mode } = useTheme();
-  // When theme is light, use dark content (black icons on white background)
-  // When theme is dark, use light content (white icons on dark background)
   const statusBarStyle = mode === 'light' ? 'dark' : 'light';
-  
-  // Use React Native StatusBar for Android (more reliable)
-  // Use Expo StatusBar for iOS
   if (Platform.OS === 'android') {
     return (
       <RNStatusBar
@@ -36,7 +31,6 @@ function StatusBarWrapper() {
       />
     );
   }
-  
   return <StatusBar style={statusBarStyle} />;
 }
 
@@ -49,73 +43,49 @@ function AuthGate({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (isLoading) return;
-
     const first = segments[0];
-    const inAuthGroup =
-      first === '(auth)' ||
-      first === 'login' ||
-      first === 'callback';
+    const inAuthGroup = first === '(auth)' || first === 'login' || first === 'callback';
     const inOnboardingGroup = first === '(onboarding)';
 
     if (!user && !inAuthGroup) {
-      // Redirect to login if not authenticated
       router.replace('/(auth)/login');
     } else if (user && inAuthGroup) {
-      // User just logged in, check onboarding
       if (!isCheckingOnboarding) {
         setIsCheckingOnboarding(true);
         hasCompletedOnboarding().then((completed) => {
           setOnboardingChecked(true);
           setIsCheckingOnboarding(false);
-          if (completed) {
-            router.replace('/(tabs)');
-          } else {
-            router.replace('/(onboarding)/select-mascots');
-          }
+          if (completed) router.replace('/(tabs)');
+          else router.replace('/(onboarding)/select-mascots');
         }).catch(() => {
           setIsCheckingOnboarding(false);
-          // On error, assume onboarding needed
           router.replace('/(onboarding)/select-mascots');
         });
       }
     } else if (user && inOnboardingGroup) {
-      // User is in onboarding - let them stay there, don't redirect
       setOnboardingChecked(true);
     } else if (user && !inAuthGroup && !inOnboardingGroup && !onboardingChecked) {
-      // User is on main app pages but we haven't checked onboarding yet
       if (!isCheckingOnboarding) {
         setIsCheckingOnboarding(true);
         hasCompletedOnboarding().then((completed) => {
           setOnboardingChecked(true);
           setIsCheckingOnboarding(false);
-          if (!completed) {
-            router.replace('/(onboarding)/select-mascots');
-          }
+          if (!completed) router.replace('/(onboarding)/select-mascots');
         }).catch(() => {
           setIsCheckingOnboarding(false);
-          setOnboardingChecked(true); // Don't keep retrying
+          setOnboardingChecked(true);
         });
       }
     }
   }, [user, isLoading, segments, onboardingChecked, isCheckingOnboarding]);
 
-  if (isLoading) {
+  if (isLoading || (user && isCheckingOnboarding && segments[0] !== '(onboarding)')) {
     return (
       <View style={styles.loading}>
         <ActivityIndicator size="large" />
       </View>
     );
   }
-
-  // Show loading only when actively checking onboarding, not forever
-  if (user && isCheckingOnboarding && segments[0] !== '(onboarding)') {
-    return (
-      <View style={styles.loading}>
-        <ActivityIndicator size="large" />
-      </View>
-    );
-  }
-
   return <>{children}</>;
 }
 
@@ -142,18 +112,16 @@ export default function RootLayout() {
           <ThemeProvider>
             <StatusBarWrapper />
             <I18nProvider>
-              <AuthGate>
-                <Stack
-                  screenOptions={{
-                    headerShown: false,
-                  }}
-                >
-                  <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-                  <Stack.Screen name="(auth)" options={{ headerShown: false }} />
-                  <Stack.Screen name="(onboarding)" options={{ headerShown: false }} />
-                  <Stack.Screen name="chat/[mascotId]" options={{ headerShown: false }} />
-                </Stack>
-              </AuthGate>
+              <ChatPreferencesProvider>
+                <AuthGate>
+                  <Stack screenOptions={{ headerShown: false }}>
+                    <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+                    <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+                    <Stack.Screen name="(onboarding)" options={{ headerShown: false }} />
+                    <Stack.Screen name="chat/[mascotId]" options={{ headerShown: false }} />
+                  </Stack>
+                </AuthGate>
+              </ChatPreferencesProvider>
             </I18nProvider>
           </ThemeProvider>
         </PreferencesProvider>
@@ -169,4 +137,3 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
 });
-

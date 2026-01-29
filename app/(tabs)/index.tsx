@@ -25,6 +25,10 @@ import { useMergedMascots } from '@/hooks/useMergedMascots';
 // Responsive breakpoint
 const DESKTOP_BREAKPOINT = 768;
 
+import { useChatPreferences } from '@/context/ChatPreferencesContext';
+
+// ...
+
 export default function HomeScreen() {
   const { colors } = useTheme();
   const { user } = useAuth();
@@ -35,9 +39,15 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const [selectedIndex, setSelectedIndex] = useState(2); // Start with Panda selected (index 2)
   const [message, setMessage] = useState('');
-  const [deepThinkingEnabled, setDeepThinkingEnabled] = useState(false);
-  const [chatLLM, setChatLLM] = useState<'auto' | 'openai' | 'gemini' | 'perplexity'>('auto');
+
+  const {
+    webSearchEnabled, setWebSearchEnabled,
+    deepThinkingEnabled, setDeepThinkingEnabled,
+    llm: chatLLM, setLLM: setChatLLM
+  } = useChatPreferences();
+
   const [selectedMascotDetails, setSelectedMascotDetails] = useState<OwnedMascot | null>(null);
+  const [hoveredSkillPrompt, setHoveredSkillPrompt] = useState<string | null>(null);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
 
   const isDesktop = width >= DESKTOP_BREAKPOINT;
@@ -103,7 +113,7 @@ export default function HomeScreen() {
     if (!selectedMascot) return [];
 
     if (dbSkills.length > 0) {
-      return dbSkills.map((s) => ({ id: s.id, label: s.skill_label }));
+      return dbSkills.map((s) => ({ id: s.id, label: s.skill_label, prompt: s.skill_prompt || undefined }));
     }
     // Fallback to hardcoded skills if available
     if (selectedMascot.skills && selectedMascot.skills.length > 0) {
@@ -145,16 +155,16 @@ export default function HomeScreen() {
     // Check if this is a database skill (has UUID-like ID)
     const isDbSkill = skill.id && skill.id.includes('-') && skill.id.length > 10;
 
-    // Navigate to chat with:
-    // - questionPrompt: mascot's question (shown as first assistant message)
-    // - initialMessage: the skill label (auto-sent as user's first message)
-    // - skillId: if from database, pass the skill ID for combined prompting
+    // Navigate to chat with params
     router.push({
       pathname: `/chat/${selectedMascot.id}`,
       params: {
         questionPrompt: selectedMascot.questionPrompt,
         initialMessage: skill.label,
         ...(isDbSkill && { skillId: skill.id }),
+        webSearch: webSearchEnabled ? 'true' : 'false',
+        deepThinking: deepThinkingEnabled ? 'true' : 'false',
+        llm: chatLLM,
       },
     });
   };
@@ -163,11 +173,7 @@ export default function HomeScreen() {
     const textToSend = typeof text === 'string' ? text : message;
     if (!textToSend.trim() && !attachment) return;
 
-    // Navigate to chat with:
-    // - questionPrompt: mascot's question (shown as first assistant message)
-    // - initialMessage: user's typed message (auto-sent)
-    // - initialAttachment: user's attachment (auto-sent)
-    // - webSearch, deepThinking, chatLLM: carry over settings
+    // Navigate to chat with params
     router.push({
       pathname: `/chat/${selectedMascot.id}`,
       params: {
@@ -180,10 +186,13 @@ export default function HomeScreen() {
         }),
         deepThinking: deepThinkingEnabled ? 'true' : 'false',
         llm: chatLLM,
+        webSearch: webSearchEnabled ? 'true' : 'false',
       },
     });
     setMessage('');
   };
+
+
 
   const handleMascotCardPress = async (mascot: any, actualIndex: number, isSelected: boolean) => {
     // Find the full OwnedMascot from availableMascots
@@ -201,6 +210,27 @@ export default function HomeScreen() {
       } catch (error) {
         console.error('Error saving last mascot:', error);
       }
+    }
+  };
+
+  const handleSkillHover = (skill: Skill | null) => {
+    if (!skill) {
+      setHoveredSkillPrompt(null);
+      return;
+    }
+
+    // Find full skill data to get prompt
+    // 1. Check DB skills
+    const dbSkill = dbSkills.find(s => s.id === skill.id);
+    if (dbSkill?.skill_prompt) {
+      // Show 25% of the prompt
+      const prompt = dbSkill.skill_prompt;
+      const length = Math.ceil(prompt.length * 0.25);
+      // Ensure we show at least something, but cut off nicely
+      const preview = prompt.substring(0, length).trim() + '...';
+      setHoveredSkillPrompt(preview);
+    } else {
+      setHoveredSkillPrompt(null);
     }
   };
 
@@ -245,13 +275,31 @@ export default function HomeScreen() {
           questionPrompt={selectedMascot.questionPrompt}
           skills={displaySkills}
           onSkillPress={handleSkillPress}
+          onSkillHover={handleSkillHover}
           keyboardVisible={keyboardVisible}
           skillsLoading={skillsLoading}
           isDesktop={isDesktop}
         />
 
         {/* Spacer to push carousel and input to bottom */}
-        <View style={styles.spacer} />
+        <View style={styles.spacer}>
+          {hoveredSkillPrompt && !keyboardVisible && (
+            <View style={styles.previewContainer}>
+              <Text
+                style={[
+                  styles.previewText,
+                  {
+                    color: colors.textMuted,
+                    fontFamily: fontFamilies.figtree.regular
+                  }
+                ]}
+                numberOfLines={3}
+              >
+                {hoveredSkillPrompt}
+              </Text>
+            </View>
+          )}
+        </View>
 
         {/* Bottom Section: Carousel + Input (Pinned to Bottom) */}
         <View style={styles.bottomSection}>
@@ -289,6 +337,8 @@ export default function HomeScreen() {
               onLLMChange={setChatLLM}
               deepThinkingEnabled={deepThinkingEnabled}
               onDeepThinkingToggle={() => setDeepThinkingEnabled(!deepThinkingEnabled)}
+              webSearchEnabled={webSearchEnabled}
+              onWebSearchToggle={() => setWebSearchEnabled(!webSearchEnabled)}
               isAdmin={isAdmin}
               isPro={isSubscribed || isAdmin}
               onVoicePress={() => console.log('Voice input not implemented on home screen')}
@@ -485,5 +535,21 @@ const styles = StyleSheet.create({
   },
   modalContent: {
     // Prevents clicks from propagating to overlay
+  },
+  previewContainer: {
+    paddingHorizontal: 24,
+    paddingTop: 8,
+    alignItems: 'center',
+    maxWidth: 600,
+    alignSelf: 'center',
+  },
+  previewText: {
+    fontSize: 14,
+    textAlign: 'center',
+    fontStyle: 'normal',
+    lineHeight: 20,
+    opacity: 0.8,
+    // @ts-ignore
+    userSelect: 'none',
   },
 });

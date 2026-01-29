@@ -14,7 +14,7 @@ interface ChatRequest {
   messages: Array<{ role: 'user' | 'assistant'; content: string }>;
   conversationId?: string;
   skillId?: string;
-  provider?: 'openai' | 'gemini' | 'perplexity';
+  provider?: 'openai' | 'gemini' | 'perplexity' | 'grok';
   deepThinking?: boolean;
   image?: { mimeType: string; base64: string };
   taskCategory?: string; // For auto provider selection
@@ -32,6 +32,8 @@ serve(async (req: Request) => {
     const geminiApiKey = Deno.env.get('Gemini_API_KEY') || Deno.env.get('GEMINI_API_KEY');
     const openaiApiKey = Deno.env.get('OPENAI_API_KEY');
     const perplexityApiKey = Deno.env.get('PERPLEXITY_API_KEY');
+    const xaiApiKey = Deno.env.get('XAI_API_KEY') || Deno.env.get('Grok_API_Key');
+    const tavilyApiKey = Deno.env.get('TAVILY_API_KEY');
 
     if (!supabaseUrl || !supabaseServiceKey) {
       return new Response(
@@ -225,10 +227,17 @@ serve(async (req: Request) => {
       : provider;
 
     // FORCE SWITCH: If web search is enabled, we MUST use a provider that supports it.
-    // Our OpenAI implementation does not have web tools.
-    // If the user selected OpenAI (or Auto picked it), but wants Web Search, force Gemini.
-    if (webSearch && useProvider !== 'perplexity' && useProvider !== 'gemini') {
-      console.log('[Edge Function] Web search enabled: Switching provider from', useProvider, 'to gemini');
+    // Our OpenAI implementation now supports web tools via Tavily if configured.
+    // If the user selected OpenAI (or Auto picked it), but wants Web Search, check if we can support it.
+
+    const supportsWebSearch =
+      useProvider === 'perplexity' ||
+      useProvider === 'gemini' ||
+      useProvider === 'grok' ||
+      (useProvider === 'openai' && !!tavilyApiKey);
+
+    if (webSearch && !supportsWebSearch) {
+      console.log('[Edge Function] Web search enabled but provider/config missing: Switching provider from', useProvider, 'to gemini');
       useProvider = 'gemini';
     }
 
@@ -236,13 +245,56 @@ serve(async (req: Request) => {
       // Using 2026 standard models (2.5 series for Gemini, sonar-large for Perplexity)
       ? (useProvider === 'openai' ? 'gpt-4o' :
         useProvider === 'perplexity' ? 'sonar-pro' :
-          'gemini-2.5-pro')
+          useProvider === 'grok' ? 'grok-4-1-fast-reasoning' :
+            'gemini-2.5-pro')
       : (useProvider === 'openai' ? 'gpt-4o-mini' :
         useProvider === 'perplexity' ? 'sonar' :
-          'gemini-2.5-flash');
+          useProvider === 'grok' ? 'grok-4-1-fast-reasoning' :
+            'gemini-2.5-flash');
 
     // OpenAI
     if (useProvider === 'openai' && openaiApiKey) {
+      // Perform Web Search if enabled and Key is present
+      if (webSearch && tavilyApiKey && messages.length > 0) {
+        try {
+          // Use the last user message as the query
+          // In a real app, you might want to generate a search query from conversation history
+          const lastUserMsg = messages[messages.length - 1];
+          const query = lastUserMsg.content;
+
+          console.log('[Edge Function] Performing Tavily search for query:', query.substring(0, 50));
+
+          const searchResponse = await fetch('https://api.tavily.com/search', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              api_key: tavilyApiKey,
+              query: query,
+              search_depth: "basic",
+              include_answer: false,
+              max_results: 5
+            })
+          });
+
+          if (searchResponse.ok) {
+            const searchData = await searchResponse.json();
+            // Format results
+            const resultsContext = searchData.results
+              .map((r: any) => `[Title: ${r.title}]\n[URL: ${r.url}]\n${r.content}`)
+              .join('\n\n');
+
+            if (resultsContext) {
+              systemPrompt += `\n\n---\n\nWEB SEARCH RESULTS (Current Date: ${new Date().toISOString().split('T')[0]}):\n\nThe user has requested a web search. Use the following search results to answer the question. Cite your sources using [Title](URL) format.\n\n${resultsContext}\n\n---`;
+              console.log('[Edge Function] Added search results to system prompt');
+            }
+          } else {
+            console.warn('[Edge Function] Tavily search failed:', await searchResponse.text());
+          }
+        } catch (e) {
+          console.error('[Edge Function] Error during Tavily search:', e);
+        }
+      }
+
       const openaiMessages = [
         { role: 'system', content: systemPrompt },
         ...messages.map((m, index) => {
@@ -384,6 +436,114 @@ serve(async (req: Request) => {
             const data = line.slice(6);
             if (data === '[DONE]') {
               controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ done: true, model: useModel, provider: 'perplexity' })}\n\n`));
+            } else {
+              try {
+                const parsed = JSON.parse(data);
+                const content = parsed.choices?.[0]?.delta?.content;
+                if (content) {
+                  controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ content })}\n\n`));
+                }
+              } catch {
+                // Skip invalid JSON
+              }
+            }
+          }
+        },
+      });
+
+      return new Response(response.body?.pipeThrough(transformStream), {
+        headers: {
+          ...corsHeaders,
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+        },
+      });
+    }
+
+    // Grok (xAI)
+    if (useProvider === 'grok') {
+      if (!xaiApiKey) {
+        return new Response(
+          JSON.stringify({ error: 'XAI_API_KEY (or Grok_API_Key) check failed. Please add it to Supabase Secrets.' }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // Perform Web Search if enabled and Key is present (Manual Grounding)
+      if (webSearch && tavilyApiKey && messages.length > 0) {
+        try {
+          const lastUserMsg = messages[messages.length - 1];
+          const query = lastUserMsg.content;
+          console.log('[Edge Function] performing Tavily search for Grok, query:', query.substring(0, 50));
+
+          const searchResponse = await fetch('https://api.tavily.com/search', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              api_key: tavilyApiKey,
+              query: query,
+              search_depth: "basic",
+              include_answer: false,
+              max_results: 5
+            })
+          });
+
+          if (searchResponse.ok) {
+            const searchData = await searchResponse.json();
+            const resultsContext = searchData.results
+              .map((r: any) => `[Title: ${r.title}]\n[URL: ${r.url}]\n${r.content}`)
+              .join('\n\n');
+
+            if (resultsContext) {
+              // Update system prompt with search results
+              systemPrompt += `\n\n---\n\nWEB SEARCH RESULTS (Current Date: ${new Date().toISOString().split('T')[0]}):\n\nThe user has requested a web search. Use the following search results to answer the question. Cite your sources using [Title](URL) format.\n\n${resultsContext}\n\n---`;
+              console.log('[Edge Function] Added search results to system prompt for Grok');
+            }
+          } else {
+            console.warn('[Edge Function] Tavily search failed:', await searchResponse.text());
+          }
+        } catch (e) {
+          console.error('[Edge Function] Error during Tavily search for Grok:', e);
+        }
+      }
+
+      // Proceed with Grok logic (xaiApiKey is guaranteed truthy here)
+      const grokMessages = [
+        { role: 'system', content: systemPrompt },
+        ...messages.map((m) => ({ role: m.role, content: m.content })),
+      ];
+
+      const response = await fetch('https://api.x.ai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${xaiApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: useModel,
+          messages: grokMessages,
+          stream: true,
+          // tools removed to avoid API errors
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.text();
+        return new Response(
+          JSON.stringify({ error: `Grok error: ${error}` }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const transformStream = new TransformStream({
+        async transform(chunk, controller) {
+          const text = new TextDecoder().decode(chunk);
+          const lines = text.split('\n').filter(line => line.startsWith('data: '));
+
+          for (const line of lines) {
+            const data = line.slice(6);
+            if (data === '[DONE]') {
+              controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ done: true, model: useModel, provider: 'grok' })}\n\n`));
             } else {
               try {
                 const parsed = JSON.parse(data);

@@ -5,7 +5,7 @@ import { useAuth } from '@/services/auth';
 
 type ThemeMode = 'light' | 'dark';
 type Language = 'en' | 'de' | 'es';
-export type LLMProvider = 'gemini' | 'openai' | 'perplexity';
+export type LLMProvider = 'gemini' | 'openai' | 'perplexity' | 'grok';
 export type LLMPreference = 'auto' | LLMProvider;
 
 export const LLM_OPTIONS: { code: LLMPreference; name: string; description: string }[] = [
@@ -13,10 +13,11 @@ export const LLM_OPTIONS: { code: LLMPreference; name: string; description: stri
   { code: 'gemini', name: 'Google Gemini', description: 'Fast & efficient' },
   { code: 'openai', name: 'OpenAI GPT', description: 'Most capable' },
   { code: 'perplexity', name: 'Perplexity', description: 'Web-grounded answers' },
+  { code: 'grok', name: 'Grok 2', description: 'Fun & Uncensored' },
 ];
 
 // Task categories that help determine which AI is best
-export type TaskCategory = 
+export type TaskCategory =
   | 'analysis'      // Data analysis, research - OpenAI excels
   | 'creative'      // Writing, content creation - OpenAI excels
   | 'coding'        // Code generation, debugging - OpenAI excels
@@ -110,10 +111,10 @@ export const PreferencesProvider: React.FC<{ children: React.ReactNode }> = ({ c
           .select('theme, language')
           .eq('id', user.id)
           .maybeSingle();
-        
+
         const profile = profileResult.data as ProfileRowBasic | null;
         const profileError = profileResult.error;
-        
+
         // Skip preferred_llm query for now - column doesn't exist yet
         // TODO: Uncomment after running migration 002_add_preferred_llm.sql
         let preferredLLM: LLMPreference = 'auto';
@@ -160,7 +161,7 @@ export const PreferencesProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   const setTheme = useCallback(async (newTheme: ThemeMode) => {
     setThemeState(newTheme);
-    
+
     // Save to local storage
     await AsyncStorage.setItem(STORAGE_KEYS.theme, newTheme);
 
@@ -175,7 +176,7 @@ export const PreferencesProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   const setLanguage = useCallback(async (newLanguage: Language) => {
     setLanguageState(newLanguage);
-    
+
     // Save to local storage
     await AsyncStorage.setItem(STORAGE_KEYS.language, newLanguage);
 
@@ -190,7 +191,7 @@ export const PreferencesProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   const setPreferredLLM = useCallback(async (newLLM: LLMPreference) => {
     setPreferredLLMState(newLLM);
-    
+
     // Save to local storage
     await AsyncStorage.setItem(STORAGE_KEYS.preferredLLM, newLLM);
 

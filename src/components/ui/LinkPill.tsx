@@ -8,6 +8,8 @@ export type LinkPillState = 'default' | 'hover';
 export type LinkPillProps = {
   label: string;
   onPress?: () => void;
+  onHoverIn?: () => void;
+  onHoverOut?: () => void;
   /** Force a specific state for preview purposes */
   forceState?: LinkPillState;
 };
@@ -15,6 +17,8 @@ export type LinkPillProps = {
 export function LinkPill({
   label,
   onPress,
+  onHoverIn,
+  onHoverOut,
   forceState,
 }: LinkPillProps) {
   const { colors } = useTheme();
@@ -40,8 +44,14 @@ export function LinkPill({
   return (
     <Pressable
       onPress={onPress}
-      onHoverIn={() => !forceState && setIsHoveredInternal(true)}
-      onHoverOut={() => !forceState && setIsHoveredInternal(false)}
+      onHoverIn={() => {
+        if (!forceState) setIsHoveredInternal(true);
+        onHoverIn?.();
+      }}
+      onHoverOut={() => {
+        if (!forceState) setIsHoveredInternal(false);
+        onHoverOut?.();
+      }}
       style={[
         styles.container,
         webTransitionStyle,
@@ -69,9 +79,9 @@ export function LinkPill({
       {/* Arrow icon - only show on hover */}
       {isHovered && (
         <View style={styles.iconContainer}>
-          <Icon 
-            name="arrow-up-right" 
-            size={12} 
+          <Icon
+            name="arrow-up-right"
+            size={12}
             color={colors.primary}
           />
         </View>

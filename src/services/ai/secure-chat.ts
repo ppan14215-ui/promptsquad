@@ -8,7 +8,7 @@ export type ChatMessage = {
 export type SecureChatResponse = {
   content: string;
   model: string;
-  provider?: 'openai' | 'gemini' | 'perplexity';
+  provider?: 'openai' | 'gemini' | 'perplexity' | 'grok';
   citations?: string[]; // Citation URLs from Perplexity
 };
 
@@ -21,7 +21,7 @@ export async function secureChatStream(
   onChunk: (chunk: string) => void,
   conversationId?: string,
   skillId?: string,
-  provider?: 'openai' | 'gemini' | 'perplexity',
+  provider?: 'openai' | 'gemini' | 'perplexity' | 'grok',
   deepThinking?: boolean,
   image?: { mimeType: string; base64: string },
   taskCategory?: string,
@@ -92,6 +92,7 @@ export async function secureChatStream(
   if (image) requestBody.image = image;
   if (taskCategory) requestBody.taskCategory = taskCategory;
   if (webSearch !== undefined) requestBody.webSearch = webSearch;
+  if (provider) requestBody.provider = provider;
 
   // Dev/Prod Separation:
   // - Localhost (__DEV__): Uses 'chat-dev' for safe testing
@@ -188,7 +189,7 @@ export async function secureChatStream(
       const lines = text.split('\n').filter((line) => line.startsWith('data: '));
       let fullContent = '';
       let model = '';
-      let actualProvider: 'openai' | 'gemini' | 'perplexity' | undefined = undefined;
+      let actualProvider: 'openai' | 'gemini' | 'perplexity' | 'grok' | undefined = undefined;
       let citations: string[] | undefined = undefined;
 
       for (const line of lines) {
@@ -219,7 +220,7 @@ export async function secureChatStream(
   const decoder = new TextDecoder();
   let fullContent = '';
   let model = '';
-  let actualProvider: 'openai' | 'gemini' | 'perplexity' | undefined = undefined;
+  let actualProvider: 'openai' | 'gemini' | 'perplexity' | 'grok' | undefined = undefined;
   let citations: string[] | undefined = undefined;
 
   while (true) {
@@ -264,7 +265,7 @@ export async function secureChat(
   messages: ChatMessage[],
   conversationId?: string,
   skillId?: string,
-  provider?: 'openai' | 'gemini' | 'perplexity',
+  provider?: 'openai' | 'gemini' | 'perplexity' | 'grok',
   deepThinking?: boolean,
   image?: { mimeType: string; base64: string },
   taskCategory?: string

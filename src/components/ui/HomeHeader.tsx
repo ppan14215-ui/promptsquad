@@ -9,6 +9,7 @@ export type HomeHeaderProps = {
   questionPrompt: string;
   skills: Skill[];
   onSkillPress: (skill: Skill) => void;
+  onSkillHover?: (skill: Skill | null) => void;
   keyboardVisible?: boolean;
   skillsLoading?: boolean;
   isDesktop?: boolean;
@@ -19,6 +20,7 @@ export function HomeHeader({
   questionPrompt,
   skills,
   onSkillPress,
+  onSkillHover,
   keyboardVisible = false,
   skillsLoading = false,
   isDesktop = false,
@@ -68,7 +70,13 @@ export function HomeHeader({
               <ActivityIndicator size="small" color={colors.primary} />
             ) : (
               skills.map((skill) => (
-                <LinkPill key={skill.id} label={skill.label} onPress={() => onSkillPress(skill)} />
+                <LinkPill
+                  key={skill.id}
+                  label={skill.label}
+                  onPress={() => onSkillPress(skill)}
+                  onHoverIn={() => onSkillHover?.(skill)}
+                  onHoverOut={() => onSkillHover?.(null)}
+                />
               ))
             )}
           </View>

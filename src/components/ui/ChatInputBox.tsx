@@ -295,7 +295,7 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
                     },
                   ]}
                 >
-                  {chatLLM === 'auto' ? 'Auto' : chatLLM === 'gemini' ? 'Gemini' : chatLLM === 'perplexity' ? 'Perplexity' : chatLLM === 'openai' ? 'GPT' : 'Auto'}
+                  {chatLLM === 'auto' ? 'Auto' : chatLLM === 'gemini' ? 'Gemini' : chatLLM === 'perplexity' ? 'Perplexity' : chatLLM === 'grok' ? 'Grok' : chatLLM === 'openai' ? 'GPT' : 'Auto'}
                 </Text>
               </Pressable>
 
@@ -314,8 +314,8 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
                   ]}
                 >
                   {LLM_OPTIONS.map((option) => {
-                    const isPerplexity = option.code === 'perplexity';
-                    const isLocked = isPerplexity && !isPro && !isAdmin;
+                    const isPerplexityOrGrok = option.code === 'perplexity' || option.code === 'grok';
+                    const isLocked = isPerplexityOrGrok && !isPro && !isAdmin && !__DEV__;
 
                     return (
                       <Pressable
@@ -346,7 +346,7 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
                           >
                             {option.name}
                           </Text>
-                          {isPerplexity && !isPro && !isAdmin && (
+                          {isPerplexityOrGrok && !isPro && !isAdmin && (
                             <View style={{ backgroundColor: colors.primary, paddingHorizontal: 4, paddingVertical: 2, borderRadius: 4, marginLeft: 6 }}>
                               <Text style={{ fontFamily: fontFamilies.figtree.semiBold, fontSize: 9, color: '#FFFFFF' }}>PRO</Text>
                             </View>

@@ -616,6 +616,7 @@ export default function StoreScreen() {
         return dbSkills.map((skill: MascotSkill) => ({
           id: skill.id,
           label: skill.skill_label,
+          prompt: skill.skill_prompt || undefined,
         }));
       }
       // Fallback to hardcoded skills

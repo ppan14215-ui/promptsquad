@@ -23,6 +23,7 @@ const SPEECH_RECOGNITION_AVAILABLE = Platform.OS === 'web';
 import { useTheme, fontFamilies, textStyles, shadowToCSS, shadowToNative } from '@/design-system';
 import { useI18n } from '@/i18n';
 import { usePreferences, selectBestProvider, TaskCategory, LLMPreference } from '@/services/preferences';
+import { useChatPreferences } from '@/context/ChatPreferencesContext';
 import { useSubscription } from '@/services/subscription';
 import { supabase } from '@/services/supabase';
 import { ChatHeader, LinkPill, ChatInputBox, SkillPreview, ChatHistory, Icon, BigPrimaryButton } from '@/components';
@@ -42,7 +43,7 @@ type Message = {
   role: MessageRole;
   content: string;
   model?: string;
-  provider?: 'openai' | 'gemini' | 'perplexity'; // Provider used for this message
+  provider?: 'openai' | 'gemini' | 'perplexity' | 'grok'; // Provider used for this message
   citations?: string[]; // Citation URLs from Perplexity
   isThinking?: boolean;
   attachment?: {
@@ -411,6 +412,7 @@ export default function ChatScreen() {
     skillId, // ID of skill selected from home
     deepThinking, // 'true' or 'false' from home screen
     llm, // LLM preference from home screen
+    webSearch, // 'true' or 'false' from home screen
     conversationId: urlConversationId, // Existing conversation ID
   } = useLocalSearchParams<{
     mascotId: string;
@@ -419,6 +421,7 @@ export default function ChatScreen() {
     skillId?: string; // ID of skill selected from home
     deepThinking?: string; // 'true' or 'false' from home screen
     llm?: LLMPreference; // LLM preference from home screen
+    webSearch?: string; // 'true' or 'false' from home screen
     conversationId?: string; // Existing conversation ID
     initialAttachmentUri?: string;
     initialAttachmentMime?: string;
@@ -643,12 +646,17 @@ export default function ChatScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [streamingContent, setStreamingContent] = useState('');
   const [isRecording, setIsRecording] = useState(false);
-  const [chatLLM, setChatLLM] = useState<LLMPreference>(llm || 'auto');
+
+  const {
+    webSearchEnabled, setWebSearchEnabled,
+    deepThinkingEnabled, setDeepThinkingEnabled,
+    llm: chatLLM, setLLM: setChatLLM
+  } = useChatPreferences();
+
   const [showLLMPicker, setShowLLMPicker] = useState(false);
-  const [webSearchEnabled, setWebSearchEnabled] = useState(true);
   // Removed old autoScroll state - now using isUserScrollingRef for scroll control
   const [showWebSearchTooltip, setShowWebSearchTooltip] = useState(false);
-  const [deepThinkingEnabled, setDeepThinkingEnabled] = useState(deepThinking === 'true');
+  // deepThinking provided by context
   const [showDeepThinkingTooltip, setShowDeepThinkingTooltip] = useState(false);
   const [showSkills, setShowSkills] = useState(true);
   const [webSources, setWebSources] = useState<WebSource[]>([]);
@@ -849,7 +857,7 @@ export default function ChatScreen() {
 
       // Convert chatLLM to provider override ('openai' | 'gemini' | 'perplexity' | undefined for auto)
       // If 'auto', intelligently choose based on query content and mascot task category
-      let providerOverride: 'openai' | 'gemini' | 'perplexity' | undefined;
+      let providerOverride: 'openai' | 'gemini' | 'perplexity' | 'grok' | undefined;
 
       if (chatLLM === 'auto') {
         // Check if query needs real-time data
@@ -863,10 +871,11 @@ export default function ChatScreen() {
           // Use task-based selection (OpenAI vs Gemini)
           providerOverride = undefined; // Let Edge Function decide based on taskCategory
         }
-      } else if (chatLLM === 'openai' || chatLLM === 'gemini' || chatLLM === 'perplexity') {
-        // Enforce Perplexity lock for non-pro users
-        if (chatLLM === 'perplexity' && !isSubscribed && !isAdmin) {
-          console.log('[Chat] User requested Perplexity but is not Pro/Admin - falling back to undefined (Auto)');
+      } else if (chatLLM === 'openai' || chatLLM === 'gemini' || chatLLM === 'perplexity' || chatLLM === 'grok') {
+        // Enforce Perplexity/Grok lock for non-pro users
+        // Allow in development for testing
+        if ((chatLLM === 'perplexity' || chatLLM === 'grok') && !isSubscribed && !isAdmin && !__DEV__) {
+          console.log('[Chat] User requested Premium Model but is not Pro/Admin - falling back to undefined (Auto)');
           providerOverride = undefined;
         } else {
           providerOverride = chatLLM; // Manual selection
@@ -1001,7 +1010,7 @@ export default function ChatScreen() {
         },
         conversationId || undefined, // Pass conversationId to Edge Function
         activeSkillId || undefined, // skillId
-        providerOverride, // provider override (undefined = system chooses)
+        providerOverride as any, // provider override (undefined = system chooses)
         deepThinkingEnabled, // Deep Thinking mode (uses pro models)
         attachment && attachment.base64 ? { mimeType: attachment.mimeType || 'image/jpeg', base64: attachment.base64 } : undefined,
         mascot.taskCategory, // Pass task category for auto provider selection
@@ -1011,7 +1020,7 @@ export default function ChatScreen() {
       const assistantContent = response.content;
 
       // Use the provider from the response (Edge Function tells us what was actually used)
-      const actualProvider: 'openai' | 'gemini' | 'perplexity' | undefined = response.provider ||
+      const actualProvider: 'openai' | 'gemini' | 'perplexity' | 'grok' | undefined = response.provider ||
         (providerOverride || // Fallback to user override if response doesn't include provider
           (response.model?.toLowerCase().includes('gpt') ? 'openai' :
             response.model?.toLowerCase().includes('gemini') ? 'gemini' :
@@ -1426,8 +1435,8 @@ export default function ChatScreen() {
       // Convert chatLLM to provider override ('openai' | 'gemini' | undefined for auto)
       // If 'auto', don't pass provider (let system choose based on mascot config or default)
       // If 'perplexity', treat as 'auto' for now (not supported in Edge Function yet)
-      const providerOverride: 'openai' | 'gemini' | undefined =
-        chatLLM === 'openai' || chatLLM === 'gemini' ? chatLLM : undefined;
+      const providerOverride: 'openai' | 'gemini' | 'perplexity' | 'grok' | undefined =
+        chatLLM === 'openai' || chatLLM === 'gemini' || chatLLM === 'perplexity' || chatLLM === 'grok' ? chatLLM : undefined;
 
       console.log('[Chat] Skill press - Provider override:', providerOverride || 'auto (system chooses)');
 
@@ -1532,7 +1541,7 @@ export default function ChatScreen() {
         },
         conversationId || undefined, // Pass conversationId to Edge Function
         skillIdToActivate || undefined, // skillId - pass it as backup (though prompt is in user message)
-        providerOverride, // provider override (undefined = system chooses)
+        providerOverride as any, // provider override (undefined = system chooses)
         deepThinkingEnabled, // Deep Thinking mode (uses pro models)
         undefined, // No image for skills
         mascot.taskCategory, // Pass task category for auto provider selection
@@ -1542,7 +1551,7 @@ export default function ChatScreen() {
       const assistantContent = response.content;
 
       // Use the provider from the response (Edge Function tells us what was actually used)
-      const actualProvider: 'openai' | 'gemini' | 'perplexity' | undefined = response.provider ||
+      const actualProvider: 'openai' | 'gemini' | 'perplexity' | 'grok' | undefined = response.provider ||
         (providerOverride || // Fallback to user override if response doesn't include provider
           (response.model?.toLowerCase().includes('gpt') ? 'openai' :
             response.model?.toLowerCase().includes('gemini') ? 'gemini' :
@@ -2210,7 +2219,7 @@ export default function ChatScreen() {
                         ]}
                       >
                         {message.provider ?
-                          `${message.provider === 'openai' ? 'OpenAI' : message.provider === 'perplexity' ? 'Perplexity' : 'Gemini'} ${message.model ? `(${message.model})` : ''}`.trim() :
+                          `${message.provider === 'openai' ? 'OpenAI' : message.provider === 'perplexity' ? 'Perplexity' : message.provider === 'grok' ? 'Grok' : 'Gemini'} ${message.model ? `(${message.model})` : ''}`.trim() :
                           message.model || 'Unknown'}
                       </Text>
                     </View>
