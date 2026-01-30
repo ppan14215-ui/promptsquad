@@ -178,7 +178,7 @@ export function MascotCard({
           })}
         >
           <MiniButton
-            label={isPro ? "Unlock for €1.99" : "Unlock for 99ct"}
+            label={isPro ? "Unlock for 2,99€" : "Unlock for 1,99€"}
             onPress={onPress}
           />
         </View>

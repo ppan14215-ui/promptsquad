@@ -136,7 +136,7 @@ export default function ComponentsScreen() {
   const [chatInput, setChatInput] = useState('');
   const [webSearchEnabled, setWebSearchEnabled] = useState(false);
   const [deepThinkingEnabled, setDeepThinkingEnabled] = useState(false);
-  const [chatLLM, setChatLLM] = useState<'auto' | 'openai' | 'gemini' | 'perplexity'>('auto');
+  const [chatLLM, setChatLLM] = useState<'auto' | 'openai' | 'gemini' | 'perplexity' | 'grok'>('auto');
   const [carouselIndex, setCarouselIndex] = useState(2);
   const [activeChatTab, setActiveChatTab] = useState('chat');
   const [isChatLiked, setIsChatLiked] = useState(false);

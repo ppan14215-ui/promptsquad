@@ -10,10 +10,10 @@ export type LLMPreference = 'auto' | LLMProvider;
 
 export const LLM_OPTIONS: { code: LLMPreference; name: string; description: string }[] = [
   { code: 'auto', name: 'Auto', description: 'Best model for the task' },
-  { code: 'gemini', name: 'Google Gemini', description: 'Fast & efficient' },
-  { code: 'openai', name: 'OpenAI GPT', description: 'Most capable' },
-  { code: 'perplexity', name: 'Perplexity', description: 'Web-grounded answers' },
-  { code: 'grok', name: 'Grok 2', description: 'Fun & Uncensored' },
+  { code: 'gemini', name: 'Google Gemini 3', description: 'Google Frontier (Preview)' },
+  { code: 'openai', name: 'OpenAI GPT-5.2', description: 'The most intelligent model' },
+  { code: 'perplexity', name: 'Perplexity Sonar', description: 'Deep web research' },
+  { code: 'grok', name: 'xAI Grok 4.1', description: 'xAI Flagship' },
 ];
 
 // Task categories that help determine which AI is best

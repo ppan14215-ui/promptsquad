@@ -143,44 +143,44 @@ export function useMascots() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    async function fetchMascots() {
-      try {
-        const { data, error } = await supabase
-          .from('mascots')
-          .select('id, name, subtitle, image_url, color, question_prompt, sort_order, is_free, is_active')
-          .order('sort_order', { ascending: true });
+  const fetchMascots = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('mascots')
+        .select('id, name, subtitle, image_url, color, question_prompt, sort_order, is_free, is_active')
+        .order('sort_order', { ascending: true });
 
-        if (error) {
-          // Self-healing: If unauthorized, force sign out
-          if (error.code === '401' || error.code === '406' || (error as any).status === 401 || (error as any).status === 406) {
-            logger.error('Auth error in fetchMascots, forcing sign out:', error);
-            await supabase.auth.signOut();
-            return;
-          }
-
-          setError(error.message);
-          setMascots([]);
-        } else {
-          setMascots((data || []).map((m: any) => ({
-            ...m,
-            is_pro: m.is_pro !== undefined ? m.is_pro : !m.is_free,
-            is_ready: m.is_active // Map ready status from active status
-          })));
-          setError(null);
+      if (error) {
+        // Self-healing: If unauthorized, force sign out
+        if (error.code === '401' || error.code === '406' || (error as any).status === 401 || (error as any).status === 406) {
+          logger.error('Auth error in fetchMascots, forcing sign out:', error);
+          await supabase.auth.signOut();
+          return;
         }
-      } catch (err: any) {
-        setError(err.message);
-        setMascots([]);
-      } finally {
-        setIsLoading(false);
-      }
-    }
 
-    fetchMascots();
+        setError(error.message);
+        setMascots([]);
+      } else {
+        setMascots((data || []).map((m: any) => ({
+          ...m,
+          is_pro: m.is_pro !== undefined ? m.is_pro : !m.is_free,
+          is_ready: m.is_active // Map ready status from active status
+        })));
+        setError(null);
+      }
+    } catch (err: any) {
+      setError(err.message);
+      setMascots([]);
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
 
-  return { mascots, isLoading, error };
+  useEffect(() => {
+    fetchMascots();
+  }, [fetchMascots]);
+
+  return { mascots, isLoading, error, refetch: fetchMascots };
 }
 
 // Hook to get skills for a mascot
@@ -549,11 +549,11 @@ export async function resetPersonalityToDefault(
   }
 
   // Get the current personality to find default_personality
-  const { data: current, error: fetchError } = await supabase
+  const { data: current, error: fetchError } = await (supabase
     .from('mascot_personality')
-    .select('default_personality')
+    .select('personality, default_personality')
     .eq('mascot_id', mascotId)
-    .single();
+    .single() as any);
 
   if (fetchError) {
     throw new Error(fetchError.message);

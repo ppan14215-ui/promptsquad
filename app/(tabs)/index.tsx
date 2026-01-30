@@ -21,6 +21,7 @@ import {
   mascotImages
 } from '@/config/mascots';
 import { useMergedMascots } from '@/hooks/useMergedMascots';
+import { resolveMascotColor } from '@/lib/utils/mascot-colors';
 
 // Responsive breakpoint
 const DESKTOP_BREAKPOINT = 768;
@@ -331,7 +332,7 @@ export default function HomeScreen() {
               onChangeText={setMessage}
               onSend={(text, attachment) => handleSendMessage(text, attachment)}
               placeholder={selectedMascot?.questionPrompt || 'Ask anything...'}
-              mascotColor={COLOR_MAP[selectedMascot.color]}
+              mascotColor={resolveMascotColor(selectedMascot.color)}
               showLLMPicker={true}
               chatLLM={chatLLM}
               onLLMChange={setChatLLM}

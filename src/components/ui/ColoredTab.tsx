@@ -1,6 +1,7 @@
 import React from 'react';
 import { Text, Pressable, Platform, StyleSheet } from 'react-native';
 import { useTheme, textStyles, fontFamilies } from '@/design-system';
+import { resolveMascotColor, getContrastColor as calculateContrast } from '@/lib/utils/mascot-colors';
 
 export type ColoredTabState = 'default' | 'active';
 
@@ -11,6 +12,10 @@ export type ColoredTabProps = {
   isActive?: boolean;
   /** Force a specific state for preview purposes */
   forceState?: ColoredTabState;
+  /** Background color for the active state (defaults to primaryBg) */
+  activeBgColor?: string;
+  /** Color for the text in active state (if not provided, calculated for contrast) */
+  activeTextColor?: string;
 };
 
 export function ColoredTab({
@@ -18,6 +23,8 @@ export function ColoredTab({
   onPress,
   isActive = false,
   forceState,
+  activeBgColor,
+  activeTextColor: manualActiveTextColor,
 }: ColoredTabProps) {
   const { colors, mode } = useTheme();
 
@@ -25,8 +32,14 @@ export function ColoredTab({
   const effectiveState: ColoredTabState = forceState ?? (isActive ? 'active' : 'default');
   const isActiveState = effectiveState === 'active';
 
-  // In dark mode, use white text for active state since primaryBg is dark
-  const activeTextColor = mode === 'dark' ? colors.buttonText : colors.primary;
+  // Calculate high-contrast text color if not provided
+  const getContrastColor = (bgColor: string) => {
+    if (!bgColor) return mode === 'dark' ? colors.buttonText : colors.primary;
+    return calculateContrast(bgColor);
+  };
+
+  const finalActiveBgColor = resolveMascotColor(activeBgColor) || colors.primaryBg;
+  const finalActiveTextColor = manualActiveTextColor || (activeBgColor ? calculateContrast(resolveMascotColor(activeBgColor)) : (mode === 'dark' ? colors.buttonText : colors.primary));
 
   // Web-specific transition style
   const webTransitionStyle = Platform.select({
@@ -43,7 +56,7 @@ export function ColoredTab({
         styles.container,
         webTransitionStyle,
         {
-          backgroundColor: isActiveState ? colors.primaryBg : 'transparent',
+          backgroundColor: isActiveState ? finalActiveBgColor : 'transparent',
           borderWidth: isActiveState ? 0 : 1,
           borderColor: colors.outline,
         },
@@ -57,7 +70,7 @@ export function ColoredTab({
             fontWeight: isActiveState ? '700' : '600',
             fontSize: textStyles.label.fontSize,
             letterSpacing: textStyles.label.letterSpacing,
-            color: isActiveState ? activeTextColor : colors.textMuted,
+            color: isActiveState ? finalActiveTextColor : colors.textMuted,
           },
         ]}
       >

@@ -242,15 +242,15 @@ serve(async (req: Request) => {
     }
 
     const useModel = deepThinking
-      // Using 2026 standard models (2.5 series for Gemini, sonar-large for Perplexity)
-      ? (useProvider === 'openai' ? 'gpt-4o' :
-        useProvider === 'perplexity' ? 'sonar-pro' :
-          useProvider === 'grok' ? 'grok-4-1-fast-reasoning' :
-            'gemini-2.5-pro')
-      : (useProvider === 'openai' ? 'gpt-4o-mini' :
+      // Using 2026 standard models (GPT-5, Gemini 3, Grok 4.1, Perplexity Sonar Reasoning)
+      ? (useProvider === 'openai' ? 'gpt-5.2' :
+        useProvider === 'perplexity' ? 'sonar-reasoning-pro' :
+          useProvider === 'grok' ? 'grok-4.1-fast-reasoning' :
+            'gemini-3-pro-preview')
+      : (useProvider === 'openai' ? 'gpt-5-mini' :
         useProvider === 'perplexity' ? 'sonar' :
-          useProvider === 'grok' ? 'grok-4-1-fast-reasoning' :
-            'gemini-2.5-flash');
+          useProvider === 'grok' ? 'grok-4-fast-non-reasoning' :
+            'gemini-3-flash-preview');
 
     // OpenAI
     if (useProvider === 'openai' && openaiApiKey) {

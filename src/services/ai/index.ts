@@ -9,7 +9,7 @@ export type SecureChatMessage = {
 
 // Types for compatibility
 export type AI_CONFIG = {
-  provider?: 'openai' | 'gemini';
+  provider?: 'openai' | 'gemini' | 'perplexity' | 'grok';
   deepThinking?: boolean;
 };
 

@@ -43,7 +43,7 @@ export const FREE_MASCOTS: OwnedMascot[] = [
         color: 'yellow',
         questionPrompt: 'What should we analyze?',
         personality: ['Bullish', 'Analytical', 'Strategic'],
-        models: ['GPT-4o', 'Gemini Pro', 'Perplexity'],
+        models: ['GPT-5.2', 'Gemini 3', 'Grok 4.1', 'Perplexity'],
         skills: [
             { id: '1-1', label: 'Stock analysis' },
             { id: '1-2', label: 'Competitive analysis' },
@@ -58,7 +58,7 @@ export const FREE_MASCOTS: OwnedMascot[] = [
         color: 'orange',
         questionPrompt: 'What should we write?',
         personality: ['Creative', 'Eloquent', 'Storyteller'],
-        models: ['GPT-4o', 'Gemini Pro', 'Perplexity'],
+        models: ['GPT-5.2', 'Gemini 3', 'Grok 4.1', 'Perplexity'],
         skills: [
             { id: '2-1', label: 'Blog posts' },
             { id: '2-2', label: 'Email drafts' },
@@ -73,7 +73,7 @@ export const FREE_MASCOTS: OwnedMascot[] = [
         color: 'green',
         questionPrompt: 'What can I help with?',
         personality: ['Empathetic', 'Intuitive', 'User-Centric'],
-        models: ['GPT-4o', 'Gemini Pro', 'Perplexity'],
+        models: ['GPT-5.2', 'Gemini 3', 'Grok 4.1', 'Perplexity'],
         skills: [
             { id: '3-1', label: 'User research' },
             { id: '3-2', label: 'Wireframing' },
@@ -88,7 +88,7 @@ export const FREE_MASCOTS: OwnedMascot[] = [
         color: 'pink',
         questionPrompt: 'How can I help you today?',
         personality: ['Supportive', 'Wise', 'Balanced'],
-        models: ['GPT-4o', 'Gemini Pro', 'Perplexity'],
+        models: ['GPT-5.2', 'Gemini 3', 'Grok 4.1', 'Perplexity'],
         skills: [
             { id: '4-1', label: 'Life coaching' },
             { id: '4-2', label: 'Decision making' },
@@ -106,7 +106,7 @@ export const PREMIUM_MASCOTS: OwnedMascot[] = [
         color: 'purple',
         questionPrompt: 'What shall we learn today?',
         personality: ['Patient', 'Educational', 'Wise'],
-        models: ['GPT-4o', 'Gemini Pro', 'Perplexity'],
+        models: ['GPT-5.2', 'Gemini 3', 'Grok 4.1', 'Perplexity'],
         skills: [
             { id: '5-1', label: 'Lesson planning' },
             { id: '5-2', label: 'Homework help' },
@@ -121,7 +121,7 @@ export const PREMIUM_MASCOTS: OwnedMascot[] = [
         color: 'teal',
         questionPrompt: 'What prompt can I help craft?',
         personality: ['Precise', 'Methodical', 'Optimized'],
-        models: ['GPT-4o', 'Gemini Pro', 'Perplexity'],
+        models: ['GPT-5.2', 'Gemini 3', 'Grok 4.1', 'Perplexity'],
         skills: [
             { id: '6-1', label: 'Prompt engineering' },
             { id: '6-2', label: 'AI optimization' },
@@ -136,7 +136,7 @@ export const PREMIUM_MASCOTS: OwnedMascot[] = [
         color: 'brown',
         questionPrompt: 'What data shall we explore?',
         personality: ['Detail-oriented', 'Logical', 'Data-Driven'],
-        models: ['GPT-4o', 'Gemini Pro', 'Perplexity'],
+        models: ['GPT-5.2', 'Gemini 3', 'Grok 4.1', 'Perplexity'],
         skills: [
             { id: '7-1', label: 'Data visualization' },
             { id: '7-2', label: 'Statistical analysis' },
@@ -151,7 +151,7 @@ export const PREMIUM_MASCOTS: OwnedMascot[] = [
         color: 'blue',
         questionPrompt: 'What needs a quick fix?',
         personality: ['Agile', 'Efficient', 'Resourceful'],
-        models: ['GPT-4o', 'Gemini Pro', 'Perplexity'],
+        models: ['GPT-5.2', 'Gemini 3', 'Grok 4.1', 'Perplexity'],
         skills: [
             { id: '8-1', label: 'Quick fixes' },
             { id: '8-2', label: 'Troubleshooting' },
@@ -166,7 +166,7 @@ export const PREMIUM_MASCOTS: OwnedMascot[] = [
         color: 'pink',
         questionPrompt: 'What shall we create?',
         personality: ['Innovative', 'Artistic', 'Visionary'],
-        models: ['GPT-4o', 'Gemini Pro', 'Perplexity'],
+        models: ['GPT-5.2', 'Gemini 3', 'Grok 4.1', 'Perplexity'],
         skills: [
             { id: '9-1', label: 'Brainstorming' },
             { id: '9-2', label: 'Ideation' },
@@ -181,7 +181,7 @@ export const PREMIUM_MASCOTS: OwnedMascot[] = [
         color: 'darkPurple',
         questionPrompt: 'What code shall we write?',
         personality: ['Logical', 'Technical', 'Debugger'],
-        models: ['GPT-4o', 'Gemini Pro', 'Perplexity'],
+        models: ['GPT-5.2', 'Gemini 3', 'Grok 4.1', 'Perplexity'],
         skills: [
             { id: '10-1', label: 'Code review' },
             { id: '10-2', label: 'Debugging' },
@@ -196,7 +196,7 @@ export const PREMIUM_MASCOTS: OwnedMascot[] = [
         color: 'brown',
         questionPrompt: 'What strategy shall we plan?',
         personality: ['Strategic', 'Visionary', 'Structural'],
-        models: ['GPT-4o', 'Gemini Pro', 'Perplexity'],
+        models: ['GPT-5.2', 'Gemini 3', 'Grok 4.1', 'Perplexity'],
         skills: [
             { id: '11-1', label: 'Business strategy' },
             { id: '11-2', label: 'Goal setting' },
@@ -211,7 +211,7 @@ export const PREMIUM_MASCOTS: OwnedMascot[] = [
         color: 'teal',
         questionPrompt: 'What marketing challenge can I help with?',
         personality: ['Persuasive', 'Viral', 'Growth-Minded'],
-        models: ['GPT-4o', 'Gemini Pro', 'Perplexity'],
+        models: ['GPT-5.2', 'Gemini 3', 'Grok 4.1', 'Perplexity'],
         skills: [
             { id: '12-1', label: 'Campaign planning' },
             { id: '12-2', label: 'Copywriting' },
@@ -226,7 +226,7 @@ export const PREMIUM_MASCOTS: OwnedMascot[] = [
         color: 'yellow',
         questionPrompt: 'What product question can I help with?',
         personality: ['Organized', 'Visionary', 'Leader'],
-        models: ['GPT-4o', 'Gemini Pro', 'Perplexity'],
+        models: ['GPT-5.2', 'Gemini 3', 'Grok 4.1', 'Perplexity'],
         skills: [
             { id: '13-1', label: 'PRD writing' },
             { id: '13-2', label: 'Feature prioritization' },
@@ -241,7 +241,7 @@ export const PREMIUM_MASCOTS: OwnedMascot[] = [
         color: 'orange',
         questionPrompt: 'How can I help your customers?',
         personality: ['Reliable', 'Patient', 'Helpful'],
-        models: ['GPT-4o', 'Gemini Pro', 'Perplexity'],
+        models: ['GPT-5.2', 'Gemini 3', 'Grok 4.1', 'Perplexity'],
         skills: [
             { id: '14-1', label: 'Customer support' },
             { id: '14-2', label: 'FAQ creation' },
@@ -256,7 +256,7 @@ export const PREMIUM_MASCOTS: OwnedMascot[] = [
         color: 'blue',
         questionPrompt: 'What career question can I help with?',
         personality: ['Inspiring', 'Experienced', 'Guiding'],
-        models: ['GPT-4o', 'Gemini Pro', 'Perplexity'],
+        models: ['GPT-5.2', 'Gemini 3', 'Grok 4.1', 'Perplexity'],
         skills: [
             { id: '15-1', label: 'Career coaching' },
             { id: '15-2', label: 'Resume review' },
@@ -271,7 +271,7 @@ export const PREMIUM_MASCOTS: OwnedMascot[] = [
         color: 'orange',
         questionPrompt: 'What project can I help manage?',
         personality: ['Organized', 'Efficient', 'Reliable'],
-        models: ['GPT-4o', 'Gemini Pro', 'Perplexity'],
+        models: ['GPT-5.2', 'Gemini 3', 'Grok 4.1', 'Perplexity'],
         skills: [
             { id: '16-1', label: 'Project planning' },
             { id: '16-2', label: 'Risk management' },
@@ -286,7 +286,7 @@ export const PREMIUM_MASCOTS: OwnedMascot[] = [
         color: 'green',
         questionPrompt: 'What research can I help with?',
         personality: ['Inquisitive', 'Thorough', 'Insightful'],
-        models: ['GPT-4o', 'Gemini Pro', 'Perplexity'],
+        models: ['GPT-5.2', 'Gemini 3', 'Grok 4.1', 'Perplexity'],
         skills: [
             { id: '17-1', label: 'Market analysis' },
             { id: '17-2', label: 'Trend research' },
@@ -301,7 +301,7 @@ export const PREMIUM_MASCOTS: OwnedMascot[] = [
         color: 'purple',
         questionPrompt: 'What agile question can I help with?',
         personality: ['Adaptive', 'Collaborative', 'Facilitator'],
-        models: ['GPT-4o', 'Gemini Pro', 'Perplexity'],
+        models: ['GPT-5.2', 'Gemini 3', 'Grok 4.1', 'Perplexity'],
         skills: [
             { id: '18-1', label: 'Sprint planning' },
             { id: '18-2', label: 'Retrospectives' },
@@ -316,7 +316,7 @@ export const PREMIUM_MASCOTS: OwnedMascot[] = [
         color: 'red',
         questionPrompt: 'What brand question can I help with?',
         personality: ['Bold', 'Distinctive', 'Strategic'],
-        models: ['GPT-4o', 'Gemini Pro', 'Perplexity'],
+        models: ['GPT-5.2', 'Gemini 3', 'Grok 4.1', 'Perplexity'],
         skills: [
             { id: '19-1', label: 'Brand positioning' },
             { id: '19-2', label: 'Voice & tone' },
@@ -331,7 +331,7 @@ export const PREMIUM_MASCOTS: OwnedMascot[] = [
         color: 'darkPurple',
         questionPrompt: 'What development question can I help with?',
         personality: ['Versatile', 'Technical', 'Builder'],
-        models: ['GPT-4o', 'Gemini Pro', 'Perplexity'],
+        models: ['GPT-5.2', 'Gemini 3', 'Grok 4.1', 'Perplexity'],
         skills: [
             { id: '20-1', label: 'Full-stack development' },
             { id: '20-2', label: 'API design' },

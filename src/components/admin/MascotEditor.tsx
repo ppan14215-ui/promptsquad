@@ -23,10 +23,12 @@ type MascotEditorProps = {
   currentName: string;
   currentSubtitle: string | null;
   currentIsPro?: boolean;
-  currentIsFree?: boolean; // New Prop
+  currentIsFree?: boolean;
   currentIsReady?: boolean;
+  currentSortOrder?: number;
+  currentColor?: string;
   onClose: () => void;
-  onSave: (name: string, subtitle: string, isPro: boolean, isFree: boolean, isReady: boolean) => Promise<void>;
+  onSave: (name: string, subtitle: string, isPro: boolean, isFree: boolean, isReady: boolean, sortOrder: number, color: string) => Promise<void>;
 };
 
 export function MascotEditor({
@@ -37,6 +39,8 @@ export function MascotEditor({
   currentIsPro = false,
   currentIsFree = false, // Default
   currentIsReady = false,
+  currentSortOrder = 0,
+  currentColor = 'yellow',
   onClose,
   onSave,
 }: MascotEditorProps) {
@@ -46,6 +50,8 @@ export function MascotEditor({
   const [isPro, setIsPro] = useState(currentIsPro);
   const [isFree, setIsFree] = useState(currentIsFree); // State
   const [isReady, setIsReady] = useState(currentIsReady);
+  const [sortOrder, setSortOrder] = useState(String(currentSortOrder));
+  const [color, setColor] = useState(currentColor);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -55,9 +61,11 @@ export function MascotEditor({
       setIsPro(currentIsPro);
       setIsFree(currentIsFree);
       setIsReady(currentIsReady);
+      setSortOrder(String(currentSortOrder));
+      setColor(currentColor);
       setError(null);
     }
-  }, [visible, currentName, currentSubtitle, currentIsPro, currentIsFree, currentIsReady]);
+  }, [visible, currentName, currentSubtitle, currentIsPro, currentIsFree, currentIsReady, currentSortOrder, currentColor]);
 
   const handleSave = async () => {
     if (!name.trim()) {
@@ -66,7 +74,7 @@ export function MascotEditor({
     }
 
     try {
-      await onSave(name.trim(), subtitle.trim(), isPro, isFree, isReady);
+      await onSave(name.trim(), subtitle.trim(), isPro, isFree, isReady, parseInt(sortOrder, 10) || 0, color);
       onClose();
     } catch (error) {
       // Error handling is done in the parent component
@@ -189,6 +197,37 @@ export function MascotEditor({
                 />
               </View>
 
+              <View style={styles.spacer} />
+
+              <InputField
+                label="Sort Order"
+                value={sortOrder}
+                onChangeText={setSortOrder}
+                placeholder="Enter sort order (e.g. 0, 1, 2...)"
+                keyboardType="numeric"
+              />
+
+              <View style={styles.spacer} />
+
+              <View style={styles.colorSelector}>
+                <Text style={[styles.switchLabel, { fontFamily: fontFamilies.figtree.medium, color: colors.text, marginBottom: 8 }]}>
+                  Mascot Color
+                </Text>
+                <View style={styles.colorGrid}>
+                  {['yellow', 'red', 'green', 'pink', 'purple', 'darkPurple', 'brown', 'teal', 'orange', 'blue'].map((c) => (
+                    <Pressable
+                      key={c}
+                      onPress={() => setColor(c)}
+                      style={[
+                        styles.colorCircle,
+                        { backgroundColor: (colors as any)[c] || c },
+                        color === c && { borderColor: colors.text, borderWidth: 2 }
+                      ]}
+                    />
+                  ))}
+                </View>
+              </View>
+
             </View>
           </ScrollView>
 
@@ -283,5 +322,21 @@ const styles = StyleSheet.create({
   },
   switchDescription: {
     fontSize: 13,
+  },
+  colorSelector: {
+    padding: 16,
+    borderWidth: 1,
+    borderRadius: 12,
+    borderColor: '#D9D9D9',
+  },
+  colorGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  colorCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
   },
 });

@@ -393,6 +393,8 @@ export default function ProfileScreen() {
                   case 'auto': return t.profile.auto;
                   case 'gemini': return t.profile.gemini;
                   case 'openai': return t.profile.openai;
+                  case 'perplexity': return t.profile.perplexity || option.name;
+                  case 'grok': return t.profile.grok || option.name;
                   default: return option.name;
                 }
               };
@@ -401,6 +403,8 @@ export default function ProfileScreen() {
                   case 'auto': return t.profile.autoDesc;
                   case 'gemini': return t.profile.geminiDesc;
                   case 'openai': return t.profile.openaiDesc;
+                  case 'perplexity': return t.profile.perplexityDesc || option.description;
+                  case 'grok': return t.profile.grokDesc || option.description;
                   default: return option.description;
                 }
               };

@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme, fontFamilies } from '@/design-system';
+import { resolveMascotColor, getContrastColor } from '@/lib/utils/mascot-colors';
 import {
   Icon,
   BigPrimaryButton,
@@ -31,7 +32,7 @@ export default function SkillsScreen() {
   const { colors } = useTheme();
   const { user } = useAuth();
   const { isAdmin, isLoading: isAdminLoading } = useIsAdmin();
-  const { mascots, isLoading: isMascotsLoading } = useMascots();
+  const { mascots, isLoading: isMascotsLoading, refetch: refetchMascots } = useMascots();
 
   const [selectedMascotId, setSelectedMascotId] = useState<string | null>(null);
   const [skillEditorVisible, setSkillEditorVisible] = useState(false);
@@ -113,7 +114,7 @@ export default function SkillsScreen() {
     refetchPersonality();
   };
 
-  const handleMascotSaved = async (name: string, subtitle: string, isPro: boolean, isFree: boolean, isReady: boolean) => {
+  const handleMascotSaved = async (name: string, subtitle: string, isPro: boolean, isFree: boolean, isReady: boolean, sortOrder: number, color: string) => {
     if (!selectedMascotId) return;
     try {
       await updateMascot(selectedMascotId, {
@@ -121,13 +122,50 @@ export default function SkillsScreen() {
         subtitle,
         is_pro: isPro,
         is_free: isFree,
-        is_ready: isReady
+        is_ready: isReady,
+        sort_order: sortOrder,
+        color
       });
-      // Refresh mascots list to show updated name/status
-      window.location.reload(); // Simple refresh for now
+      // Refresh mascots list without reloading the page
+      await refetchMascots();
     } catch (error) {
       console.error('Error updating mascot:', error);
       throw error;
+    }
+  };
+
+  const handleMoveMascot = async (mascotId: string, direction: 'left' | 'right') => {
+    const currentIndex = mascots.findIndex(m => m.id === mascotId);
+    if (direction === 'left' && currentIndex > 0) {
+      const otherMascot = mascots[currentIndex - 1];
+      let currentSort = mascots[currentIndex].sort_order ?? currentIndex;
+      let otherSort = otherMascot.sort_order ?? (currentIndex - 1);
+
+      // If they are equal, force a difference
+      if (currentSort === otherSort) {
+        currentSort = currentIndex;
+        otherSort = currentIndex - 1;
+      }
+
+      // Swap sort orders
+      await updateMascot(mascotId, { sort_order: otherSort });
+      await updateMascot(otherMascot.id, { sort_order: currentSort });
+      await refetchMascots();
+    } else if (direction === 'right' && currentIndex < mascots.length - 1) {
+      const otherMascot = mascots[currentIndex + 1];
+      let currentSort = mascots[currentIndex].sort_order ?? currentIndex;
+      let otherSort = otherMascot.sort_order ?? (currentIndex + 1);
+
+      // If they are equal, force a difference
+      if (currentSort === otherSort) {
+        currentSort = currentIndex;
+        otherSort = currentIndex + 1;
+      }
+
+      // Swap sort orders
+      await updateMascot(mascotId, { sort_order: otherSort });
+      await updateMascot(otherMascot.id, { sort_order: currentSort });
+      await refetchMascots();
     }
   };
 
@@ -210,30 +248,42 @@ export default function SkillsScreen() {
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.mascotScroll}>
           {mascots.map((mascot) => {
             const isSelected = mascot.id === selectedMascotId;
+            const mascotColor = resolveMascotColor(mascot.color);
             return (
-              <Pressable
-                key={mascot.id}
-                onPress={() => setSelectedMascotId(mascot.id)}
-                style={[
-                  styles.mascotPill,
-                  {
-                    backgroundColor: isSelected ? mascot.color || colors.primary : colors.surface,
-                    borderColor: isSelected ? mascot.color || colors.primary : colors.outline,
-                  },
-                ]}
-              >
-                <Text
+              <View key={mascot.id} style={styles.mascotTabWrapper}>
+                <Pressable
+                  onPress={() => setSelectedMascotId(mascot.id)}
                   style={[
-                    styles.mascotPillText,
+                    styles.mascotPill,
                     {
-                      fontFamily: fontFamilies.figtree.medium,
-                      color: isSelected ? '#FFFFFF' : colors.text,
+                      backgroundColor: isSelected ? mascotColor : colors.surface,
+                      borderColor: isSelected ? mascotColor : colors.outline,
                     },
                   ]}
                 >
-                  {mascot.name}
-                </Text>
-              </Pressable>
+                  <Text
+                    style={[
+                      styles.mascotPillText,
+                      {
+                        fontFamily: fontFamilies.figtree.medium,
+                        color: isSelected ? getContrastColor(mascotColor) : colors.text,
+                      },
+                    ]}
+                  >
+                    {mascot.name}
+                  </Text>
+                </Pressable>
+                {isAdmin && isSelected && (
+                  <View style={styles.reorderButtons}>
+                    <Pressable onPress={() => handleMoveMascot(mascot.id, 'left')} style={styles.reorderButton}>
+                      <Icon name="arrow-left" size={16} color={colors.textMuted} />
+                    </Pressable>
+                    <Pressable onPress={() => handleMoveMascot(mascot.id, 'right')} style={styles.reorderButton}>
+                      <Icon name="arrow-right" size={16} color={colors.textMuted} />
+                    </Pressable>
+                  </View>
+                )}
+              </View>
             );
           })}
         </ScrollView>
@@ -483,6 +533,8 @@ export default function SkillsScreen() {
           currentIsPro={selectedMascot.is_pro || false}
           currentIsFree={selectedMascot.is_free || false}
           currentIsReady={selectedMascot.is_ready !== false} // Default to true if null/undefined for backward compat
+          currentSortOrder={selectedMascot.sort_order || 0}
+          currentColor={selectedMascot.color}
           onClose={() => setMascotEditorVisible(false)}
           onSave={handleMascotSaved}
         />
@@ -673,5 +725,18 @@ const styles = StyleSheet.create({
   badgeText: {
     fontSize: 12,
     fontWeight: '500',
+  },
+  mascotTabWrapper: {
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: 4,
+    marginRight: 10,
+  },
+  reorderButtons: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  reorderButton: {
+    padding: 2,
   },
 });

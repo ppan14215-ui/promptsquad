@@ -64,7 +64,7 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
   isPro = false,
   maxWidth = 720,
 }, ref) => {
-  const { colors } = useTheme();
+  const { mode, colors } = useTheme();
   const [showLLMDropdown, setShowLLMDropdown] = useState(false);
   const [showWebSearchTooltip, setShowWebSearchTooltip] = useState(false);
   const [showDeepThinkingTooltip, setShowDeepThinkingTooltip] = useState(false);
@@ -291,11 +291,15 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
                     styles.llmPickerText,
                     {
                       fontFamily: fontFamilies.figtree.medium,
-                      color: colors.textMuted,
+                      color: mode === 'dark' ? '#FFFFFF' : colors.text,
                     },
                   ]}
                 >
-                  {chatLLM === 'auto' ? 'Auto' : chatLLM === 'gemini' ? 'Gemini' : chatLLM === 'perplexity' ? 'Perplexity' : chatLLM === 'grok' ? 'Grok' : chatLLM === 'openai' ? 'GPT' : 'Auto'}
+                  {chatLLM === 'auto' ? 'Auto' :
+                    chatLLM === 'gemini' ? 'Google Gemini 3' :
+                      chatLLM === 'perplexity' ? 'Perplexity Sonar' :
+                        chatLLM === 'grok' ? 'xAI Grok 4.1' :
+                          chatLLM === 'openai' ? 'OpenAI GPT-5.2' : 'Auto'}
                 </Text>
               </Pressable>
 
@@ -316,13 +320,14 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
                   {LLM_OPTIONS.map((option) => {
                     const isPerplexityOrGrok = option.code === 'perplexity' || option.code === 'grok';
                     const isLocked = isPerplexityOrGrok && !isPro && !isAdmin && !__DEV__;
+                    const isSelected = chatLLM === option.code;
 
                     return (
                       <Pressable
                         key={option.code}
                         style={[
                           styles.llmDropdownItem,
-                          chatLLM === option.code && { backgroundColor: colors.primaryBg },
+                          isSelected && { backgroundColor: colors.primaryBg },
                           isLocked && { opacity: 0.6 },
                         ]}
                         onPress={() => {
@@ -340,15 +345,15 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
                               styles.llmDropdownItemText,
                               {
                                 fontFamily: fontFamilies.figtree.semiBold,
-                                color: chatLLM === option.code ? colors.primary : colors.text,
+                                color: isSelected ? (mode === 'dark' ? '#FFFFFF' : colors.primary) : colors.text,
                               },
                             ]}
                           >
                             {option.name}
                           </Text>
                           {isPerplexityOrGrok && !isPro && !isAdmin && (
-                            <View style={{ backgroundColor: colors.primary, paddingHorizontal: 4, paddingVertical: 2, borderRadius: 4, marginLeft: 6 }}>
-                              <Text style={{ fontFamily: fontFamilies.figtree.semiBold, fontSize: 9, color: '#FFFFFF' }}>PRO</Text>
+                            <View style={{ backgroundColor: isSelected && mode === 'dark' ? '#FFFFFF' : colors.primary, paddingHorizontal: 4, paddingVertical: 2, borderRadius: 4, marginLeft: 6 }}>
+                              <Text style={{ fontFamily: fontFamilies.figtree.semiBold, fontSize: 9, color: isSelected && mode === 'dark' ? colors.primary : '#FFFFFF' }}>PRO</Text>
                             </View>
                           )}
                         </View>
@@ -357,7 +362,7 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
                             styles.llmDropdownItemDesc,
                             {
                               fontFamily: fontFamilies.figtree.regular,
-                              color: colors.textMuted,
+                              color: isSelected ? (mode === 'dark' ? 'rgba(255,255,255,0.8)' : colors.primary) : colors.textMuted,
                             },
                           ]}
                         >
@@ -379,7 +384,7 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
               onPress={handlePickImage}
               disabled={disabled}
             >
-              <Icon name="add" size={20} color={colors.icon} />
+              <Icon name="add" size={20} color={mode === 'dark' ? '#FFFFFF' : colors.icon} />
             </Pressable>
 
             {/* Buttons Container */}
@@ -409,7 +414,7 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
                     <Icon
                       name="globe"
                       size={18}
-                      color={webSearchEnabled ? colors.primary : colors.icon}
+                      color={webSearchEnabled ? (mode === 'dark' ? '#FFFFFF' : colors.primary) : colors.icon}
                     />
                   </Pressable>
                 </View>
@@ -421,7 +426,7 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
                   {showDeepThinkingTooltip && (
                     <View style={[styles.tooltip, { backgroundColor: colors.darkButtonHover }]}>
                       <Text style={[styles.tooltipText, { color: colors.buttonText, fontFamily: fontFamilies.figtree.medium }]}>
-                        Deep thinking
+                        Pro models
                       </Text>
                     </View>
                   )}
@@ -440,7 +445,7 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
                     <Icon
                       name="idea"
                       size={18}
-                      color={deepThinkingEnabled ? colors.primary : colors.icon}
+                      color={deepThinkingEnabled ? (mode === 'dark' ? '#FFFFFF' : colors.primary) : colors.icon}
                     />
                   </Pressable>
                 </View>

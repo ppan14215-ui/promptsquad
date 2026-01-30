@@ -26,6 +26,7 @@ export type ChatHeaderProps = {
   isTrial?: boolean;
   trialCount?: number;
   trialLimit?: number;
+  mascotColor?: string;
 };
 
 export function ChatHeader({
@@ -44,6 +45,7 @@ export function ChatHeader({
   isTrial = false,
   trialCount = 0,
   trialLimit = 5,
+  mascotColor,
 }: ChatHeaderProps) {
   const { colors } = useTheme();
 
@@ -121,7 +123,13 @@ export function ChatHeader({
       <View style={styles.tabsContainer}>
         <View style={styles.tabsLeft}>
           {tabs.map((tab) => (
-            <ColoredTab key={tab.key} label={tab.label} isActive={activeTab === tab.key} onPress={() => onTabChange(tab.key)} />
+            <ColoredTab
+              key={tab.key}
+              label={tab.label}
+              isActive={activeTab === tab.key}
+              onPress={() => onTabChange(tab.key)}
+              activeBgColor={activeTab === tab.key ? mascotColor : undefined}
+            />
           ))}
         </View>
 

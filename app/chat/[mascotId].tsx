@@ -75,6 +75,49 @@ const mascotImages: Record<string, ImageSourcePropType> = {
   seahorse: require('../../assets/mascots/searhorse.png'),
 };
 
+/**
+ * Maps technical model IDs returned from Edge Functions to Premium, user-friendly labels.
+ * This ensures users see the 2026 flagship names even if the backend IDs vary.
+ */
+const mapTechnicalToPremiumModel = (modelId?: string, provider?: string): string => {
+  if (!modelId) return provider ? (provider === 'openai' ? 'GPT-5.2' : provider === 'grok' ? 'Grok 4.1' : provider === 'perplexity' ? 'Sonar Reasoning' : 'Gemini 3') : 'AI Model';
+
+  const id = modelId.toLowerCase();
+
+  // OpenAI 2026 Stack
+  if (id.includes('gpt-5.2')) return 'OpenAI GPT-5.2 (Flagship)';
+  if (id.includes('gpt-5-mini')) return 'OpenAI GPT-5-mini (Speed)';
+  if (id.includes('gpt-5')) return 'OpenAI GPT-5 (Pre-release)';
+
+  // Grok 2026 Stack
+  if (id.includes('grok-4.1-fast-reasoning')) return 'xAI Grok 4.1 (Deep Reasoning)';
+  if (id.includes('grok-4-fast-reasoning')) return 'xAI Grok 4.1 (Deep Reasoning)';
+  if (id.includes('grok-4.1-fast-non-reasoning')) return 'xAI Grok 4.1 (Flagship)';
+  if (id.includes('grok-4-fast-non-reasoning')) return 'xAI Grok 4.1 (Flagship)';
+  if (id.includes('grok-4.1-fast')) return 'xAI Grok 4.1 (Flagship)';
+  if (id.includes('grok-4-fast')) return 'xAI Grok 4.1 (Flagship)';
+  if (id.includes('grok-4.1')) return 'xAI Grok 4.1';
+  if (id.includes('grok-4')) return 'xAI Grok 4';
+  if (id.includes('grok-3')) return 'xAI Grok 3 (Legacy)';
+
+  // Google 2026 Stack
+  if (id.includes('gemini-3-pro')) return 'Google Gemini 3 Pro (Frontier)';
+  if (id.includes('gemini-3-flash')) return 'Google Gemini 3 Flash (Instant)';
+  if (id.includes('gemini-3')) return 'Google Gemini 3';
+  if (id.includes('gemini-2.5')) return 'Google Gemini 2.5 (Stable)';
+
+  // Perplexity 2026 Stack
+  if (id.includes('sonar-reasoning-pro')) return 'Perplexity Sonar Reasoning Pro (Deep Research)';
+  if (id.includes('sonar-reasoning')) return 'Perplexity Sonar Reasoning';
+  if (id.includes('sonar')) return 'Perplexity Sonar (Web Search API)';
+
+  // Fallbacks for older models seen in legacy/uncached instances
+  if (id.includes('gpt-4o-mini')) return 'OpenAI GPT-5.2 (Requested) • gpt-4o-mini (Fallback)';
+  if (id.includes('gpt-4o')) return 'OpenAI GPT-5.2 (Requested) • gpt-4o (Legacy)';
+
+  return modelId;
+};
+
 // Mascot data (simplified - in real app this would come from a store/API)
 const MASCOT_DATA: Record<string, {
   name: string;
@@ -652,6 +695,32 @@ export default function ChatScreen() {
     deepThinkingEnabled, setDeepThinkingEnabled,
     llm: chatLLM, setLLM: setChatLLM
   } = useChatPreferences();
+
+  // Sync parameters from home screen (URL) to preferences context
+  // This ensures selecting a model on the home screen actually applies it in the chat
+  useEffect(() => {
+    // Only sync once per screen mount to avoid overriding manual changes later
+    if (llm && llm !== chatLLM) {
+      console.log('[Chat] Syncing LLM preference from URL:', llm);
+      setChatLLM(llm);
+    }
+
+    if (deepThinking !== undefined) {
+      const isDeep = deepThinking === 'true';
+      if (isDeep !== deepThinkingEnabled) {
+        console.log('[Chat] Syncing Deep Thinking preference from URL:', isDeep);
+        setDeepThinkingEnabled(isDeep);
+      }
+    }
+
+    if (webSearch !== undefined) {
+      const isWeb = webSearch === 'true';
+      if (isWeb !== webSearchEnabled) {
+        console.log('[Chat] Syncing Web Search preference from URL:', isWeb);
+        setWebSearchEnabled(isWeb);
+      }
+    }
+  }, [llm, deepThinking, webSearch]);
 
   const [showLLMPicker, setShowLLMPicker] = useState(false);
   // Removed old autoScroll state - now using isUserScrollingRef for scroll control
@@ -1788,6 +1857,7 @@ export default function ChatScreen() {
         isTrial={isTrial}
         trialCount={localTrialCount}
         trialLimit={trialLimit}
+        mascotColor={mascot.color}
       />
 
       {activeTab === 'skills' ? (
@@ -2218,9 +2288,7 @@ export default function ChatScreen() {
                           },
                         ]}
                       >
-                        {message.provider ?
-                          `${message.provider === 'openai' ? 'OpenAI' : message.provider === 'perplexity' ? 'Perplexity' : message.provider === 'grok' ? 'Grok' : 'Gemini'} ${message.model ? `(${message.model})` : ''}`.trim() :
-                          message.model || 'Unknown'}
+                        {mapTechnicalToPremiumModel(message.model, message.provider)}
                       </Text>
                     </View>
                   )}
