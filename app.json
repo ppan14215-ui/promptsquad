@@ -2,7 +2,7 @@
   "expo": {
     "name": "Prompt Squad",
     "slug": "prompt-squad",
-    "version": "1.1.0",
+    "version": "1.1.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -25,7 +25,7 @@
       "privacyManifests": {
         "NSPrivacyAccessedAPITypes": []
       },
-      "buildNumber": "1.1.0"
+      "buildNumber": "1.1.1"
     },
     "android": {
       "adaptiveIcon": {
@@ -40,7 +40,7 @@
       ],
       "softwareKeyboardLayoutMode": "resize",
       "privacyPolicy": "https://promptsquad.app/privacy",
-      "versionCode": 3
+      "versionCode": 4
     },
     "web": {
       "favicon": "./assets/favicon.png",
