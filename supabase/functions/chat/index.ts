@@ -14,7 +14,7 @@ interface ChatRequest {
   messages: Array<{ role: 'user' | 'assistant'; content: string }>;
   conversationId?: string;
   skillId?: string;
-  provider?: 'openai' | 'gemini' | 'perplexity' | 'grok';
+  provider?: 'openai' | 'gemini' | 'perplexity' | 'grok' | 'claude';
   deepThinking?: boolean;
   image?: { mimeType: string; base64: string };
   taskCategory?: string; // For auto provider selection
@@ -34,6 +34,7 @@ serve(async (req: Request) => {
     const perplexityApiKey = Deno.env.get('PERPLEXITY_API_KEY');
     const xaiApiKey = Deno.env.get('XAI_API_KEY') || Deno.env.get('Grok_API_Key');
     const tavilyApiKey = Deno.env.get('TAVILY_API_KEY');
+    const anthropicApiKey = Deno.env.get('ANTHROPIC_API_KEY');
 
     if (!supabaseUrl || !supabaseServiceKey) {
       return new Response(
@@ -202,17 +203,21 @@ serve(async (req: Request) => {
     if (skillPrompt) {
       systemPrompt += `\n\n---\n\nCURRENT ACTIVE SKILL INSTRUCTIONS:\n\n${skillPrompt}`;
       systemPrompt += `\n\nIMPORTANT: The user has selected the skill above. If the user's message is just the name of the skill, and the skill requires specific input (like a ticker, symbol, topic, or file) that hasn't been provided yet, you MUST STOP and ASK the user for that input. Do not generate a generic response.`;
+      // Note: Chain of Thought / Thinking indicator is shown by the UI during loading, not embedded in response
     }
 
     // Helper function to select provider based on task category
-    function selectProviderByTaskCategory(category?: string): 'openai' | 'gemini' {
+    function selectProviderByTaskCategory(category?: string, webSearchRequested?: boolean): 'openai' | 'gemini' {
+      // If web search is on, Gemini's organic grounding is superior to system-injection
+      if (webSearchRequested) return 'gemini';
+
       switch (category) {
-        case 'analysis':
-        case 'creative':
         case 'coding':
-        case 'ux':
         case 'complex':
           return 'openai';
+        case 'analysis':
+        case 'creative':
+        case 'ux':
         case 'conversation':
         case 'quick':
         default:
@@ -223,7 +228,7 @@ serve(async (req: Request) => {
     // Determine provider and model
     // If provider is not specified or is 'auto', use task category to select
     let useProvider = !provider || provider === 'auto'
-      ? selectProviderByTaskCategory(taskCategory)
+      ? selectProviderByTaskCategory(taskCategory, webSearch)
       : provider;
 
     // FORCE SWITCH: If web search is enabled, we MUST use a provider that supports it.
@@ -234,6 +239,7 @@ serve(async (req: Request) => {
       useProvider === 'perplexity' ||
       useProvider === 'gemini' ||
       useProvider === 'grok' ||
+      (useProvider === 'claude' && !!tavilyApiKey) ||
       (useProvider === 'openai' && !!tavilyApiKey);
 
     if (webSearch && !supportsWebSearch) {
@@ -241,28 +247,49 @@ serve(async (req: Request) => {
       useProvider = 'gemini';
     }
 
-    const useModel = deepThinking
-      // Using 2026 standard models (GPT-5, Gemini 3, Grok 4.1, Perplexity Sonar Reasoning)
-      ? (useProvider === 'openai' ? 'gpt-5.2' :
-        useProvider === 'perplexity' ? 'sonar-reasoning-pro' :
-          useProvider === 'grok' ? 'grok-4.1-fast-reasoning' :
-            'gemini-3-pro-preview')
-      : (useProvider === 'openai' ? 'gpt-5-mini' :
-        useProvider === 'perplexity' ? 'sonar' :
-          useProvider === 'grok' ? 'grok-4-fast-non-reasoning' :
-            'gemini-3-flash-preview');
+    // Select model based on provider and capabilities
+    // xAI Grok docs: grok-4-1-fast for search, grok-4 for reasoning, grok-3 for fast
+    // Anthropic docs: claude-sonnet-4-5-20250929 is current
+    let useModel: string;
+
+    if (useProvider === 'grok') {
+      // Grok model selection based on capabilities (https://docs.x.ai/docs/models)
+      // Priority: deepThinking (Pro) > webSearch > default
+      if (deepThinking) {
+        useModel = 'grok-4'; // Full reasoning model (also supports native X/web search)
+      } else if (webSearch) {
+        useModel = 'grok-4-1-fast'; // Optimized for agentic search
+      } else {
+        useModel = 'grok-4-1-fast-non-reasoning';
+      }
+    } else {
+      // Other providers
+      useModel = deepThinking
+        ? (useProvider === 'openai' ? 'gpt-5.2' :
+          useProvider === 'perplexity' ? 'sonar-reasoning-pro' :
+            useProvider === 'claude' ? 'claude-sonnet-4-5-20250929' :
+              'gemini-3-pro-preview')
+        : (useProvider === 'openai' ? 'gpt-5-mini' :
+          useProvider === 'perplexity' ? 'sonar' :
+            useProvider === 'claude' ? 'claude-sonnet-4-5-20250929' :
+              'gemini-3-flash-preview');
+    }
+
+    console.log(`[Edge Function] Using model: ${useModel} (provider: ${useProvider}, webSearch: ${webSearch}, deepThinking: ${deepThinking})`);
 
     // OpenAI
     if (useProvider === 'openai' && openaiApiKey) {
       // Perform Web Search if enabled and Key is present
       if (webSearch && tavilyApiKey && messages.length > 0) {
         try {
-          // Use the last user message as the query
-          // In a real app, you might want to generate a search query from conversation history
+          // Emit thinking step for OpenAI search
+          const searchEncoder = new TextEncoder();
+          // We can't easily emit here because the response stream hasn't started.
+          // However, we can log it for now.
+          console.log('[Edge Function] Performing Tavily search for OpenAI');
+
           const lastUserMsg = messages[messages.length - 1];
           const query = lastUserMsg.content;
-
-          console.log('[Edge Function] Performing Tavily search for query:', query.substring(0, 50));
 
           const searchResponse = await fetch('https://api.tavily.com/search', {
             method: 'POST',
@@ -278,17 +305,13 @@ serve(async (req: Request) => {
 
           if (searchResponse.ok) {
             const searchData = await searchResponse.json();
-            // Format results
             const resultsContext = searchData.results
               .map((r: any) => `[Title: ${r.title}]\n[URL: ${r.url}]\n${r.content}`)
               .join('\n\n');
 
             if (resultsContext) {
               systemPrompt += `\n\n---\n\nWEB SEARCH RESULTS (Current Date: ${new Date().toISOString().split('T')[0]}):\n\nThe user has requested a web search. Use the following search results to answer the question. Cite your sources using [Title](URL) format.\n\n${resultsContext}\n\n---`;
-              console.log('[Edge Function] Added search results to system prompt');
             }
-          } else {
-            console.warn('[Edge Function] Tavily search failed:', await searchResponse.text());
           }
         } catch (e) {
           console.error('[Edge Function] Error during Tavily search:', e);
@@ -469,12 +492,144 @@ serve(async (req: Request) => {
         );
       }
 
+      // Use xAI Responses API for native search tools
+      // The Chat Completions live_search was deprecated on Jan 12, 2026
+      // Responses API uses web_search and x_search tools
+      let grokSystemPrompt = systemPrompt;
+      const currentDate = new Date().toISOString().split('T')[0];
+      grokSystemPrompt += `\n\n[Current Date: ${currentDate}]`;
+
+      // Format for Responses API
+      const grokInput = [
+        { role: 'developer', content: grokSystemPrompt },
+        ...messages.map((m) => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content })),
+      ];
+
+      // Native search tools for Responses API
+      const grokTools = webSearch ? [
+        { type: 'web_search' },
+        { type: 'x_search' }
+      ] : undefined;
+
+      console.log('[Edge Function] Grok Responses API request:', {
+        model: useModel,
+        webSearch,
+        deepThinking,
+        currentDate,
+        hasTools: !!grokTools
+      });
+
+      // Use Responses API endpoint
+      const response = await fetch('https://api.x.ai/v1/responses', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${xaiApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: useModel,
+          input: grokInput,
+          stream: true,
+          ...(grokTools && { tools: grokTools }),
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.text();
+        return new Response(
+          JSON.stringify({ error: `Grok error: ${error}` }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const transformStream = new TransformStream({
+        async transform(chunk, controller) {
+          const text = new TextDecoder().decode(chunk);
+          const lines = text.split('\n').filter(line => line.startsWith('data: '));
+
+          for (const line of lines) {
+            const data = line.slice(6);
+            if (data === '[DONE]') {
+              console.log('[Grok] Stream done');
+              controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ done: true, model: useModel, provider: 'grok' })}\n\n`));
+            } else {
+              try {
+                const parsed = JSON.parse(data);
+
+                // Debug: log the structure
+                console.log('[Grok Responses] Event type:', parsed.type, 'Keys:', Object.keys(parsed));
+
+                // Responses API format - handle different event types
+                if (parsed.type === 'response.output_item.added') {
+                  // Tool usage indicator
+                  const item = parsed.item;
+                  if (item?.type === 'tool_use') {
+                    const toolName = item.name;
+                    let thinkingMessage = '';
+                    if (toolName === 'web_search') {
+                      thinkingMessage = '🌐 Searching the web for current information...';
+                    } else if (toolName === 'x_search') {
+                      thinkingMessage = '𝕏 Checking latest sentiment on X (Twitter)...';
+                    } else {
+                      thinkingMessage = `🔧 Using ${toolName}...`;
+                    }
+                    controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ thinking: thinkingMessage })}\n\n`));
+                  }
+                } else if (parsed.type === 'response.output_text.delta') {
+                  // Text content delta
+                  const content = parsed.delta;
+                  if (content) {
+                    console.log('[Grok] Content:', content.substring(0, 100));
+                    controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ content })}\n\n`));
+                  }
+                } else if (parsed.type === 'response.completed') {
+                  // Response complete - extract final content if not streamed
+                  const output = parsed.response?.output;
+                  if (output && Array.isArray(output)) {
+                    for (const item of output) {
+                      if (item.type === 'message' && item.content) {
+                        for (const part of item.content) {
+                          if (part.type === 'text' && part.text) {
+                            controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ content: part.text })}\n\n`));
+                          }
+                        }
+                      }
+                    }
+                  }
+                  controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ done: true, model: useModel, provider: 'grok' })}\n\n`));
+                }
+
+                // Fallback: Check for Chat Completions format too (in case API fallback)
+                const deltaContent = parsed.choices?.[0]?.delta?.content;
+                if (deltaContent) {
+                  controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ content: deltaContent })}\n\n`));
+                }
+              } catch (e) {
+                // Log parse errors for debugging
+                console.log('[Grok] Parse error:', e, 'Raw data:', data.substring(0, 200));
+              }
+            }
+          }
+        },
+      });
+
+      return new Response(response.body?.pipeThrough(transformStream), {
+        headers: {
+          ...corsHeaders,
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+        },
+      });
+    }
+
+    // Claude (Anthropic)
+    if (useProvider === 'claude' && anthropicApiKey) {
       // Perform Web Search if enabled and Key is present (Manual Grounding)
       if (webSearch && tavilyApiKey && messages.length > 0) {
         try {
+          console.log('[Edge Function] Performing Tavily search for Claude');
           const lastUserMsg = messages[messages.length - 1];
           const query = lastUserMsg.content;
-          console.log('[Edge Function] performing Tavily search for Grok, query:', query.substring(0, 50));
 
           const searchResponse = await fetch('https://api.tavily.com/search', {
             method: 'POST',
@@ -495,42 +650,57 @@ serve(async (req: Request) => {
               .join('\n\n');
 
             if (resultsContext) {
-              // Update system prompt with search results
               systemPrompt += `\n\n---\n\nWEB SEARCH RESULTS (Current Date: ${new Date().toISOString().split('T')[0]}):\n\nThe user has requested a web search. Use the following search results to answer the question. Cite your sources using [Title](URL) format.\n\n${resultsContext}\n\n---`;
-              console.log('[Edge Function] Added search results to system prompt for Grok');
             }
-          } else {
-            console.warn('[Edge Function] Tavily search failed:', await searchResponse.text());
           }
         } catch (e) {
-          console.error('[Edge Function] Error during Tavily search for Grok:', e);
+          console.error('[Edge Function] Error during Tavily search for Claude:', e);
         }
       }
 
-      // Proceed with Grok logic (xaiApiKey is guaranteed truthy here)
-      const grokMessages = [
-        { role: 'system', content: systemPrompt },
-        ...messages.map((m) => ({ role: m.role, content: m.content })),
-      ];
+      const claudeMessages = messages
+        .filter(m => m.content && m.content.trim().length > 0) // Filter out empty messages
+        .map((m, index, arr) => {
+          // If this is the last message and we have an image, attach it
+          if (index === arr.length - 1 && image) {
+            return {
+              role: m.role,
+              content: [
+                {
+                  type: 'image',
+                  source: {
+                    type: 'base64',
+                    media_type: image.mimeType,
+                    data: image.base64,
+                  },
+                },
+                { type: 'text', text: m.content },
+              ],
+            };
+          }
+          return { role: m.role, content: m.content };
+        });
 
-      const response = await fetch('https://api.x.ai/v1/chat/completions', {
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${xaiApiKey}`,
+          'x-api-key': anthropicApiKey,
+          'anthropic-version': '2023-06-01',
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           model: useModel,
-          messages: grokMessages,
+          system: systemPrompt,
+          messages: claudeMessages,
           stream: true,
-          // tools removed to avoid API errors
+          max_tokens: 4096,
         }),
       });
 
       if (!response.ok) {
         const error = await response.text();
         return new Response(
-          JSON.stringify({ error: `Grok error: ${error}` }),
+          JSON.stringify({ error: `Claude error: ${error}` }),
           { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
@@ -538,18 +708,20 @@ serve(async (req: Request) => {
       const transformStream = new TransformStream({
         async transform(chunk, controller) {
           const text = new TextDecoder().decode(chunk);
-          const lines = text.split('\n').filter(line => line.startsWith('data: '));
+          const lines = text.split('\n');
 
           for (const line of lines) {
-            const data = line.slice(6);
-            if (data === '[DONE]') {
-              controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ done: true, model: useModel, provider: 'grok' })}\n\n`));
-            } else {
+            if (line.startsWith('data: ')) {
+              const data = line.slice(6);
               try {
                 const parsed = JSON.parse(data);
-                const content = parsed.choices?.[0]?.delta?.content;
-                if (content) {
-                  controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ content })}\n\n`));
+                if (parsed.type === 'content_block_delta') {
+                  const content = parsed.delta?.text;
+                  if (content) {
+                    controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ content })}\n\n`));
+                  }
+                } else if (parsed.type === 'message_stop') {
+                  controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ done: true, model: useModel, provider: 'claude' })}\n\n`));
                 }
               } catch {
                 // Skip invalid JSON

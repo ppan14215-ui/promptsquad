@@ -14,7 +14,7 @@ interface ChatRequest {
   messages: Array<{ role: 'user' | 'assistant'; content: string }>;
   conversationId?: string;
   skillId?: string;
-  provider?: 'openai' | 'gemini' | 'perplexity' | 'grok';
+  provider?: 'openai' | 'gemini' | 'perplexity' | 'grok' | 'claude';
   deepThinking?: boolean;
   image?: { mimeType: string; base64: string };
   taskCategory?: string; // For auto provider selection
@@ -34,6 +34,7 @@ serve(async (req: Request) => {
     const perplexityApiKey = Deno.env.get('PERPLEXITY_API_KEY');
     const xaiApiKey = Deno.env.get('XAI_API_KEY') || Deno.env.get('Grok_API_Key');
     const tavilyApiKey = Deno.env.get('TAVILY_API_KEY');
+    const anthropicApiKey = Deno.env.get('ANTHROPIC_API_KEY');
 
     if (!supabaseUrl || !supabaseServiceKey) {
       return new Response(
@@ -202,17 +203,21 @@ serve(async (req: Request) => {
     if (skillPrompt) {
       systemPrompt += `\n\n---\n\nCURRENT ACTIVE SKILL INSTRUCTIONS:\n\n${skillPrompt}`;
       systemPrompt += `\n\nIMPORTANT: The user has selected the skill above. If the user's message is just the name of the skill, and the skill requires specific input (like a ticker, symbol, topic, or file) that hasn't been provided yet, you MUST STOP and ASK the user for that input. Do not generate a generic response.`;
+      // Note: Chain of Thought / Thinking indicator is shown by the UI during loading, not embedded in response
     }
 
     // Helper function to select provider based on task category
-    function selectProviderByTaskCategory(category?: string): 'openai' | 'gemini' {
+    function selectProviderByTaskCategory(category?: string, webSearchRequested?: boolean): 'openai' | 'gemini' {
+      // If web search is on, Gemini's organic grounding is superior to system-injection
+      if (webSearchRequested) return 'gemini';
+
       switch (category) {
-        case 'analysis':
-        case 'creative':
         case 'coding':
-        case 'ux':
         case 'complex':
           return 'openai';
+        case 'analysis':
+        case 'creative':
+        case 'ux':
         case 'conversation':
         case 'quick':
         default:
@@ -223,7 +228,7 @@ serve(async (req: Request) => {
     // Determine provider and model
     // If provider is not specified or is 'auto', use task category to select
     let useProvider = !provider || provider === 'auto'
-      ? selectProviderByTaskCategory(taskCategory)
+      ? selectProviderByTaskCategory(taskCategory, webSearch)
       : provider;
 
     // FORCE SWITCH: If web search is enabled, we MUST use a provider that supports it.
@@ -234,6 +239,7 @@ serve(async (req: Request) => {
       useProvider === 'perplexity' ||
       useProvider === 'gemini' ||
       useProvider === 'grok' ||
+      (useProvider === 'claude' && !!tavilyApiKey) ||
       (useProvider === 'openai' && !!tavilyApiKey);
 
     if (webSearch && !supportsWebSearch) {
@@ -241,16 +247,35 @@ serve(async (req: Request) => {
       useProvider = 'gemini';
     }
 
-    const useModel = deepThinking
-      // Using 2026 standard models (GPT-5, Gemini 3, Grok 4.1, Perplexity Sonar Reasoning)
-      ? (useProvider === 'openai' ? 'gpt-5.2' :
-        useProvider === 'perplexity' ? 'sonar-reasoning-pro' :
-          useProvider === 'grok' ? 'grok-4.1-fast-reasoning' :
-            'gemini-3-pro-preview')
-      : (useProvider === 'openai' ? 'gpt-5-mini' :
-        useProvider === 'perplexity' ? 'sonar' :
-          useProvider === 'grok' ? 'grok-4-fast-non-reasoning' :
-            'gemini-3-flash-preview');
+    // Select model based on provider and capabilities
+    // xAI Grok docs: grok-4-1-fast for search, grok-4 for reasoning, grok-3 for fast
+    // Anthropic docs: claude-sonnet-4-5-20250929 is current
+    let useModel: string;
+
+    if (useProvider === 'grok') {
+      // Grok model selection based on capabilities (https://docs.x.ai/docs/models)
+      // Priority: deepThinking (Pro) > webSearch > default
+      if (deepThinking) {
+        useModel = 'grok-4'; // Full reasoning model (also supports native X/web search)
+      } else if (webSearch) {
+        useModel = 'grok-4-1-fast'; // Optimized for agentic search
+      } else {
+        useModel = 'grok-4-1-fast-non-reasoning';
+      }
+    } else {
+      // Other providers
+      useModel = deepThinking
+        ? (useProvider === 'openai' ? 'gpt-5.2' :
+          useProvider === 'perplexity' ? 'sonar-reasoning-pro' :
+            useProvider === 'claude' ? 'claude-sonnet-4-5-20250929' :
+              'gemini-3-pro-preview')
+        : (useProvider === 'openai' ? 'gpt-5-mini' :
+          useProvider === 'perplexity' ? 'sonar' :
+            useProvider === 'claude' ? 'claude-sonnet-4-5-20250929' :
+              'gemini-3-flash-preview');
+    }
+
+    console.log(`[Edge Function] Using model: ${useModel} (provider: ${useProvider}, webSearch: ${webSearch}, deepThinking: ${deepThinking})`);
 
     // OpenAI
     if (useProvider === 'openai' && openaiApiKey) {
@@ -461,51 +486,6 @@ serve(async (req: Request) => {
     }
 
     // Grok (xAI)
-    // SPECIAL DEBUG: Check available models
-    // Robust check: Look for "TEST_GROK" in any message
-    if (messages.some(m => m.content && m.content.toUpperCase().includes("TEST_GROK"))) {
-      console.log("!!! LISTING GROK MODELS !!!");
-      const xaiKey = Deno.env.get("XAI_API_KEY") || Deno.env.get("Grok_API_Key");
-
-      try {
-        const response = await fetch("https://api.x.ai/v1/models", {
-          method: "GET",
-          headers: {
-            "Authorization": `Bearer ${xaiKey}`
-          }
-        });
-
-        const data = await response.json();
-        console.log("GROK MODELS:", JSON.stringify(data, null, 2));
-
-        // Format as a readable message for the user
-        const modelList = data.data ? data.data.map((m: any) => `- ${m.id}`).join('\n') : JSON.stringify(data);
-        const text = `Available Models:\n${modelList}`;
-
-        // Return as SSE for frontend compatibility
-        const encoder = new TextEncoder();
-        const stream = new ReadableStream({
-          start(controller) {
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content: text })}\n\n`));
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, model: 'debug', provider: 'grok' })}\n\n`));
-            controller.close();
-          }
-        });
-
-        return new Response(stream, {
-          headers: {
-            ...corsHeaders,
-            'Content-Type': 'text/event-stream',
-            'Cache-Control': 'no-cache',
-          },
-        });
-
-      } catch (e) {
-        console.error("GROK MODEL LIST FAILED:", e);
-        return new Response(JSON.stringify({ error: String(e) }), { status: 500, headers: corsHeaders });
-      }
-    }
-
     if (useProvider === 'grok') {
       if (!xaiApiKey) {
         return new Response(
@@ -514,160 +494,254 @@ serve(async (req: Request) => {
         );
       }
 
-      const tools = [
-        {
-          type: "function",
-          function: {
-            name: "web_search",
-            description: "Search the web for general information and facts.",
-            parameters: {
-              type: "object",
-              properties: {
-                query: { type: "string", description: "The search query" }
-              },
-              required: ["query"]
+      // Use xAI Responses API for native search tools
+      // The Chat Completions live_search was deprecated on Jan 12, 2026
+      // Responses API uses web_search and x_search tools
+      let grokSystemPrompt = systemPrompt;
+      const currentDate = new Date().toISOString().split('T')[0];
+      grokSystemPrompt += `\n\n[Current Date: ${currentDate}]`;
+
+      // Format for Responses API
+      const grokInput = [
+        { role: 'developer', content: grokSystemPrompt },
+        ...messages.map((m) => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content })),
+      ];
+
+      // Native search tools for Responses API
+      const grokTools = webSearch ? [
+        { type: 'web_search' },
+        { type: 'x_search' }
+      ] : undefined;
+
+      console.log('[Edge Function] Grok Responses API request:', {
+        model: useModel,
+        webSearch,
+        deepThinking,
+        currentDate,
+        hasTools: !!grokTools
+      });
+
+      // Use Responses API endpoint
+      const response = await fetch('https://api.x.ai/v1/responses', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${xaiApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: useModel,
+          input: grokInput,
+          stream: true,
+          ...(grokTools && { tools: grokTools }),
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.text();
+        return new Response(
+          JSON.stringify({ error: `Grok error: ${error}` }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const transformStream = new TransformStream({
+        async transform(chunk, controller) {
+          const text = new TextDecoder().decode(chunk);
+          const lines = text.split('\n').filter(line => line.startsWith('data: '));
+
+          for (const line of lines) {
+            const data = line.slice(6);
+            if (data === '[DONE]') {
+              console.log('[Grok] Stream done');
+              controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ done: true, model: useModel, provider: 'grok' })}\n\n`));
+            } else {
+              try {
+                const parsed = JSON.parse(data);
+
+                // Debug: log the structure
+                console.log('[Grok Responses] Event type:', parsed.type, 'Keys:', Object.keys(parsed));
+
+                // Responses API format - handle different event types
+                if (parsed.type === 'response.output_item.added') {
+                  // Tool usage indicator
+                  const item = parsed.item;
+                  if (item?.type === 'tool_use') {
+                    const toolName = item.name;
+                    let thinkingMessage = '';
+                    if (toolName === 'web_search') {
+                      thinkingMessage = '🌐 Searching the web for current information...';
+                    } else if (toolName === 'x_search') {
+                      thinkingMessage = '𝕏 Checking latest sentiment on X (Twitter)...';
+                    } else {
+                      thinkingMessage = `🔧 Using ${toolName}...`;
+                    }
+                    controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ thinking: thinkingMessage })}\n\n`));
+                  }
+                } else if (parsed.type === 'response.output_text.delta') {
+                  // Text content delta
+                  const content = parsed.delta;
+                  if (content) {
+                    console.log('[Grok] Content:', content.substring(0, 100));
+                    controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ content })}\n\n`));
+                  }
+                } else if (parsed.type === 'response.completed') {
+                  // Response complete - extract final content if not streamed
+                  const output = parsed.response?.output;
+                  if (output && Array.isArray(output)) {
+                    for (const item of output) {
+                      if (item.type === 'message' && item.content) {
+                        for (const part of item.content) {
+                          if (part.type === 'text' && part.text) {
+                            controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ content: part.text })}\n\n`));
+                          }
+                        }
+                      }
+                    }
+                  }
+                  controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ done: true, model: useModel, provider: 'grok' })}\n\n`));
+                }
+
+                // Fallback: Check for Chat Completions format too (in case API fallback)
+                const deltaContent = parsed.choices?.[0]?.delta?.content;
+                if (deltaContent) {
+                  controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ content: deltaContent })}\n\n`));
+                }
+              } catch (e) {
+                // Log parse errors for debugging
+                console.log('[Grok] Parse error:', e, 'Raw data:', data.substring(0, 200));
+              }
             }
           }
         },
-        {
-          type: "function",
-          function: {
-            name: "x_search",
-            description: "Search X (formerly Twitter) for real-time social posts, news, and sentiment.",
-            parameters: {
-              type: "object",
-              properties: {
-                query: { type: "string", description: "The search query for X posts" }
-              },
-              required: ["query"]
-            }
-          }
-        }
-      ];
+      });
 
-      // Proceed with Grok logic using SSE with 'thinking' feedback
-      const grokMessages = [
-        { role: 'system', content: systemPrompt },
-        ...messages.map((m) => ({ role: m.role, content: m.content })),
-      ];
-
-      const payload = {
-        model: useModel,
-        messages: grokMessages,
-        stream: false, // Non-streaming to allow full response with tool results
-        tools: tools,
-      };
-
-      console.log('[Edge Function] Sending Grok request (non-streaming with thinking feedback)...');
-
-      // Create SSE stream with thinking updates
-      const encoder = new TextEncoder();
-      const { readable, writable } = new TransformStream();
-      const writer = writable.getWriter();
-
-      // Start async processing
-      (async () => {
-        try {
-          // Step 1: Thinking - Analyzing request
-          await writer.write(encoder.encode(`data: ${JSON.stringify({ thinking: '🔍 Analyzing your request...' })}\n\n`));
-
-          // Step 2: Thinking - Searching X
-          await writer.write(encoder.encode(`data: ${JSON.stringify({ thinking: '🐦 Searching X for latest posts...' })}\n\n`));
-
-          const response = await fetch('https://api.x.ai/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${xaiApiKey}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(payload),
-          });
-
-          if (!response.ok) {
-            const errorText = await response.text();
-            console.error('[Edge Function] Grok API Error:', errorText);
-            await writer.write(encoder.encode(`data: ${JSON.stringify({ error: `Grok error: ${errorText}` })}\n\n`));
-            await writer.close();
-            return;
-          }
-
-          // Step 3: Thinking - Processing results
-          await writer.write(encoder.encode(`data: ${JSON.stringify({ thinking: '📊 Processing and summarizing results...' })}\n\n`));
-
-          const data = await response.json();
-          const message = data.choices?.[0]?.message;
-
-          if (!message) {
-            await writer.write(encoder.encode(`data: ${JSON.stringify({ error: 'Grok returned no message' })}\n\n`));
-            await writer.close();
-            return;
-          }
-
-          // Step 4: Clear thinking and send content
-          await writer.write(encoder.encode(`data: ${JSON.stringify({ thinking: null })}\n\n`)); // Clear thinking indicator
-
-          if (message.content) {
-            await writer.write(encoder.encode(`data: ${JSON.stringify({ content: message.content })}\n\n`));
-          } else if (message.tool_calls) {
-            // Handle tool calls - Grok might return these instead of content
-            console.warn('[Edge Function] Grok returned tool calls:', JSON.stringify(message.tool_calls));
-            await writer.write(encoder.encode(`data: ${JSON.stringify({ content: 'Grok is processing your request using advanced tools. Please wait...' })}\n\n`));
-          }
-
-          // Send DONE
-          await writer.write(encoder.encode(`data: ${JSON.stringify({ done: true, model: useModel, provider: 'grok' })}\n\n`));
-          await writer.close();
-
-        } catch (e) {
-          console.error('[Edge Function] Grok stream error:', e);
-          await writer.write(encoder.encode(`data: ${JSON.stringify({ error: String(e) })}\n\n`));
-          await writer.close();
-        }
-      })();
-
-      return new Response(readable, {
+      return new Response(response.body?.pipeThrough(transformStream), {
         headers: {
           ...corsHeaders,
           'Content-Type': 'text/event-stream',
           'Cache-Control': 'no-cache',
         },
       });
+    }
 
-      // Handle Tool Calls (If xAI expects client to execute)
-      if (message.tool_calls) {
-        console.warn('[Edge Function] Grok returned tool calls (Client execution required?):', JSON.stringify(message.tool_calls));
+    // Claude (Anthropic)
+    if (useProvider === 'claude' && anthropicApiKey) {
+      // Perform Web Search if enabled and Key is present (Manual Grounding)
+      if (webSearch && tavilyApiKey && messages.length > 0) {
+        try {
+          const lastUserMsg = messages[messages.length - 1];
+          const query = lastUserMsg.content;
+          console.log('[Edge Function] performing Tavily search for Claude, query:', query.substring(0, 50));
 
-        // Since we can't execute x_search/web_search client-side (we lack the backend logic/keys for internal xAI tools),
-        // we must inform the user.
-        // UNLESS: We are supposed to loop back? But we can't execute "x_search".
+          const searchResponse = await fetch('https://api.tavily.com/search', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              api_key: tavilyApiKey,
+              query: query,
+              search_depth: "basic",
+              include_answer: false,
+              max_results: 5
+            })
+          });
 
-        // Temporary: Return a message explaining technical limitation
-        const encoder = new TextEncoder();
-        const stream = new ReadableStream({
-          start(controller) {
-            const warning = "Grok attempted to use X Search, but the server-side agentic loop is not fully configured. Please try a simpler query or wait for updates.";
-            const json = JSON.stringify({ content: warning });
-            controller.enqueue(encoder.encode(`data: ${json}\n\n`));
+          if (searchResponse.ok) {
+            const searchData = await searchResponse.json();
+            const resultsContext = searchData.results
+              .map((r: any) => `[Title: ${r.title}]\n[URL: ${r.url}]\n${r.content}`)
+              .join('\n\n');
 
-            const doneJson = JSON.stringify({ done: true, model: useModel, provider: 'grok' });
-            controller.enqueue(encoder.encode(`data: ${doneJson}\n\n`));
-            controller.close();
+            if (resultsContext) {
+              // Update system prompt with search results
+              systemPrompt += `\n\n---\n\nWEB SEARCH RESULTS (Current Date: ${new Date().toISOString().split('T')[0]}):\n\nThe user has requested a web search. Use the following search results to answer the question. Cite your sources using [Title](URL) format.\n\n${resultsContext}\n\n---`;
+              console.log('[Edge Function] Added search results to system prompt for Claude');
+            }
+          } else {
+            console.warn('[Edge Function] Tavily search failed for Claude:', await searchResponse.text());
           }
-        });
-
-        return new Response(stream, {
-          headers: {
-            ...corsHeaders,
-            'Content-Type': 'text/event-stream',
-            'Cache-Control': 'no-cache',
-          },
-        });
+        } catch (e) {
+          console.error('[Edge Function] Error during Tavily search for Claude:', e);
+        }
       }
 
-      return new Response(
-        JSON.stringify({ error: 'Grok returned empty response' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+      const claudeMessages = messages.map((m, index) => {
+        // If this is the last message and we have an image, attach it
+        if (index === messages.length - 1 && image) {
+          return {
+            role: m.role,
+            content: [
+              {
+                type: 'image',
+                source: {
+                  type: 'base64',
+                  media_type: image.mimeType,
+                  data: image.base64,
+                },
+              },
+              { type: 'text', text: m.content },
+            ],
+          };
+        }
+        return { role: m.role, content: m.content };
+      });
+
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'x-api-key': anthropicApiKey,
+          'anthropic-version': '2023-06-01',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: useModel,
+          system: systemPrompt,
+          messages: claudeMessages,
+          stream: true,
+          max_tokens: 4096,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.text();
+        return new Response(
+          JSON.stringify({ error: `Claude error: ${error}` }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const transformStream = new TransformStream({
+        async transform(chunk, controller) {
+          const text = new TextDecoder().decode(chunk);
+          const lines = text.split('\n');
+
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const data = line.slice(6);
+              try {
+                const parsed = JSON.parse(data);
+                if (parsed.type === 'content_block_delta') {
+                  const content = parsed.delta?.text;
+                  if (content) {
+                    controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ content })}\n\n`));
+                  }
+                } else if (parsed.type === 'message_stop') {
+                  controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ done: true, model: useModel, provider: 'claude' })}\n\n`));
+                }
+              } catch {
+                // Skip invalid JSON
+              }
+            }
+          }
+        },
+      });
+
+      return new Response(response.body?.pipeThrough(transformStream), {
+        headers: {
+          ...corsHeaders,
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+        },
+      });
     }
 
     // Gemini (default)
