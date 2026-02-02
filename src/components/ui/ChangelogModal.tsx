@@ -13,10 +13,10 @@ export function ChangelogModal({ visible, onDismiss, version }: ChangelogModalPr
     const { colors } = useTheme();
 
     const updates = [
-        { title: 'Working Perplexity', description: 'Web-grounded search now works perfectly with all mascots.' },
-        { title: 'Dynamic Mascot Names', description: 'Names and subtitles are now updated live from the cloud.' },
-        { title: 'Stability Fixes', description: 'Improved chat reliability and faster loading times.' },
-        { title: 'UI Improvements', description: 'Updated chat interface with better readability.' }
+        { title: '𝕏 Native X Search', description: 'Grok now uses real-time X (Twitter) search for live sentiment and trend analysis.' },
+        { title: '🌐 Live Web Search', description: 'Get up-to-date information from the web with native search tools.' },
+        { title: '💡 Deep Thinking Mode', description: 'Access Grok-4 Pro with enhanced reasoning capabilities.' },
+        { title: '⚡ Faster Responses', description: 'Improved streaming and response handling for all models.' }
     ];
 
     const ModalContent = (

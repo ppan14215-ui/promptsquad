@@ -13,9 +13,14 @@ import {
 } from '@expo-google-fonts/figtree';
 import { AbyssinicaSIL_400Regular } from '@expo-google-fonts/abyssinica-sil';
 import { View, ActivityIndicator, StyleSheet, LogBox, Platform, StatusBar as RNStatusBar } from 'react-native';
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { ChangelogModal } from '@/components/ui/ChangelogModal';
+
+const CURRENT_VERSION = '1.2.0';
+const CHANGELOG_VERSION_KEY = 'last_seen_changelog_version';
 
 LogBox.ignoreLogs(['A props object containing a "key" prop is being spread into JSX']);
 
@@ -38,8 +43,29 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
   const segments = useSegments();
   const router = useRouter();
-  const [onboardingChecked, setOnboardingChecked] = React.useState(false);
-  const [isCheckingOnboarding, setIsCheckingOnboarding] = React.useState(false);
+  const [onboardingChecked, setOnboardingChecked] = useState(false);
+  const [isCheckingOnboarding, setIsCheckingOnboarding] = useState(false);
+  const [showChangelog, setShowChangelog] = useState(false);
+  const [changelogChecked, setChangelogChecked] = useState(false);
+
+  // Check if we should show the changelog
+  useEffect(() => {
+    if (!user || changelogChecked) return;
+
+    AsyncStorage.getItem(CHANGELOG_VERSION_KEY).then((lastVersion) => {
+      if (lastVersion !== CURRENT_VERSION) {
+        setShowChangelog(true);
+      }
+      setChangelogChecked(true);
+    }).catch(() => {
+      setChangelogChecked(true);
+    });
+  }, [user, changelogChecked]);
+
+  const handleDismissChangelog = async () => {
+    setShowChangelog(false);
+    await AsyncStorage.setItem(CHANGELOG_VERSION_KEY, CURRENT_VERSION);
+  };
 
   useEffect(() => {
     if (isLoading) return;
@@ -86,7 +112,16 @@ function AuthGate({ children }: { children: React.ReactNode }) {
       </View>
     );
   }
-  return <>{children}</>;
+  return (
+    <>
+      {children}
+      <ChangelogModal
+        visible={showChangelog}
+        onDismiss={handleDismissChangelog}
+        version={CURRENT_VERSION}
+      />
+    </>
+  );
 }
 
 export default function RootLayout() {
