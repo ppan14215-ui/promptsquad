@@ -13,6 +13,7 @@ export type MascotSkill = {
   is_full_access: boolean | null;
   sort_order: number | null;
   is_active: boolean | null;
+  preferred_provider: string | null; // e.g., 'openai', 'grok'
   created_at: string | null;
   updated_at: string | null;
 };
@@ -352,7 +353,8 @@ export async function createSkill(
   mascotId: string,
   skillLabel: string,
   skillPrompt: string,
-  sortOrder: number = 0
+  sortOrder: number = 0,
+  preferredProvider?: string | null
 ): Promise<MascotSkill> {
   if (!mascotId) {
     throw new Error('Invalid mascot ID');
@@ -360,17 +362,37 @@ export async function createSkill(
 
   logger.debug('[Admin] Creating skill for mascot:', mascotId, 'label:', skillLabel);
 
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from('mascot_skills')
     .insert({
       mascot_id: mascotId,
       skill_label: skillLabel,
       skill_prompt: skillPrompt,
       sort_order: sortOrder,
+      preferred_provider: preferredProvider, // Optional
       is_active: true, // Ensure new skills are active by default
     })
     .select()
     .single();
+
+  // Retry logic if 'preferred_provider' column is missing (migration not applied)
+  if (error && (error.code === '42703' || error.message.includes('preferred_provider') || error.message.includes('schema cache'))) {
+    logger.warn('[Admin] preferred_provider column missing or schema issue, retrying without it');
+    const { data: retryData, error: retryError } = await supabase
+      .from('mascot_skills')
+      .insert({
+        mascot_id: mascotId,
+        skill_label: skillLabel,
+        skill_prompt: skillPrompt,
+        sort_order: sortOrder,
+        is_active: true,
+      })
+      .select()
+      .single();
+
+    data = retryData;
+    error = retryError;
+  }
 
   if (error) {
     logger.error('[Admin] Error creating skill:', error);
@@ -378,16 +400,16 @@ export async function createSkill(
   }
 
   logger.debug('[Admin] Skill created successfully:', data);
-  return data;
+  return data as MascotSkill;
 }
 
 export async function updateSkill(
   skillId: string,
-  updates: { skill_label?: string; skill_prompt?: string; sort_order?: number; is_active?: boolean }
+  updates: { skill_label?: string; skill_prompt?: string; sort_order?: number; is_active?: boolean; preferred_provider?: string | null }
 ): Promise<MascotSkill> {
   logger.debug('[Admin] Updating skill:', skillId, 'with updates:', updates);
 
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from('mascot_skills')
     .update({
       ...updates,
@@ -397,13 +419,33 @@ export async function updateSkill(
     .select()
     .single();
 
+  // Retry logic if 'preferred_provider' column is missing or schema error
+  if (error && (error.code === '42703' || error.message.includes('preferred_provider') || error.message.includes('schema cache'))) {
+    logger.warn('[Admin] preferred_provider column missing or schema issue, retrying without it');
+    // Remove preferred_provider from updates
+    const { preferred_provider, ...safeUpdates } = updates;
+
+    const { data: retryData, error: retryError } = await supabase
+      .from('mascot_skills')
+      .update({
+        ...safeUpdates,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', skillId)
+      .select()
+      .single();
+
+    data = retryData;
+    error = retryError;
+  }
+
   if (error) {
     logger.error('[Admin] Error updating skill:', error);
     throw new Error(error.message || 'Failed to update skill');
   }
 
   logger.debug('[Admin] Skill updated successfully:', data);
-  return data;
+  return data as MascotSkill;
 }
 
 export async function deleteSkill(skillId: string): Promise<void> {
@@ -607,7 +649,8 @@ export async function getCombinedPrompt(
 
   if (skillsError) throw new Error(skillsError.message);
 
-  const skill = (skillsData || []).find((s: MascotSkill) => s.id === skillId);
+  const skillsList = (skillsData || []) as unknown as MascotSkill[];
+  const skill = skillsList.find((s) => s.id === skillId);
   if (!skill) throw new Error('Skill not found');
 
   // For non-admins, skill_prompt will be null - use preview or throw
@@ -645,5 +688,6 @@ export async function getSkillById(
     return null;
   }
 
-  return (data || []).find((s: MascotSkill) => s.id === skillId) || null;
+  const skillsList = (data || []) as unknown as MascotSkill[];
+  return skillsList.find((s) => s.id === skillId) || null;
 }

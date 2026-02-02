@@ -13,6 +13,8 @@ import {
   ActivityIndicator,
   TextInput,
   Modal,
+  Animated,
+  Easing,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -34,6 +36,7 @@ import { useMascotSkills, useMascotPersonality, MascotSkill, getCombinedPrompt, 
 import { useMascotLike } from '@/services/mascot-likes';
 import { createConversation, saveMessage, generateConversationTitle, useConversationMessages, deleteConversation, getConversation } from '@/services/chat-history';
 import { useMascotAccess, incrementTrialUsage } from '@/services/mascot-access';
+import { ChainOfThought } from '@/components/chat/ChainOfThought';
 
 // Message types
 type MessageRole = 'user' | 'assistant';
@@ -43,7 +46,7 @@ type Message = {
   role: MessageRole;
   content: string;
   model?: string;
-  provider?: 'openai' | 'gemini' | 'perplexity' | 'grok'; // Provider used for this message
+  provider?: 'openai' | 'gemini' | 'perplexity' | 'grok' | 'claude'; // Provider used for this message
   citations?: string[]; // Citation URLs from Perplexity
   isThinking?: boolean;
   attachment?: {
@@ -80,40 +83,42 @@ const mascotImages: Record<string, ImageSourcePropType> = {
  * This ensures users see the 2026 flagship names even if the backend IDs vary.
  */
 const mapTechnicalToPremiumModel = (modelId?: string, provider?: string): string => {
-  if (!modelId) return provider ? (provider === 'openai' ? 'GPT-5.2' : provider === 'grok' ? 'Grok 4.1' : provider === 'perplexity' ? 'Sonar Reasoning' : 'Gemini 3') : 'AI Model';
+  if (!modelId) return provider ? (provider === 'openai' ? 'GPT-5.2' : provider === 'grok' ? 'Grok 4.1' : provider === 'perplexity' ? 'Sonar Reasoning' : provider === 'claude' ? 'Claude 3.5' : 'Gemini 3') : 'AI Model';
 
   const id = modelId.toLowerCase();
 
   // OpenAI 2026 Stack
-  if (id.includes('gpt-5.2')) return 'OpenAI GPT-5.2 (Flagship)';
-  if (id.includes('gpt-5-mini')) return 'OpenAI GPT-5-mini (Speed)';
-  if (id.includes('gpt-5')) return 'OpenAI GPT-5 (Pre-release)';
+  if (id.includes('gpt-5.2')) return 'OpenAI GPT-5.2';
+  if (id.includes('gpt-5-mini')) return 'OpenAI GPT-5-mini';
+  if (id.includes('gpt-5')) return 'OpenAI GPT-5';
 
-  // Grok 2026 Stack
-  if (id.includes('grok-4.1-fast-reasoning')) return 'xAI Grok 4.1 (Deep Reasoning)';
-  if (id.includes('grok-4-fast-reasoning')) return 'xAI Grok 4.1 (Deep Reasoning)';
-  if (id.includes('grok-4.1-fast-non-reasoning')) return 'xAI Grok 4.1 (Flagship)';
-  if (id.includes('grok-4-fast-non-reasoning')) return 'xAI Grok 4.1 (Flagship)';
-  if (id.includes('grok-4.1-fast')) return 'xAI Grok 4.1 (Flagship)';
-  if (id.includes('grok-4-fast')) return 'xAI Grok 4.1 (Flagship)';
-  if (id.includes('grok-4.1')) return 'xAI Grok 4.1';
+  // Grok Stack (xAI - docs.x.ai/docs/models)
+  if (id.includes('grok-4-1-fast')) return 'xAI Grok 4.1 Fast';
   if (id.includes('grok-4')) return 'xAI Grok 4';
-  if (id.includes('grok-3')) return 'xAI Grok 3 (Legacy)';
+  if (id.includes('grok-3-mini')) return 'xAI Grok 3 Mini';
+  if (id.includes('grok-3')) return 'xAI Grok 3';
 
   // Google 2026 Stack
-  if (id.includes('gemini-3-pro')) return 'Google Gemini 3 Pro (Frontier)';
-  if (id.includes('gemini-3-flash')) return 'Google Gemini 3 Flash (Instant)';
+  if (id.includes('gemini-3-pro')) return 'Google Gemini 3 Pro';
+  if (id.includes('gemini-3-flash')) return 'Google Gemini 3 Flash';
   if (id.includes('gemini-3')) return 'Google Gemini 3';
-  if (id.includes('gemini-2.5')) return 'Google Gemini 2.5 (Stable)';
+  if (id.includes('gemini-2.5')) return 'Google Gemini 2.5';
 
   // Perplexity 2026 Stack
-  if (id.includes('sonar-reasoning-pro')) return 'Perplexity Sonar Reasoning Pro (Deep Research)';
+  if (id.includes('sonar-reasoning-pro')) return 'Perplexity Sonar Reasoning Pro';
   if (id.includes('sonar-reasoning')) return 'Perplexity Sonar Reasoning';
-  if (id.includes('sonar')) return 'Perplexity Sonar (Web Search API)';
+  if (id.includes('sonar')) return 'Perplexity Sonar';
+
+  // Anthropic Stack (docs.anthropic.com/en/docs/about-claude/models)
+  if (id.includes('claude-sonnet-4-5')) return 'Anthropic Claude 4.5 Sonnet';
+  if (id.includes('claude-4.5')) return 'Anthropic Claude 4.5';
+  if (id.includes('claude-4')) return 'Anthropic Claude 4';
+  if (id.includes('claude-3-5-opus')) return 'Anthropic Claude 3.5 Opus';
+  if (id.includes('claude-3-5-sonnet')) return 'Anthropic Claude 3.5 Sonnet';
 
   // Fallbacks for older models seen in legacy/uncached instances
-  if (id.includes('gpt-4o-mini')) return 'OpenAI GPT-5.2 (Requested) • gpt-4o-mini (Fallback)';
-  if (id.includes('gpt-4o')) return 'OpenAI GPT-5.2 (Requested) • gpt-4o (Legacy)';
+  if (id.includes('gpt-4o-mini')) return 'OpenAI GPT-5.2 (Fallback)';
+  if (id.includes('gpt-4o')) return 'OpenAI GPT-5.2 (Legacy)';
 
   return modelId;
 };
@@ -562,6 +567,10 @@ export default function ChatScreen() {
   // Track if we've processed the initial message from home screen
   const hasProcessedInitialMessage = useRef(false);
 
+  // Track if we are currently promoting a local chat to a saved one
+  // This prevents the db-sync effect from overwriting our local messages with empty/partial DB data
+  const isPromotingChat = useRef(false);
+
   // Determine the initial assistant message
   const initialAssistantMessage = questionPrompt || mascot.greeting;
 
@@ -595,6 +604,13 @@ export default function ChatScreen() {
 
   // Load existing messages when conversation is loaded
   useEffect(() => {
+    // If we are currently creating/promoting this chat, DO NOT overwrite local messages with DB data
+    // The DB data might be lagging (empty/partial) while we flush messages
+    if (isPromotingChat.current) {
+      console.log('[Chat] Promoting chat - skipping DB message overwrite to preserve history');
+      return;
+    }
+
     if (currentConversationId && dbMessages.length > 0) {
       // Convert database messages to Message format
       const loadedMessages: Message[] = dbMessages
@@ -688,7 +704,41 @@ export default function ChatScreen() {
 
   const [isLoading, setIsLoading] = useState(false);
   const [streamingContent, setStreamingContent] = useState('');
+  const [thinkingStatus, setThinkingStatus] = useState<string | null>(null); // Transient thinking indicator
   const [isRecording, setIsRecording] = useState(false);
+
+  // Animation for the thinking indicator
+  const thinkingOpacity = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    let animation: any = null;
+
+    if (isLoading && !streamingContent) {
+      // Start pulsing animation
+      animation = Animated.loop(
+        Animated.sequence([
+          Animated.timing(thinkingOpacity, {
+            toValue: 0.4,
+            duration: 800,
+            useNativeDriver: true,
+            easing: Easing.inOut(Easing.ease),
+          }),
+          Animated.timing(thinkingOpacity, {
+            toValue: 1,
+            duration: 800,
+            useNativeDriver: true,
+            easing: Easing.inOut(Easing.ease),
+          }),
+        ])
+      );
+      animation.start();
+    } else {
+      // Reset
+      thinkingOpacity.setValue(1);
+      animation?.stop();
+    }
+
+    return () => animation?.stop();
+  }, [isLoading, streamingContent]);
 
   const {
     webSearchEnabled, setWebSearchEnabled,
@@ -784,7 +834,8 @@ export default function ChatScreen() {
   const sendMessage = useCallback(async (
     messageContent: string,
     isSkillLabel: boolean = false,
-    attachment?: { uri: string; base64?: string; mimeType?: string }
+    attachment?: { uri: string; base64?: string; mimeType?: string },
+    explicitProvider?: 'openai' | 'gemini' | 'perplexity' | 'grok' | 'claude' // Add explicit provider override
   ) => {
     if ((!messageContent.trim() && !attachment) || isLoading) return;
 
@@ -924,33 +975,51 @@ export default function ChatScreen() {
         return realTimeKeywords.some(keyword => lowerQuery.includes(keyword));
       };
 
-      // Convert chatLLM to provider override ('openai' | 'gemini' | 'perplexity' | undefined for auto)
+      // Convert chatLLM to provider override ('openai' | 'gemini' | 'perplexity' | 'grok' | 'claude' | undefined for auto)
       // If 'auto', intelligently choose based on query content and mascot task category
-      let providerOverride: 'openai' | 'gemini' | 'perplexity' | 'grok' | undefined;
+      let providerOverride: 'openai' | 'gemini' | 'perplexity' | 'grok' | 'claude' | undefined;
 
-      if (chatLLM === 'auto') {
-        // Check if query needs real-time data
-        // Use the current user input, not the last message in the array
-        // Check if query needs real-time data
-        // Use the current user input, not the last message in the array
-        if (needsRealTimeData(contentForLLM) && (isSubscribed || isAdmin)) {
-          providerOverride = 'perplexity'; // Use web-grounded for current info
-          console.log('[Chat] Auto mode detected real-time query, using Perplexity (Pro/Admin)');
+      // Check if the active skill has a preferred provider
+      const skillProvider = activeSkill?.preferred_provider as 'openai' | 'gemini' | 'perplexity' | 'grok' | 'claude' | 'auto' | undefined;
+
+      if (explicitProvider) {
+        // Explicit override (e.g. from skill deep link/auto-send) takes highest precedence
+        providerOverride = explicitProvider;
+        console.log('[Chat] Using Explicit Provider Override:', providerOverride);
+      } else if (chatLLM === 'auto') {
+        // In Auto mode, Skill preference takes precedence over system auto-detection
+        if (skillProvider && skillProvider !== 'auto') {
+          providerOverride = skillProvider;
+          console.log('[Chat] Using Skill Preferred Provider:', providerOverride);
         } else {
-          // Use task-based selection (OpenAI vs Gemini)
-          providerOverride = undefined; // Let Edge Function decide based on taskCategory
+          // Check if query needs real-time data
+          // Use the current user input, not the last message in the array
+          if (needsRealTimeData(contentForLLM) && (isSubscribed || isAdmin)) {
+            providerOverride = 'perplexity'; // Use web-grounded for current info
+            console.log('[Chat] Auto mode detected real-time query, using Perplexity (Pro/Admin)');
+          } else {
+            // Use task-based selection (OpenAI vs Gemini)
+            providerOverride = undefined; // Let Edge Function decide based on taskCategory
+          }
         }
-      } else if (chatLLM === 'openai' || chatLLM === 'gemini' || chatLLM === 'perplexity' || chatLLM === 'grok') {
-        // Enforce Perplexity/Grok lock for non-pro users
-        // Allow in development for testing
-        if ((chatLLM === 'perplexity' || chatLLM === 'grok') && !isSubscribed && !isAdmin && !__DEV__) {
-          console.log('[Chat] User requested Premium Model but is not Pro/Admin - falling back to undefined (Auto)');
-          providerOverride = undefined;
-        } else {
-          providerOverride = chatLLM; // Manual selection
-        }
+      } else if (chatLLM === 'openai' || chatLLM === 'gemini' || chatLLM === 'perplexity' || chatLLM === 'grok' || chatLLM === 'claude') {
+        // Manual user selection takes precedence
+        providerOverride = chatLLM;
       } else {
         providerOverride = undefined; // Fallback to auto
+      }
+
+      // Enforce premium model restrictions for non-pro users
+      // Allow in development for testing
+      const isPremiumModel = (p?: string) => p === 'perplexity' || p === 'grok' || p === 'claude';
+
+      if (isPremiumModel(providerOverride)) {
+        console.log(`[Chat] Premium Check: Model=${providerOverride}, Subscribed=${isSubscribed}, Admin=${isAdmin}, Dev=${__DEV__}`);
+      }
+
+      if (isPremiumModel(providerOverride) && !isSubscribed && !isAdmin && !__DEV__) {
+        console.warn(`[Chat] User requested Premium Model (${providerOverride}) but is not Pro/Admin - falling back to undefined (Auto)`);
+        // providerOverride = undefined; // TEMPORARY: Disable fallback to test model selection
       }
 
       // Log which provider we're using
@@ -975,6 +1044,7 @@ export default function ChatScreen() {
       if (!conversationId && userMessageCount >= 5) {
         try {
           console.log('[Chat] 5th message reached - Creating conversation and flushing history...');
+          isPromotingChat.current = true; // Prevent DB sync from wiping local messages
           const newConversation = await createConversation(mascotId || '1', messages[0]?.content?.substring(0, 50) || 'New Conversation');
           conversationId = newConversation.id;
           setCurrentConversationId(conversationId);
@@ -1067,6 +1137,8 @@ export default function ChatScreen() {
         mascotId || '1',
         messagesToSend,
         (chunk) => {
+          // Clear thinking status when content starts streaming
+          setThinkingStatus(null);
           fullContent += chunk;
           setStreamingContent(fullContent);
           // Auto-scroll while streaming - but only if user hasn't scrolled away
@@ -1083,18 +1155,20 @@ export default function ChatScreen() {
         deepThinkingEnabled, // Deep Thinking mode (uses pro models)
         attachment && attachment.base64 ? { mimeType: attachment.mimeType || 'image/jpeg', base64: attachment.base64 } : undefined,
         mascot.taskCategory, // Pass task category for auto provider selection
-        webSearchEnabled // Enable web grounding
+        webSearchEnabled, // Enable web grounding
+        (thinking) => setThinkingStatus(thinking) // Transient thinking indicator callback
       );
 
       const assistantContent = response.content;
 
       // Use the provider from the response (Edge Function tells us what was actually used)
-      const actualProvider: 'openai' | 'gemini' | 'perplexity' | 'grok' | undefined = response.provider ||
+      const actualProvider: 'openai' | 'gemini' | 'perplexity' | 'grok' | 'claude' | undefined = response.provider ||
         (providerOverride || // Fallback to user override if response doesn't include provider
           (response.model?.toLowerCase().includes('gpt') ? 'openai' :
             response.model?.toLowerCase().includes('gemini') ? 'gemini' :
               response.model?.toLowerCase().includes('sonar') ? 'perplexity' :
-                undefined));
+                response.model?.toLowerCase().includes('claude') ? 'claude' :
+                  undefined));
 
       console.log('[Chat] Response received - Model:', response.model, 'Provider:', actualProvider, '(requested:', providerOverride || 'auto', ')');
 
@@ -1194,6 +1268,7 @@ export default function ChatScreen() {
       setStreamingContent('');
     } finally {
       setIsLoading(false);
+      setThinkingStatus(null); // Clear thinking indicator
       // Focus input after response completes so user can continue typing
       // Use longer delay to ensure response rendering is complete
       if (Platform.OS === 'web') {
@@ -1214,6 +1289,12 @@ export default function ChatScreen() {
   // IMPORTANT: If skillId is provided, send the skill label
   // User sees the skill label, but LLM receives the full skill prompt (handled in sendMessage)
   useEffect(() => {
+    // If we have a skillId, we must ensure skills are loaded before proceeding
+    // This allows us to find the activeSkill (if it exists) and use its preferences
+    if (skillId && skillsLoading) {
+      return;
+    }
+
     if ((initialMessage || (initialAttachmentUri && initialAttachmentBase64)) && !hasProcessedInitialMessage.current) {
       hasProcessedInitialMessage.current = true;
 
@@ -1241,8 +1322,13 @@ export default function ChatScreen() {
           // If we have a skillId, send the skill label
           // sendMessage will detect it's a skill and send the full prompt to LLM
           if (skillId && activeSkillId && activeSkill) {
+            // Determine explicit provider for this skill activation
+            const skillProvider = activeSkill.preferred_provider as 'openai' | 'gemini' | 'perplexity' | 'grok' | 'claude' | 'auto' | undefined;
+            const explicitProvider = (skillProvider && skillProvider !== 'auto') ? skillProvider : undefined;
+
             // Send the skill label (user sees this), but LLM gets full prompt
-            sendMessage(activeSkill.skill_label, true, attachment); // true = this is a skill label
+            // Pass the skill provider explicitly to ensure it overrides defaults/auto
+            sendMessage(activeSkill.skill_label, true, attachment, explicitProvider);
           } else {
             // No skill selected, send the initial message as-is
             sendMessage(initialMessage || '', false, attachment);
@@ -1250,7 +1336,7 @@ export default function ChatScreen() {
         }, 500);
       }
     }
-  }, [initialMessage, sendMessage, skillId, activeSkillId, activeSkill, initialAttachmentUri, initialAttachmentBase64, initialAttachmentMime, messages]);
+  }, [initialMessage, sendMessage, skillId, activeSkillId, activeSkill, initialAttachmentUri, initialAttachmentBase64, initialAttachmentMime, messages, skillsLoading]);
 
   // Track keyboard state to fix padding issues
   useEffect(() => {
@@ -1360,6 +1446,16 @@ export default function ChatScreen() {
     // Dismiss keyboard if visible
     Keyboard.dismiss();
 
+    let selectedLLM = chatLLM;
+
+    // Set preferred model if defined for this skill
+    if (typeof skill !== 'string' && skill.preferred_provider && skill.preferred_provider !== 'auto') {
+      console.log('[Chat] Setting preferred LLM from skill:', skill.preferred_provider);
+      // Cast to any because LLMPreference comes from a different file but values mimic string literals
+      selectedLLM = skill.preferred_provider as any;
+      // setChatLLM(selectedLLM); // REQUESTED: Keep UI on 'Auto' (or current), but use selectedLLM for routing below
+    }
+
     // Handle both database skill objects and legacy string skills
     const skillLabel = typeof skill === 'string' ? skill : skill.skill_label;
     const skillIdToActivate = typeof skill === 'string' ? null : skill.id;
@@ -1462,20 +1558,25 @@ export default function ChatScreen() {
       // CRITICAL: For skill clicks, we have two scenarios:
       // 1. Admin users: We have skillPrompt (full prompt) - send it to LLM
       // 2. Non-admin users: We don't have skillPrompt (PREVIOUSLY) - NOW we do because we query raw table
-      // 3. Placeholders: If prompt has [placeholder], DO NOT AUTO SEND.
-      // Relaxed check: Only check for square brackets [], assume () are normal text
-      const hasPlaceholders = skillPrompt && /\[.*?\]/.test(skillPrompt);
 
+      // DEPRECATED: We no longer auto-populate the input with the prompt if it has placeholders.
+      // Instead, we rely on the Edge Function to detect the missing input and ask the user for it.
+      // This provides a much cleaner UX (no huge prompts in input box).
+      /*
+      const hasPlaceholders = skillPrompt && /\[[^\]]+\](?!\()/.test(skillPrompt);
+  
       if (hasPlaceholders) {
         console.log('[Chat] Skill prompt has placeholders - preventing auto-send. Populating input.');
         setInputText(skillPrompt || skillLabel);
         setIsLoading(false);
+        setThinkingStatus(null); // Clear thinking indicator
         // setShowSkills(false); // Keep skills visible
         setActiveTab('chat');
         // Focus input if possible (ref needed)
         setTimeout(() => chatInputRef.current?.focus(), 100);
         return; // STOP HERE
       }
+      */
 
       // NEVER send skill_prompt_preview - it's incomplete and shouldn't be shown to LLM
       const actualMessageContentForLLM = skillPrompt || skillLabel;
@@ -1504,8 +1605,8 @@ export default function ChatScreen() {
       // Convert chatLLM to provider override ('openai' | 'gemini' | undefined for auto)
       // If 'auto', don't pass provider (let system choose based on mascot config or default)
       // If 'perplexity', treat as 'auto' for now (not supported in Edge Function yet)
-      const providerOverride: 'openai' | 'gemini' | 'perplexity' | 'grok' | undefined =
-        chatLLM === 'openai' || chatLLM === 'gemini' || chatLLM === 'perplexity' || chatLLM === 'grok' ? chatLLM : undefined;
+      const providerOverride: 'openai' | 'gemini' | 'perplexity' | 'grok' | 'claude' | undefined =
+        selectedLLM === 'openai' || selectedLLM === 'gemini' || selectedLLM === 'perplexity' || selectedLLM === 'grok' || selectedLLM === 'claude' ? selectedLLM : undefined;
 
       console.log('[Chat] Skill press - Provider override:', providerOverride || 'auto (system chooses)');
 
@@ -1524,6 +1625,7 @@ export default function ChatScreen() {
       if (!conversationId) {
         try {
           console.log('[Chat] Creating new conversation for mascot:', mascotId || '1');
+          isPromotingChat.current = true; // Prevent DB sync from wiping local messages
           const newConversation = await createConversation(mascotId || '1');
           conversationId = newConversation.id;
           console.log('[Chat] New conversation created:', conversationId);
@@ -1604,6 +1706,8 @@ export default function ChatScreen() {
         mascotId || '1',
         secureMessages,
         (chunk: string) => {
+          // Clear thinking status when content starts streaming
+          setThinkingStatus(null);
           fullContent += chunk;
           setStreamingContent(fullContent);
           scrollViewRef.current?.scrollToEnd({ animated: false });
@@ -1614,18 +1718,20 @@ export default function ChatScreen() {
         deepThinkingEnabled, // Deep Thinking mode (uses pro models)
         undefined, // No image for skills
         mascot.taskCategory, // Pass task category for auto provider selection
-        webSearchEnabled // Enable web grounding
+        webSearchEnabled, // Enable web grounding
+        (thinking) => setThinkingStatus(thinking) // Transient thinking indicator callback
       );
 
       const assistantContent = response.content;
 
       // Use the provider from the response (Edge Function tells us what was actually used)
-      const actualProvider: 'openai' | 'gemini' | 'perplexity' | 'grok' | undefined = response.provider ||
+      const actualProvider: 'openai' | 'gemini' | 'perplexity' | 'grok' | 'claude' | undefined = response.provider ||
         (providerOverride || // Fallback to user override if response doesn't include provider
           (response.model?.toLowerCase().includes('gpt') ? 'openai' :
             response.model?.toLowerCase().includes('gemini') ? 'gemini' :
               response.model?.toLowerCase().includes('sonar') ? 'perplexity' :
-                undefined));
+                response.model?.toLowerCase().includes('claude') ? 'claude' :
+                  undefined));
 
       console.log('[Chat] Skill response - Model:', response.model, 'Provider:', actualProvider, '(requested:', providerOverride || 'auto', ')');
 
@@ -1692,6 +1798,7 @@ export default function ChatScreen() {
       setStreamingContent('');
     } finally {
       setIsLoading(false);
+      setThinkingStatus(null); // Clear thinking indicator
     }
   };
 
@@ -2153,6 +2260,7 @@ export default function ChatScreen() {
           onConversationPress={(conversationId) => {
             // Switch to the selected conversation
             // This will trigger the useEffect to load messages
+            isPromotingChat.current = false; // Allow overwrite for manual switch
             setCurrentConversationId(conversationId);
             // Clear current messages so they get replaced when loaded
             setMessages([]);
@@ -2163,6 +2271,7 @@ export default function ChatScreen() {
           }}
           onNewChat={() => {
             // Start a new conversation
+            isPromotingChat.current = false;
             setCurrentConversationId(null);
             setTitleGenerationQueued(false);
             setMessages([
@@ -2308,20 +2417,15 @@ export default function ChatScreen() {
             </View>
           )}
 
-          {/* Thinking indicator */}
+          {/* Thinking indicator - shows dynamic status (e.g., "🌐 Searching the web...") or generic "Thinking..." */}
+          {/* Thinking indicator - shows dynamic chain of thought */}
           {isLoading && !streamingContent && (
             <View style={[styles.messageWrapper, styles.assistantMessageWrapper]}>
-              <Text
-                style={[
-                  styles.thinkingText,
-                  {
-                    fontFamily: fontFamilies.figtree.semiBold,
-                    color: colors.icon,
-                  },
-                ]}
-              >
-                {t.chat.thinking}
-              </Text>
+              <ChainOfThought
+                status={thinkingStatus}
+                isDeepThinking={deepThinkingEnabled}
+                contextPrompt={messages.filter(m => m.role === 'user').pop()?.content}
+              />
             </View>
           )}
         </ScrollView>
@@ -2345,6 +2449,7 @@ export default function ChatScreen() {
                     key={skill.id}
                     label={skill.skill_label}
                     onPress={() => handleSkillPress(skill)}
+                    color={mascot.color}
                   />
                 ))
                 : mascot.skills.map((skill) => (
@@ -2398,7 +2503,8 @@ export default function ChatScreen() {
                 onChangeText={setInputText}
                 onSend={handleSend}
                 placeholder={t.chat.placeholder}
-                disabled={isLoading || !canUse}
+                disabled={!canUse}
+                isLoading={isLoading}
                 mascotColor={mascot.color}
                 showLLMPicker={true}
                 chatLLM={chatLLM}

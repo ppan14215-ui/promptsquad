@@ -6,6 +6,7 @@ import {
   ScrollView,
   Pressable,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme, fontFamilies } from '@/design-system';
@@ -62,6 +63,7 @@ export default function SkillsScreen() {
   }, [skills, selectedMascotId]);
 
   const selectedMascot = mascots.find((m) => m.id === selectedMascotId);
+  const mascotColor = resolveMascotColor(selectedMascot?.color);
 
   // Auto-select first mascot when loaded
   React.useEffect(() => {
@@ -308,11 +310,11 @@ export default function SkillsScreen() {
                   onPress={() => setMascotEditorVisible(true)}
                   style={[styles.editButton, { backgroundColor: colors.surface }]}
                 >
-                  <Icon name="edit" size={18} color={colors.primary} />
+                  <Icon name="edit" size={18} color={mascotColor} />
                   <Text
                     style={[
                       styles.editButtonText,
-                      { fontFamily: fontFamilies.figtree.medium, color: colors.primary },
+                      { fontFamily: fontFamilies.figtree.medium, color: mascotColor },
                     ]}
                   >
                     Edit
@@ -394,11 +396,11 @@ export default function SkillsScreen() {
                   onPress={() => setPersonalityEditorVisible(true)}
                   style={[styles.editButton, { backgroundColor: colors.surface }]}
                 >
-                  <Icon name="edit" size={18} color={colors.primary} />
+                  <Icon name="edit" size={18} color={mascotColor} />
                   <Text
                     style={[
                       styles.editButtonText,
-                      { fontFamily: fontFamilies.figtree.medium, color: colors.primary },
+                      { fontFamily: fontFamilies.figtree.medium, color: mascotColor },
                     ]}
                   >
                     Edit
@@ -412,7 +414,7 @@ export default function SkillsScreen() {
                 ]}
               >
                 {isPersonalityLoading ? (
-                  <ActivityIndicator size="small" color={colors.primary} />
+                  <ActivityIndicator size="small" color={mascotColor} />
                 ) : mascotPersonality ? (
                   <Text
                     style={[
@@ -446,7 +448,7 @@ export default function SkillsScreen() {
                 >
                   Skills ({skills.length})
                 </Text>
-                <BigPrimaryButton label="Add Skill" onPress={handleAddSkill} />
+                <BigPrimaryButton label="Add Skill" onPress={handleAddSkill} color={mascotColor} />
               </View>
 
               {isSkillsLoading ? (
@@ -484,11 +486,11 @@ export default function SkillsScreen() {
                         mascotColor={selectedMascot.color}
                       />
                       <View style={styles.skillCardOverlay}>
-                        <Icon name="edit" size={16} color={colors.primary} />
+                        <Icon name="edit" size={16} color={mascotColor} />
                         <Text
                           style={[
                             styles.editHint,
-                            { fontFamily: fontFamilies.figtree.regular, color: colors.primary },
+                            { fontFamily: fontFamilies.figtree.regular, color: mascotColor },
                           ]}
                         >
                           Tap to edit
@@ -510,6 +512,7 @@ export default function SkillsScreen() {
         onSave={handleSkillSaved}
         mascotId={selectedMascotId || ''}
         mascotName={selectedMascot?.name}
+        mascotColor={selectedMascot?.color}
         skill={editingSkill}
       />
 
@@ -577,12 +580,12 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   header: {
-    paddingTop: 60,
+    paddingTop: Platform.OS === 'ios' ? 20 : 16, // Reduced from 60 since SafeAreaView handles the top
     paddingHorizontal: 24,
     paddingBottom: 16,
   },
   headerTitle: {
-    fontSize: 28,
+    fontSize: 24, // Reduced from 28
     fontWeight: '600',
   },
   headerSubtitle: {

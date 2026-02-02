@@ -224,12 +224,7 @@ export default function HomeScreen() {
     // 1. Check DB skills
     const dbSkill = dbSkills.find(s => s.id === skill.id);
     if (dbSkill?.skill_prompt) {
-      // Show 25% of the prompt
-      const prompt = dbSkill.skill_prompt;
-      const length = Math.ceil(prompt.length * 0.25);
-      // Ensure we show at least something, but cut off nicely
-      const preview = prompt.substring(0, length).trim() + '...';
-      setHoveredSkillPrompt(preview);
+      setHoveredSkillPrompt(dbSkill.skill_prompt);
     } else {
       setHoveredSkillPrompt(null);
     }
@@ -294,7 +289,7 @@ export default function HomeScreen() {
                     fontFamily: fontFamilies.figtree.regular
                   }
                 ]}
-                numberOfLines={3}
+                numberOfLines={6}
               >
                 {hoveredSkillPrompt}
               </Text>

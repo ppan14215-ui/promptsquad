@@ -17,6 +17,8 @@ import { BigSecondaryButton } from '@/components/ui/BigSecondaryButton';
 import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
 import { MascotSkill, createSkill, updateSkill, deleteSkill } from '@/services/admin';
+import { LLM_OPTIONS } from '@/services/preferences';
+import { resolveMascotColor } from '@/lib/utils/mascot-colors';
 import { logger } from '@/lib/utils/logger';
 
 type SkillEditorProps = {
@@ -25,6 +27,7 @@ type SkillEditorProps = {
   onSave: () => void;
   mascotId: string;
   mascotName?: string;
+  mascotColor?: string;
   skill?: MascotSkill | null; // null = create new, MascotSkill = edit existing
 };
 
@@ -34,12 +37,16 @@ export function SkillEditor({
   onSave,
   mascotId,
   mascotName,
+  mascotColor,
   skill,
 }: SkillEditorProps) {
   const { colors } = useTheme();
+  const themeMascotColor = resolveMascotColor(mascotColor);
   const [skillLabel, setSkillLabel] = useState('');
   const [skillPrompt, setSkillPrompt] = useState('');
   const [sortOrder, setSortOrder] = useState('0');
+  const [preferredProvider, setPreferredProvider] = useState<string | null>('auto');
+  const [showModelPicker, setShowModelPicker] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -50,13 +57,16 @@ export function SkillEditor({
     if (skill) {
       setSkillLabel(skill.skill_label);
       setSkillPrompt(skill.skill_prompt || '');
-      setSortOrder(String(skill.sort_order));
+      setSortOrder(skill.sort_order?.toString() || '0');
+      setPreferredProvider(skill.preferred_provider || 'auto');
     } else {
       setSkillLabel('');
       setSkillPrompt('');
       setSortOrder('0');
+      setPreferredProvider('auto');
     }
     setError(null);
+    setShowModelPicker(false);
   }, [skill, visible]);
 
   const handleSave = async () => {
@@ -78,13 +88,15 @@ export function SkillEditor({
           skill_label: skillLabel.trim(),
           skill_prompt: skillPrompt.trim(),
           sort_order: parseInt(sortOrder, 10) || 0,
+          preferred_provider: preferredProvider,
         });
       } else {
         await createSkill(
           mascotId,
           skillLabel.trim(),
           skillPrompt.trim(),
-          parseInt(sortOrder, 10) || 0
+          parseInt(sortOrder, 10) || 0,
+          preferredProvider
         );
       }
       logger.debug('[SkillEditor] Skill saved successfully, calling onSave callback');
@@ -137,13 +149,10 @@ export function SkillEditor({
       >
         {/* Header */}
         <View style={[styles.header, { borderBottomColor: colors.outline }]}>
-          <Pressable onPress={onClose} style={styles.closeButton}>
-            <Icon name="close" size={24} color={colors.text} />
-          </Pressable>
           <Text
             style={[
               styles.headerTitle,
-              { fontFamily: fontFamilies.semibold, color: colors.text },
+              { fontFamily: fontFamilies.figtree.semiBold, color: colors.text },
             ]}
           >
             {isEditing ? 'Edit Skill' : 'New Skill'}
@@ -152,12 +161,19 @@ export function SkillEditor({
             <Text
               style={[
                 styles.headerSubtitle,
-                { fontFamily: fontFamilies.regular, color: colors.textSecondary },
+                { fontFamily: fontFamilies.figtree.regular, color: colors.textMuted },
               ]}
             >
               for {mascotName}
             </Text>
           )}
+          <Pressable
+            onPress={onClose}
+            style={[styles.closeButton, { zIndex: 10 }]}
+            hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+          >
+            <Icon name="close" size={24} color={colors.text} />
+          </Pressable>
         </View>
 
         <ScrollView
@@ -170,7 +186,7 @@ export function SkillEditor({
             <Text
               style={[
                 styles.label,
-                { fontFamily: fontFamilies.medium, color: colors.text },
+                { fontFamily: fontFamilies.figtree.medium, color: colors.text },
               ]}
             >
               Skill Label *
@@ -179,7 +195,7 @@ export function SkillEditor({
               style={[
                 styles.input,
                 {
-                  fontFamily: fontFamilies.regular,
+                  fontFamily: fontFamilies.figtree.regular,
                   color: colors.text,
                   borderColor: colors.outline,
                   backgroundColor: colors.surface,
@@ -200,7 +216,7 @@ export function SkillEditor({
             <Text
               style={[
                 styles.label,
-                { fontFamily: fontFamilies.medium, color: colors.text },
+                { fontFamily: fontFamilies.figtree.medium, color: colors.text },
               ]}
             >
               Sort Order
@@ -210,7 +226,7 @@ export function SkillEditor({
                 styles.input,
                 styles.smallInput,
                 {
-                  fontFamily: fontFamilies.regular,
+                  fontFamily: fontFamilies.figtree.regular,
                   color: colors.text,
                   borderColor: colors.outline,
                   backgroundColor: colors.surface,
@@ -225,12 +241,83 @@ export function SkillEditor({
             />
           </View>
 
+          {/* Preferred Model Picker */}
+          <View style={[styles.fieldContainer, { zIndex: 100 }]}>
+            <Text
+              style={[
+                styles.label,
+                { fontFamily: fontFamilies.figtree.medium, color: colors.text },
+              ]}
+            >
+              Preferred AI Model
+            </Text>
+            <Pressable
+              onPress={() => setShowModelPicker(!showModelPicker)}
+              style={[
+                styles.input,
+                {
+                  fontFamily: fontFamilies.figtree.regular,
+                  color: colors.text,
+                  borderColor: colors.outline,
+                  backgroundColor: colors.surface,
+                  flexDirection: 'row',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  paddingVertical: 12,
+                },
+                Platform.OS === 'web' && ({ boxShadow: shadowToCSS('xs') } as unknown as object),
+              ]}
+            >
+              <Text style={{ fontFamily: fontFamilies.figtree.regular, color: colors.text }}>
+                {LLM_OPTIONS.find(o => o.code === (preferredProvider || 'auto'))?.name || 'Auto'}
+              </Text>
+              <Icon name={showModelPicker ? "arrow-up" : "arrow-down"} size={20} color={colors.textMuted} />
+            </Pressable>
+
+            {showModelPicker && (
+              <View style={{
+                marginTop: 4,
+                borderWidth: 1,
+                borderColor: colors.outline,
+                borderRadius: 8,
+                backgroundColor: colors.surface,
+                maxHeight: 200, // Limit height if many models
+              }}>
+                <ScrollView nestedScrollEnabled style={{ maxHeight: 200 }}>
+                  {LLM_OPTIONS.map((option, index) => (
+                    <Pressable
+                      key={option.code}
+                      onPress={() => {
+                        setPreferredProvider(option.code);
+                        setShowModelPicker(false);
+                      }}
+                      style={{
+                        padding: 12,
+                        borderBottomWidth: index < LLM_OPTIONS.length - 1 ? 1 : 0,
+                        borderBottomColor: colors.outline,
+                        backgroundColor: preferredProvider === option.code ? themeMascotColor + '15' : 'transparent',
+                      }}
+                    >
+                      <Text style={{
+                        fontFamily: preferredProvider === option.code ? fontFamilies.figtree.semiBold : fontFamilies.figtree.regular,
+                        color: preferredProvider === option.code ? themeMascotColor : colors.text
+                      }}>
+                        {option.name}
+                      </Text>
+                      <Text style={{ fontSize: 12, color: colors.textMuted, marginTop: 2 }}>{option.description}</Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              </View>
+            )}
+          </View>
+
           {/* Skill Prompt */}
           <View style={styles.fieldContainer}>
             <Text
               style={[
                 styles.label,
-                { fontFamily: fontFamilies.medium, color: colors.text },
+                { fontFamily: fontFamilies.figtree.medium, color: colors.text },
               ]}
             >
               Skill Prompt *
@@ -238,7 +325,7 @@ export function SkillEditor({
             <Text
               style={[
                 styles.hint,
-                { fontFamily: fontFamilies.regular, color: colors.textSecondary },
+                { fontFamily: fontFamilies.figtree.regular, color: colors.textMuted },
               ]}
             >
               The full system prompt for this skill. Use [placeholders] for user inputs.
@@ -247,7 +334,7 @@ export function SkillEditor({
               style={[
                 styles.textArea,
                 {
-                  fontFamily: fontFamilies.regular,
+                  fontFamily: fontFamilies.figtree.regular,
                   color: colors.text,
                   borderColor: colors.outline,
                   backgroundColor: colors.surface,
@@ -269,17 +356,17 @@ export function SkillEditor({
           {/* Error Message */}
           {error && (
             <View style={[styles.errorContainer, { backgroundColor: '#FFEBEE' }]}>
-              <Text style={[styles.errorText, { color: '#C62828', fontFamily: fontFamilies.medium }]}>
+              <Text style={[styles.errorText, { color: '#C62828', fontFamily: fontFamilies.figtree.medium }]}>
                 Error: {error}
               </Text>
             </View>
           )}
-          
+
           {/* Loading Indicator */}
           {isLoading && (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="small" color={colors.primary} />
-              <Text style={[styles.loadingText, { fontFamily: fontFamilies.regular, color: colors.textMuted }]}>
+              <Text style={[styles.loadingText, { fontFamily: fontFamilies.figtree.regular, color: colors.textMuted }]}>
                 {isEditing ? 'Updating skill...' : 'Creating skill...'}
               </Text>
             </View>
@@ -295,7 +382,7 @@ export function SkillEditor({
               style={[styles.deleteButton, { opacity: isLoading ? 0.5 : 1 }]}
             >
               <Icon name="delete" size={20} color="#C62828" />
-              <Text style={[styles.deleteText, { fontFamily: fontFamilies.medium }]}>
+              <Text style={[styles.deleteText, { fontFamily: fontFamilies.figtree.medium }]}>
                 Delete
               </Text>
             </Pressable>
@@ -310,11 +397,12 @@ export function SkillEditor({
               label={isLoading ? 'Saving...' : 'Save Skill'}
               onPress={handleSave}
               disabled={isLoading}
+              color={themeMascotColor}
             />
           </View>
         </View>
       </KeyboardAvoidingView>
-    </Modal>
+    </Modal >
   );
 }
 
@@ -408,5 +496,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 12,
     marginLeft: 'auto',
+  },
+  loadingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 10,
+  },
+  loadingText: {
+    fontSize: 14,
   },
 });

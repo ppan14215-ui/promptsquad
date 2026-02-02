@@ -5,15 +5,16 @@ import { useAuth } from '@/services/auth';
 
 type ThemeMode = 'light' | 'dark';
 type Language = 'en' | 'de' | 'es';
-export type LLMProvider = 'gemini' | 'openai' | 'perplexity' | 'grok';
+export type LLMProvider = 'gemini' | 'openai' | 'perplexity' | 'grok' | 'claude';
 export type LLMPreference = 'auto' | LLMProvider;
 
 export const LLM_OPTIONS: { code: LLMPreference; name: string; description: string }[] = [
   { code: 'auto', name: 'Auto', description: 'Best model for the task' },
-  { code: 'gemini', name: 'Google Gemini 3', description: 'Google Frontier (Preview)' },
+  { code: 'gemini', name: 'Google Gemini 3', description: 'Google Frontier' },
   { code: 'openai', name: 'OpenAI GPT-5.2', description: 'The most intelligent model' },
   { code: 'perplexity', name: 'Perplexity Sonar', description: 'Deep web research' },
   { code: 'grok', name: 'xAI Grok 4.1', description: 'xAI Flagship' },
+  { code: 'claude', name: 'Anthropic Claude 3.5', description: 'Most articulate & creative' },
 ];
 
 // Task categories that help determine which AI is best
@@ -38,19 +39,17 @@ export function selectBestProvider(
 
   // Auto mode: select based on task category
   switch (taskCategory) {
+    case 'coding':
+    case 'complex':
+      // OpenAI/Claude excel at complex reasoning and code
+      return 'openai';
     case 'analysis':
     case 'creative':
-    case 'coding':
     case 'ux':
-    case 'complex':
-      // OpenAI excels at complex reasoning, creativity, and code
-      return 'openai';
     case 'conversation':
     case 'quick':
-      // Gemini is faster and great for general conversation
-      return 'gemini';
     default:
-      // Default to Gemini for speed
+      // Gemini 3 is fantastic for research, dialogue, and general tasks
       return 'gemini';
   }
 }

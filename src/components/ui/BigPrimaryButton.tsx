@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Text, Pressable, Platform, StyleSheet } from 'react-native';
 import { useTheme, textStyles, skeuToCSS, shadowToNative } from '@/design-system';
+import { resolveMascotColor } from '@/lib/utils/mascot-colors';
 
 export type BigPrimaryButtonState = 'default' | 'hover';
 
@@ -11,6 +12,8 @@ export type BigPrimaryButtonProps = {
   forceState?: BigPrimaryButtonState;
   /** Disable the button */
   disabled?: boolean;
+  /** Custom mascot color */
+  color?: string;
 };
 
 export function BigPrimaryButton({
@@ -18,6 +21,7 @@ export function BigPrimaryButton({
   onPress,
   forceState,
   disabled = false,
+  color,
 }: BigPrimaryButtonProps) {
   const { colors } = useTheme();
   const [isHoveredInternal, setIsHoveredInternal] = useState(false);
@@ -53,7 +57,9 @@ export function BigPrimaryButton({
         styles.container,
         webTransitionStyle,
         {
-          backgroundColor: isHovered ? colors.primaryHover : colors.primary,
+          backgroundColor: isHovered
+            ? (color ? resolveMascotColor(color) : colors.primaryHover)
+            : (color ? resolveMascotColor(color) : colors.primary),
           opacity: disabled ? 0.6 : 1,
         },
         skeuShadowStyle,

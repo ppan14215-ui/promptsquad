@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Text, Pressable, Platform, StyleSheet, View } from 'react-native';
 import { useTheme, textStyles, shadowToCSS, shadowToNative } from '@/design-system';
 import { Icon } from './Icon';
+import { resolveMascotColor } from '@/lib/utils/mascot-colors';
 
 export type LinkPillState = 'default' | 'hover';
 
@@ -12,6 +13,8 @@ export type LinkPillProps = {
   onHoverOut?: () => void;
   /** Force a specific state for preview purposes */
   forceState?: LinkPillState;
+  /** Custom mascot color */
+  color?: string;
 };
 
 export function LinkPill({
@@ -20,6 +23,7 @@ export function LinkPill({
   onHoverIn,
   onHoverOut,
   forceState,
+  color,
 }: LinkPillProps) {
   const { colors } = useTheme();
   const [isHoveredInternal, setIsHoveredInternal] = useState(false);
@@ -56,7 +60,9 @@ export function LinkPill({
         styles.container,
         webTransitionStyle,
         {
-          borderColor: isHovered ? colors.primary : colors.outline,
+          borderColor: isHovered
+            ? (color ? resolveMascotColor(color) : colors.primary)
+            : colors.outline,
           borderWidth: 1,
         },
         isHovered && shadowStyle,
@@ -69,7 +75,9 @@ export function LinkPill({
             fontFamily: textStyles.label.fontFamily,
             fontSize: textStyles.label.fontSize,
             letterSpacing: textStyles.label.letterSpacing,
-            color: isHovered ? colors.primary : colors.textMuted,
+            color: isHovered
+              ? (color ? resolveMascotColor(color) : colors.primary)
+              : colors.textMuted,
           },
         ]}
       >
@@ -82,7 +90,7 @@ export function LinkPill({
           <Icon
             name="arrow-up-right"
             size={12}
-            color={colors.primary}
+            color={color ? resolveMascotColor(color) : colors.primary}
           />
         </View>
       )}

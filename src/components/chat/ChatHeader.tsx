@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, Platform, ImageSourcePropType } from 'react-native';
+import { View, Text, StyleSheet, Platform, ImageSourcePropType, useWindowDimensions } from 'react-native';
 import { Image } from 'expo-image';
 import { IconButton, ColoredTab } from '@/components';
 import { useTheme, textStyles, fontFamilies } from '@/design-system';
@@ -48,6 +48,19 @@ export function ChatHeader({
   mascotColor,
 }: ChatHeaderProps) {
   const { colors } = useTheme();
+  const { width } = useWindowDimensions();
+  const isMobile = width < 600;
+  // If very narrow, hide trial progress
+  const showTrial = isTrial && width > 380;
+
+  // Responsive values
+  const backContainerWidth = isMobile ? 48 : 143;
+  const mascotLeft = isMobile ? 0 : 53;
+  const mascotTop = isMobile ? 24 : undefined; // Anchor top on mobile
+  const mascotBottom = isMobile ? undefined : 0; // Anchor bottom on desktop
+  const mascotSize = isMobile ? 80 : 100;
+  // Push tabs to right of mascot on mobile, or keep original left padding
+  const tabsPaddingLeft = isMobile ? 80 : 150;
 
   return (
     <View
@@ -57,18 +70,30 @@ export function ChatHeader({
           backgroundColor: colors.surface,
           borderBottomColor: colors.outline,
           paddingTop: Platform.OS !== 'web' ? Math.max(insets?.top ?? 0, 8) + 8 : 16,
+          // Add extra padding bottom on mobile to clear the mascot image if needed
+          paddingBottom: isMobile ? 12 : 16,
         },
       ]}
     >
       <Image
         source={mascotImage}
-        style={styles.headerMascotImage}
+        style={[
+          styles.headerMascotImage,
+          {
+            width: mascotSize,
+            height: mascotSize,
+            left: mascotLeft,
+            bottom: mascotBottom,
+            top: mascotTop,
+          }
+        ]}
         contentFit="cover"
         transition={200}
       />
 
-      <View style={styles.headerRow}>
-        <View style={styles.headerBackContainer}>
+      <View style={[styles.headerRow, isMobile && { paddingLeft: 60 }]}>
+        {/* Back button floats above on mobile or sits in flow on desktop */}
+        <View style={[styles.headerBackContainer, { width: backContainerWidth }]}>
           <IconButton iconName="arrow-left" onPress={onBack} />
         </View>
 
@@ -78,9 +103,9 @@ export function ChatHeader({
               styles.headerMascotName,
               {
                 fontFamily: textStyles.cardTitle.fontFamily,
-                fontSize: 18,
+                fontSize: isMobile ? 16 : 18,
                 letterSpacing: 0.36,
-                lineHeight: 23,
+                lineHeight: isMobile ? 20 : 23,
                 color: colors.text,
               },
             ]}
@@ -120,7 +145,14 @@ export function ChatHeader({
         </View>
       </View>
 
-      <View style={styles.tabsContainer}>
+      <View style={[
+        styles.tabsContainer,
+        {
+          paddingLeft: isMobile ? 0 : tabsPaddingLeft,
+          // On mobile, push it down a bit
+          marginTop: isMobile ? 8 : 0,
+        }
+      ]}>
         <View style={styles.tabsLeft}>
           {tabs.map((tab) => (
             <ColoredTab
@@ -134,19 +166,19 @@ export function ChatHeader({
         </View>
 
         {/* Trial Progress Bar - Inline with tabs, right-aligned */}
-        {isTrial && (
+        {showTrial && (
           <View style={styles.trialProgressInline}>
             <Text
               style={[
                 styles.trialProgressText,
                 {
                   fontFamily: fontFamilies.figtree.medium,
-                  fontSize: 12,
+                  fontSize: 10,
                   color: colors.textMuted,
                 },
               ]}
             >
-              Trial: {trialCount} / {trialLimit}
+              Trial: {trialCount}/{trialLimit}
             </Text>
             <View style={[styles.trialProgressBarContainer, { backgroundColor: colors.outline }]}>
               <View
@@ -178,9 +210,6 @@ const styles = StyleSheet.create({
   },
   headerMascotImage: {
     position: 'absolute',
-    width: 100,
-    height: 100,
-    left: 53,
     bottom: 0,
     zIndex: 0,
   },
@@ -191,7 +220,6 @@ const styles = StyleSheet.create({
     zIndex: 1,
   },
   headerBackContainer: {
-    width: 143,
     height: 32,
     justifyContent: 'center',
     alignItems: 'flex-start',
@@ -212,8 +240,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingTop: 16,
-    paddingLeft: 150,
-    gap: 16,
+    gap: 12,
   },
   tabsLeft: {
     flexDirection: 'row',
@@ -232,20 +259,21 @@ const styles = StyleSheet.create({
   trialProgressInline: {
     alignItems: 'flex-end',
     gap: 4,
-    minWidth: 120,
+    minWidth: 80,
   },
   trialProgressText: {
     textAlign: 'right',
-    fontSize: 11,
+    fontSize: 10,
   },
   trialProgressBarContainer: {
     height: 4,
     borderRadius: 2,
     overflow: 'hidden',
-    width: 100,
+    width: 60,
   },
   trialProgressBarFill: {
     height: '100%',
     borderRadius: 2,
   },
 });
+

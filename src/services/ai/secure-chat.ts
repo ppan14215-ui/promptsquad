@@ -8,7 +8,7 @@ export type ChatMessage = {
 export type SecureChatResponse = {
   content: string;
   model: string;
-  provider?: 'openai' | 'gemini' | 'perplexity' | 'grok';
+  provider?: 'openai' | 'gemini' | 'perplexity' | 'grok' | 'claude';
   citations?: string[]; // Citation URLs from Perplexity
 };
 
@@ -21,11 +21,12 @@ export async function secureChatStream(
   onChunk: (chunk: string) => void,
   conversationId?: string,
   skillId?: string,
-  provider?: 'openai' | 'gemini' | 'perplexity' | 'grok',
+  provider?: 'openai' | 'gemini' | 'perplexity' | 'grok' | 'claude',
   deepThinking?: boolean,
   image?: { mimeType: string; base64: string },
   taskCategory?: string,
-  webSearch?: boolean
+  webSearch?: boolean,
+  onThinking?: (thinkingStatus: string | null) => void
 ): Promise<SecureChatResponse> {
   // Get fresh session (getUser refreshes token if needed)
   const { data: { user: currentUser }, error: userError } = await supabase.auth.getUser();
@@ -189,7 +190,7 @@ export async function secureChatStream(
       const lines = text.split('\n').filter((line) => line.startsWith('data: '));
       let fullContent = '';
       let model = '';
-      let actualProvider: 'openai' | 'gemini' | 'perplexity' | 'grok' | undefined = undefined;
+      let actualProvider: 'openai' | 'gemini' | 'perplexity' | 'grok' | 'claude' | undefined = undefined;
       let citations: string[] | undefined = undefined;
 
       for (const line of lines) {
@@ -202,6 +203,11 @@ export async function secureChatStream(
           } else if (data.content) {
             fullContent += data.content;
             onChunk(data.content);
+          } else if (data.thinking) {
+            // Show thinking status in UI (transient indicator)
+            if (onThinking) {
+              onThinking(data.thinking);
+            }
           } else if (data.citations) {
             citations = data.citations;
           }
@@ -220,7 +226,7 @@ export async function secureChatStream(
   const decoder = new TextDecoder();
   let fullContent = '';
   let model = '';
-  let actualProvider: 'openai' | 'gemini' | 'perplexity' | 'grok' | undefined = undefined;
+  let actualProvider: 'openai' | 'gemini' | 'perplexity' | 'grok' | 'claude' | undefined = undefined;
   let citations: string[] | undefined = undefined;
 
   while (true) {
@@ -244,6 +250,11 @@ export async function secureChatStream(
         } else if (data.content) {
           fullContent += data.content;
           onChunk(data.content);
+        } else if (data.thinking) {
+          // Show thinking status in UI (transient indicator)
+          if (onThinking) {
+            onThinking(data.thinking);
+          }
         } else if (data.citations) {
           citations = data.citations;
         }
@@ -265,7 +276,7 @@ export async function secureChat(
   messages: ChatMessage[],
   conversationId?: string,
   skillId?: string,
-  provider?: 'openai' | 'gemini' | 'perplexity' | 'grok',
+  provider?: 'openai' | 'gemini' | 'perplexity' | 'grok' | 'claude',
   deepThinking?: boolean,
   image?: { mimeType: string; base64: string },
   taskCategory?: string

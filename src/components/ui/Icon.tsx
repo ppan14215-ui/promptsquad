@@ -1,14 +1,16 @@
 import React from 'react';
 import type { SvgProps } from 'react-native-svg';
-import { 
-  Home01Icon, 
-  UserIcon, 
+import {
+  Home01Icon,
+  UserIcon,
   AddCircleIcon,
   ArrowUpRight01Icon,
   Cancel01Icon,
   FavouriteIcon,
   ArrowLeft01Icon,
   ArrowRight01Icon,
+  ArrowUp01Icon,
+  ArrowDown01Icon,
   SentIcon,
   Mic01Icon,
   StopIcon,
@@ -20,13 +22,13 @@ import {
   Delete02Icon,
   Add01Icon,
   Settings02Icon,
-  type HugeiconsProps 
+  type HugeiconsProps
 } from 'hugeicons-react-native';
 import { FavouriteFilledIcon } from './FavouriteFilledIcon';
 
-type IconComponent = React.ComponentType<HugeiconsProps | SvgProps>;
+type IconComponent = React.ComponentType<any>;
 
-type NamedIcon = 'home' | 'user' | 'add-circle' | 'arrow-up-right' | 'close' | 'favourite' | 'favourite-filled' | 'arrow-left' | 'arrow-right' | 'send' | 'mic' | 'stop' | 'globe' | 'idea' | 'store' | 'lock' | 'edit' | 'delete' | 'add' | 'settings' | 'pin' | 'pin-filled';
+type NamedIcon = 'home' | 'user' | 'add-circle' | 'arrow-up-right' | 'close' | 'favourite' | 'favourite-filled' | 'arrow-left' | 'arrow-right' | 'arrow-up' | 'arrow-down' | 'send' | 'mic' | 'stop' | 'globe' | 'idea' | 'store' | 'lock' | 'edit' | 'delete' | 'add' | 'settings' | 'pin' | 'pin-filled';
 
 type IconProps = {
   name?: NamedIcon;
@@ -46,6 +48,8 @@ const iconMap: Record<NamedIcon, IconComponent> = {
   'favourite-filled': FavouriteFilledIcon,
   'arrow-left': ArrowLeft01Icon,
   'arrow-right': ArrowRight01Icon,
+  'arrow-up': ArrowUp01Icon,
+  'arrow-down': ArrowDown01Icon,
   'send': SentIcon,
   'mic': Mic01Icon,
   'stop': StopIcon,

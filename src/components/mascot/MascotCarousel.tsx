@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, Pressable, StyleSheet, PanResponder, Animated } from 'react-native';
+import { View, Text, Pressable, StyleSheet, PanResponder, Animated, useWindowDimensions } from 'react-native';
 import { Image } from 'expo-image';
 import { useTheme, fontFamilies } from '@/design-system';
 import { Icon } from '@/components';
@@ -48,6 +48,8 @@ export function MascotCarousel({
   scale = 1.0,
 }: MascotCarouselProps) {
   const { colors } = useTheme();
+  const { width } = useWindowDimensions();
+  const isNarrowMobile = width < 380;
 
   // Threshold in pixels for a swipe to be recognized
   const SWIPE_THRESHOLD = 50;
@@ -75,20 +77,27 @@ export function MascotCarousel({
     })
   ).current;
 
-  const selectedSize = (isDesktop ? 192 : 144) * scale; // Increased from 96 to 144
-  const neighborSize = (isDesktop ? 96 : 72) * scale; // Increased from 48 to 72
-  const selectedImageSize = (isDesktop ? 128 : 96) * scale; // Increased from 64 to 96
-  const neighborImageSize = (isDesktop ? 64 : 48) * scale; // Increased from 32 to 48
-  const selectedNameSize = (isDesktop ? 18 : 14) * scale; // Increased from 9 to 14
-  const selectedSubtitleSize = (isDesktop ? 11 : 8) * scale; // Increased from 5.5 to 8
-  const neighborNameSize = (isDesktop ? 9 : 7) * scale; // Increased from 4.5 to 7
-  const neighborSubtitleSize = (isDesktop ? 5.5 : 4) * scale; // Increased from 2.75 to 4
-  const selectedBorderRadius = (isDesktop ? 16 : 12) * scale; // Increased from 8 to 12
+  // Adjust sizes based on screen width
+  const baseSelectedSize = isDesktop ? 192 : (isNarrowMobile ? 120 : 144);
+  const baseNeighborSize = isDesktop ? 96 : (isNarrowMobile ? 60 : 72);
+
+  const selectedSize = baseSelectedSize * scale;
+  const neighborSize = baseNeighborSize * scale;
+  const selectedImageSize = (isDesktop ? 128 : (isNarrowMobile ? 80 : 96)) * scale;
+  const neighborImageSize = (isDesktop ? 64 : (isNarrowMobile ? 40 : 48)) * scale;
+  const selectedNameSize = (isDesktop ? 18 : (isNarrowMobile ? 12 : 14)) * scale;
+  const selectedSubtitleSize = (isDesktop ? 11 : (isNarrowMobile ? 7 : 8)) * scale;
+
+  const neighborNameSize = (isDesktop ? 9 : 7) * scale;
+  const neighborSubtitleSize = (isDesktop ? 5.5 : 4) * scale;
+  const selectedBorderRadius = (isDesktop ? 16 : 12) * scale;
   const neighborBorderRadius = 8 * scale;
 
   const getVisibleMascots = () => {
     const result: Array<{ mascot: MascotCarouselMascot; position: number; actualIndex: number }> = [];
-    for (let i = -2; i <= 2; i++) {
+    const range = isNarrowMobile ? 1 : 2; // Show only 3 on narrow mobile, 5 otherwise
+
+    for (let i = -range; i <= range; i++) {
       let index = selectedIndex + i;
       if (index < 0) index = mascots.length + index;
       if (index >= mascots.length) index = index - mascots.length;
@@ -108,7 +117,7 @@ export function MascotCarousel({
       style={styles.carouselSection}
       {...panResponder.panHandlers}
     >
-      <View style={styles.carousel}>
+      <View style={[styles.carousel, isNarrowMobile && { gap: 8 }]}>
         {getVisibleMascots().map(({ mascot, position, actualIndex }) => {
           const isSelected = position === 0;
           const size = isSelected ? selectedSize : neighborSize;
@@ -125,9 +134,9 @@ export function MascotCarousel({
 
           return (
             <View key={`${mascot.id}-${position}`} style={[styles.mascotWrapper, { alignItems: 'flex-end' }]}>
-              {position === 0 && (
-                <Pressable style={[styles.arrowButton, { marginBottom: (isDesktop ? 80 : 32) * scale }]} onPress={onPrev}>
-                  <Icon name="arrow-left" size={16 * scale} color={colors.textMuted} />
+              {isSelected && (
+                <Pressable style={[styles.arrowButton, { marginBottom: (isDesktop ? 80 : (isNarrowMobile ? 24 : 32)) * scale }]} onPress={onPrev}>
+                  <Icon name="arrow-left" size={isNarrowMobile ? 14 : 16 * scale} color={colors.textMuted} />
                 </Pressable>
               )}
 
@@ -233,7 +242,7 @@ export function MascotCarousel({
                       width: imageSize,
                       height: imageSize,
                       left: (size - imageSize) / 2,
-                      opacity: isComingSoon ? 0.5 : 1, // Make detailed image fainter if coming soon
+                      opacity: isComingSoon ? 0.5 : 1,
                     },
                   ]}
                   contentFit="contain"
@@ -241,9 +250,9 @@ export function MascotCarousel({
                 />
               </Pressable>
 
-              {position === 0 && (
-                <Pressable style={[styles.arrowButton, { marginBottom: (isDesktop ? 80 : 32) * scale }]} onPress={onNext}>
-                  <Icon name="arrow-right" size={16 * scale} color={colors.textMuted} />
+              {isSelected && (
+                <Pressable style={[styles.arrowButton, { marginBottom: (isDesktop ? 80 : (isNarrowMobile ? 24 : 32)) * scale }]} onPress={onNext}>
+                  <Icon name="arrow-right" size={isNarrowMobile ? 14 : 16 * scale} color={colors.textMuted} />
                 </Pressable>
               )}
             </View>
@@ -257,6 +266,7 @@ export function MascotCarousel({
 const styles = StyleSheet.create({
   carouselSection: {
     alignItems: 'center',
+    width: '100%',
   },
   carousel: {
     flexDirection: 'row',
@@ -305,3 +315,4 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
   },
 });
+

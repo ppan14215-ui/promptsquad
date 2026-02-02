@@ -42,6 +42,7 @@ type ChatInputBoxProps = {
   // Pro status
   isPro?: boolean;
   maxWidth?: number;
+  isLoading?: boolean;
 };
 
 export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
@@ -63,6 +64,7 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
   onVoicePress,
   isPro = false,
   maxWidth = 720,
+  isLoading = false,
 }, ref) => {
   const { mode, colors } = useTheme();
   const [showLLMDropdown, setShowLLMDropdown] = useState(false);
@@ -83,7 +85,7 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
     },
   }));
 
-  const isSendDisabled = disabled || (!value.trim() && !attachedImage);
+  const isSendDisabled = disabled || isLoading || (!value.trim() && !attachedImage);
 
   const handlePickImage = async () => {
     try {
@@ -267,7 +269,7 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
           onKeyPress={handleKeyPress}
           onContentSizeChange={handleContentSizeChange}
           blurOnSubmit={false}
-          editable={!disabled}
+          editable={!disabled} // Only disable editing if actually disabled (e.g. trial ended), not just loading
           scrollEnabled={inputHeight >= MAX_INPUT_HEIGHT}
         />
 
@@ -285,6 +287,7 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
                   },
                 ]}
                 onPress={() => setShowLLMDropdown(!showLLMDropdown)}
+                disabled={disabled}
               >
                 <Text
                   style={[
@@ -299,7 +302,8 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
                     chatLLM === 'gemini' ? 'Google Gemini 3' :
                       chatLLM === 'perplexity' ? 'Perplexity Sonar' :
                         chatLLM === 'grok' ? 'xAI Grok 4.1' :
-                          chatLLM === 'openai' ? 'OpenAI GPT-5.2' : 'Auto'}
+                          chatLLM === 'claude' ? 'Claude 3.5' :
+                            chatLLM === 'openai' ? 'OpenAI GPT-5.2' : 'Auto'}
                 </Text>
               </Pressable>
 
@@ -382,7 +386,7 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
             <Pressable
               style={styles.iconButton}
               onPress={handlePickImage}
-              disabled={disabled}
+              disabled={disabled || isLoading}
             >
               <Icon name="add" size={20} color={mode === 'dark' ? '#FFFFFF' : colors.icon} />
             </Pressable>
@@ -405,7 +409,7 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
                       webSearchEnabled && { backgroundColor: colors.primaryBg },
                     ]}
                     onPress={onWebSearchToggle}
-                    disabled={disabled}
+                    disabled={disabled || isLoading}
                     {...(Platform.OS === 'web' && {
                       onHoverIn: () => setShowWebSearchTooltip(true),
                       onHoverOut: () => setShowWebSearchTooltip(false),
@@ -436,7 +440,7 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
                       deepThinkingEnabled && { backgroundColor: colors.primaryBg },
                     ]}
                     onPress={onDeepThinkingToggle}
-                    disabled={disabled}
+                    disabled={disabled || isLoading}
                     {...(Platform.OS === 'web' && {
                       onHoverIn: () => setShowDeepThinkingTooltip(true),
                       onHoverOut: () => setShowDeepThinkingTooltip(false),

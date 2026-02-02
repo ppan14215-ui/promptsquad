@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, Platform } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme, fontFamilies, textStyles } from '@/design-system';
+import { resolveMascotColor } from '@/lib/utils/mascot-colors';
 import { Icon } from '../ui/Icon';
 
 type SkillPreviewProps = {
@@ -41,7 +42,7 @@ export function SkillPreview({
             {
               fontFamily: textStyles.h3.fontFamily,
               fontSize: textStyles.h3.fontSize,
-              color: mascotColor || colors.text,
+              color: resolveMascotColor(mascotColor),
             },
           ]}
         >

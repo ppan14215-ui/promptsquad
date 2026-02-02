@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator, useWindowDimensions } from 'react-native';
 import { LinkPill } from '@/components';
 import { useTheme, fontFamilies } from '@/design-system';
 import type { Skill } from '@/components';
@@ -26,6 +26,8 @@ export function HomeHeader({
   isDesktop = false,
 }: HomeHeaderProps) {
   const { colors } = useTheme();
+  const { width } = useWindowDimensions();
+  const isSmallMobile = width < 380;
 
   return (
     <View
@@ -45,6 +47,7 @@ export function HomeHeader({
                 {
                   fontFamily: fontFamilies.figtree.semiBold,
                   color: colors.textMuted,
+                  fontSize: isSmallMobile ? 16 : 18,
                 },
               ]}
             >
@@ -56,8 +59,12 @@ export function HomeHeader({
                 {
                   fontFamily: fontFamilies.figtree.semiBold,
                   color: colors.text,
+                  fontSize: isSmallMobile ? 24 : 28,
+                  lineHeight: isSmallMobile ? 30 : 36,
                 },
               ]}
+              numberOfLines={3}
+              adjustsFontSizeToFit
             >
               {questionPrompt}
             </Text>
@@ -114,12 +121,9 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   greeting: {
-    fontSize: 18,
     lineHeight: 18 * 1.3,
   },
   questionPrompt: {
-    fontSize: 28,
-    lineHeight: 36,
   },
   skillPills: {
     marginTop: 16,
@@ -128,3 +132,4 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
   },
 });
+
