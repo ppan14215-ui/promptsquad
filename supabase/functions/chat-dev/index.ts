@@ -568,12 +568,28 @@ serve(async (req: Request) => {
                   if (item?.type === 'tool_use') {
                     const toolName = item.name;
                     let thinkingMessage = '';
+                    let query = '';
+
+                    // Try to extract query from arguments
+                    if (item.arguments) {
+                      try {
+                        const args = JSON.parse(item.arguments);
+                        query = args.query || args.search_query || '';
+                      } catch (e) {
+                        // ignore parse error
+                      }
+                    }
+
                     if (toolName === 'web_search') {
-                      thinkingMessage = '🌐 Searching the web for current information...';
+                      thinkingMessage = query
+                        ? `🌐 Searching web for "${query}"...`
+                        : '🌐 Searching the web for current information...';
                     } else if (toolName === 'x_search') {
-                      thinkingMessage = '𝕏 Checking latest sentiment on X (Twitter)...';
+                      thinkingMessage = query
+                        ? `𝕏 Checking X (Twitter) for "${query}"...`
+                        : '𝕏 Checking latest sentiment on X (Twitter)...';
                     } else {
-                      thinkingMessage = `🔧 Using ${toolName}...`;
+                      thinkingMessage = `🔧 Using ${toolName}${query ? ` with "${query}"` : ''}...`;
                     }
                     controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ thinking: thinkingMessage })}\n\n`));
                   }
