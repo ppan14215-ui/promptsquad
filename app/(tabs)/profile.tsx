@@ -1,3 +1,4 @@
+import React from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useTheme, fontFamilies, textStyles } from '@/design-system';
@@ -7,6 +8,7 @@ import { useAuth } from '@/services/auth';
 import { useIsAdmin } from '@/services/admin';
 import { useSubscription } from '@/services/subscription';
 import { Icon } from '@/components';
+import { ChangelogModal } from '@/components/ui/ChangelogModal';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Constants from 'expo-constants';
 
@@ -250,7 +252,9 @@ export default function ProfileScreen() {
   const { preferredLLM, setPreferredLLM } = usePreferences();
   const { user, signOut } = useAuth();
   const { isAdmin } = useIsAdmin();
+  const { isAdmin } = useIsAdmin();
   const { isSubscribed } = useSubscription();
+  const [showChangelog, setShowChangelog] = React.useState(false);
 
   const userName = user?.user_metadata?.full_name || user?.user_metadata?.name || user?.email?.split('@')[0] || 'User';
   const userEmail = user?.email || '';
@@ -471,6 +475,27 @@ export default function ProfileScreen() {
           </Pressable>
         </View>
 
+        {/* About Section */}
+        <View style={styles.section}>
+          <Text
+            style={[
+              styles.sectionTitle,
+              {
+                fontFamily: fontFamilies.figtree.semiBold,
+                color: colors.text,
+              },
+            ]}
+          >
+            About
+          </Text>
+          <SettingRow
+            label="What's New"
+            value={`v${Constants.expoConfig?.version || '1.0.0'}`}
+            onPress={() => setShowChangelog(true)}
+            showCheckmark={true}
+          />
+        </View>
+
         {/* Version */}
         <View style={styles.versionContainer}>
           <Text
@@ -486,6 +511,12 @@ export default function ProfileScreen() {
           </Text>
         </View>
       </ScrollView>
+
+      <ChangelogModal
+        visible={showChangelog}
+        onDismiss={() => setShowChangelog(false)}
+        version={Constants.expoConfig?.version || '1.1.2'}
+      />
     </SafeAreaView>
   );
 }
