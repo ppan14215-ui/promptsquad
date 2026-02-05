@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, ScrollView, Pressable, Platform } from 'react-n
 import { useRouter } from 'expo-router';
 import { useTheme, fontFamilies, textStyles } from '@/design-system';
 import { useI18n, LANGUAGES, Language } from '@/i18n';
-import { usePreferences, LLM_OPTIONS, LLMPreference } from '@/services/preferences';
+import { useAuth } from '@/services/auth';
 import { useAuth } from '@/services/auth';
 import { useIsAdmin } from '@/services/admin';
 import { useSubscription } from '@/services/subscription';
@@ -249,7 +249,6 @@ export default function ProfileScreen() {
   const router = useRouter();
   const { colors, mode, setMode } = useTheme();
   const { language, setLanguage, t } = useI18n();
-  const { preferredLLM, setPreferredLLM } = usePreferences();
   const { user, signOut } = useAuth();
   const { isAdmin } = useIsAdmin();
   const { isSubscribed } = useSubscription();
@@ -376,55 +375,6 @@ export default function ProfileScreen() {
                 onPress={() => setLanguage(lang.code)}
               />
             ))}
-          </View>
-        </View>
-
-        {/* AI Provider Section */}
-        <View style={styles.section}>
-          <Text
-            style={[
-              styles.sectionTitle,
-              {
-                fontFamily: fontFamilies.figtree.semiBold,
-                color: colors.text,
-              },
-            ]}
-          >
-            {t.profile.aiProvider}
-          </Text>
-          <View style={styles.languageContainer}>
-            {LLM_OPTIONS.map((option) => {
-              const getName = () => {
-                switch (option.code) {
-                  case 'auto': return t.profile.auto;
-                  case 'gemini': return t.profile.gemini;
-                  case 'openai': return t.profile.openai;
-                  case 'perplexity': return t.profile.perplexity || option.name;
-                  case 'grok': return t.profile.grok || option.name;
-                  default: return option.name;
-                }
-              };
-              const getDesc = () => {
-                switch (option.code) {
-                  case 'auto': return t.profile.autoDesc;
-                  case 'gemini': return t.profile.geminiDesc;
-                  case 'openai': return t.profile.openaiDesc;
-                  case 'perplexity': return t.profile.perplexityDesc || option.description;
-                  case 'grok': return t.profile.grokDesc || option.description;
-                  default: return option.description;
-                }
-              };
-              return (
-                <LLMOption
-                  key={option.code}
-                  code={option.code}
-                  name={getName()}
-                  description={getDesc()}
-                  isSelected={preferredLLM === option.code}
-                  onPress={() => setPreferredLLM(option.code)}
-                />
-              );
-            })}
           </View>
         </View>
 
