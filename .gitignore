@@ -35,3 +35,15 @@ yarn-error.*
 # typescript
 *.tsbuildinfo
 .vercel
+
+# Test files (prevent accidental API key exposure)
+test-*.ts
+test-*.js
+**/test-*.ts
+**/test-*.js
+
+# Common sensitive file patterns
+*.secret
+*.secrets
+*credentials*
+*apikey*
