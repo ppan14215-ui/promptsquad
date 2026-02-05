@@ -17,8 +17,10 @@ import { useTheme, fontFamilies } from '@/design-system';
 import { useMascots, MascotBasic } from '@/services/admin';
 import { unlockMascots } from '@/services/mascot-access';
 import { getMascotImageSource, getMascotGrayscaleImageSource } from '@/services/admin/mascot-images';
-import { MascotCard, BigPrimaryButton, TextButton } from '@/components';
+import { MascotCard, BigPrimaryButton, TextButton, Icon } from '@/components';
 import type { MascotColorVariant } from '@/components/mascot/MascotCard';
+import { useSubscription } from '@/services/subscription';
+import { useIsAdmin } from '@/services/admin';
 
 const REQUIRED_SELECTION = 4;
 const DESKTOP_BREAKPOINT = 768;
@@ -32,6 +34,9 @@ export default function SelectMascotsScreen() {
   const [selectedMascots, setSelectedMascots] = useState<string[]>([]);
   const [isUnlocking, setIsUnlocking] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
+
+  const { isSubscribed } = useSubscription();
+  const { isAdmin } = useIsAdmin();
 
   // Show all mascots: first 10 are free (selectable), 11-20 are pro (visible but not selectable)
   const allMascots = useMemo(() => {
@@ -231,6 +236,27 @@ export default function SelectMascotsScreen() {
               </View>
             );
           })}
+
+          {/* Create Custom Card */}
+          {(isSubscribed || isAdmin) && (
+            <View style={styles.mascotCardWrapper}>
+              <Pressable
+                onPress={() => router.push('/(mascot)/create')}
+                style={({ pressed }) => [
+                  styles.createCustomCard,
+                  pressed && styles.createCustomCardPressed,
+                  { borderColor: colors.primary }
+                ]}
+              >
+                <View style={styles.createIconContainer}>
+                  <Icon name="add" size={32} color={colors.primary} />
+                </View>
+                <Text style={[styles.createCustomText, { color: colors.primary, fontFamily: fontFamilies.figtree.semiBold }]}>
+                  Create custom
+                </Text>
+              </Pressable>
+            </View>
+          )}
         </View>
       </ScrollView>
 
@@ -437,5 +463,32 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: Platform.OS === 'web' ? 12 : 8,
     marginTop: 8,
+  },
+  createCustomCard: {
+    width: '100%',
+    aspectRatio: 1,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'transparent',
+    gap: 12,
+  },
+  createCustomCardPressed: {
+    opacity: 0.7,
+    backgroundColor: 'rgba(0,0,0,0.02)',
+  },
+  createIconContainer: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: 'rgba(0,0,0,0.05)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  createCustomText: {
+    fontSize: 16,
+    textAlign: 'center',
   },
 });
