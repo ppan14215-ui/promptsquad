@@ -8,6 +8,7 @@ import { useIsAdmin } from '@/services/admin';
 import { useSubscription } from '@/services/subscription';
 import { Icon } from '@/components';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import Constants from 'expo-constants';
 
 type SettingRowProps = {
   label: string;
@@ -481,7 +482,7 @@ export default function ProfileScreen() {
               },
             ]}
           >
-            {t.profile.version} 1.0.0
+            {t.profile.version} {Constants.expoConfig?.version || '1.1.2'}
           </Text>
         </View>
       </ScrollView>
