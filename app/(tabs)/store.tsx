@@ -1,7 +1,7 @@
 import { View, StyleSheet, ScrollView, Text, Modal, Pressable, Platform, useWindowDimensions, TouchableWithoutFeedback } from 'react-native';
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { MascotCard, TextButton, BigPrimaryButton, CreateCustomCard, MascotDetails, Skill } from '@/components';
+import { MascotCard, TextButton, BigPrimaryButton, CreateCustomCard, MascotDetails, Skill, PaywallModal } from '@/components';
 import { useTheme, textStyles, fontFamilies } from '@/design-system';
 import { useI18n } from '@/i18n';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -437,6 +437,7 @@ export default function StoreScreen() {
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const [selectedMascotId, setSelectedMascotId] = useState<string | null>(null);
+  const [paywallProps, setPaywallProps] = useState<{ visible: boolean; feature?: string; mascotId?: string; mascotName?: string }>({ visible: false });
   const [sortBy, setSortBy] = useState<'default' | 'most-liked'>('default');
 
   // Fetch mascots from database with fallback to hardcoded
@@ -458,11 +459,9 @@ export default function StoreScreen() {
         const isComingSoon = m.is_active === false;
 
         // Determine unlock status:
-        // - For free mascots: unlocked only if in unlockedMascotIds
-        // - For pro mascots: unlocked if subscribed or admin
-        const isUnlocked = isFree
-          ? unlockedMascotIds.includes(m.id)
-          : (isSubscribed || isAdmin);
+        // - For free mascots: Always unlocked (since chooser is hidden/deprecated for free)
+        // - For pro mascots: Unlocked if subscribed or admin
+        const isUnlocked = isFree || (isSubscribed || isAdmin);
 
         return {
           id: m.id,
@@ -488,11 +487,9 @@ export default function StoreScreen() {
       const isFree = mascotId >= 1 && mascotId <= 10;
 
       // Determine unlock status:
-      // - For free mascots (1-10): unlocked only if in unlockedMascotIds
-      // - For pro mascots (11-20): unlocked if subscribed or admin
-      const isUnlocked = isFree
-        ? unlockedMascotIds.includes(m.id)
-        : (isSubscribed || isAdmin);
+      // - For free mascots: Always unlocked
+      // - For pro mascots: Unlocked if subscribed or admin
+      const isUnlocked = isFree || (isSubscribed || isAdmin);
 
       return {
         ...m,
@@ -577,8 +574,23 @@ export default function StoreScreen() {
   };
 
   const handleUnlock = () => {
-    console.log(`Unlock ${selectedMascot?.name} for €1.99`);
-    // TODO: Trigger in-app purchase
+    if (!selectedMascot) return;
+
+    // Close details modal first (optional, maybe keep it open behind paywall? Paywall is modal so simpler to close details)
+    // Actually Paywall is a modal on top. Let's keep details open or close it? 
+    // If we purchase, we want to return to details with unlocked status.
+    // Let's keep details open behind it? But PaywallModal is in this screen root.
+    // Let's close details for clean UX or keep it?
+    // User requested "purchase individual". If I close details, user loses context.
+    // But selectedMascotId state controls details modal.
+
+    // Wire up paywall
+    setPaywallProps({
+      visible: true,
+      feature: selectedMascot.name,
+      mascotId: selectedMascot.id,
+      mascotName: selectedMascot.name
+    });
   };
 
   const handleSkillPress = (skill: Skill) => {
@@ -608,7 +620,7 @@ export default function StoreScreen() {
   }) {
     // Try to fetch from database if using database mascots
     const dbMascot = dbMascots.find(m => m.id === mascot.id);
-    const { skills: dbSkills } = useMascotSkills(mascot.id);
+    const { skills: dbSkills } = useMascotSkills(mascot.id, dbMascot?.is_free ?? (mascot as any).isFree ?? false);
 
     // Use database skills if available, otherwise use hardcoded
     const displaySkills: Skill[] = React.useMemo(() => {
@@ -759,12 +771,19 @@ export default function StoreScreen() {
                   />
                 );
               })}
-              {/* Create Custom Card at the end - only for pro users */}
-              {(isSubscribed || isAdmin) && (
-                <CreateCustomCard
-                  onPress={() => console.log('Create custom pressed')}
-                />
-              )}
+              <CreateCustomCard
+                onPress={() => {
+                  if (!isSubscribed && !isAdmin) {
+                    setPaywallProps({
+                      visible: true,
+                      feature: 'Create Custom Mascot'
+                    });
+                    return;
+                  }
+                  console.log('Create custom pressed');
+                }}
+                isLocked={!isSubscribed && !isAdmin}
+              />
             </View>
           )}
         </View>
@@ -774,8 +793,15 @@ export default function StoreScreen() {
       <View style={[styles.floatingCta, { paddingBottom: Math.max(16, insets.bottom) }]}>
         <View style={styles.floatingCtaInner}>
           <BigPrimaryButton
-            label={t.home.subscribeCta}
-            onPress={() => console.log('Subscribe pressed')}
+            label={isSubscribed ? "Manage Subscription" : t.home.subscribeCta}
+            onPress={() => {
+              if (isSubscribed) {
+                // Navigate to account or manage sub
+                console.log('Manage subscription');
+              } else {
+                setPaywallProps({ visible: true, feature: 'Pro Subscription' });
+              }
+            }}
           />
         </View>
       </View>
@@ -809,6 +835,14 @@ export default function StoreScreen() {
           </Pressable>
         </Pressable>
       </Modal>
+
+      <PaywallModal
+        visible={paywallProps.visible}
+        onClose={() => setPaywallProps({ ...paywallProps, visible: false })}
+        feature={paywallProps.feature}
+        mascotId={paywallProps.mascotId}
+        mascotName={paywallProps.mascotName}
+      />
     </SafeAreaView>
   );
 }

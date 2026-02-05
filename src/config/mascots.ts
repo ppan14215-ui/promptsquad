@@ -32,6 +32,7 @@ export type OwnedMascot = {
     personality: string[];
     models: string[];
     isPro?: boolean;
+    isFree?: boolean;
 };
 
 export const FREE_MASCOTS: OwnedMascot[] = [
@@ -366,4 +367,32 @@ export const COLOR_LIGHT_MAP: Record<MascotColor, string> = {
     teal: '#B7E0D6',
     orange: '#EBBF9C',
     blue: '#A6C5FA',
+};
+
+// Placeholder Stripe Price IDs for individual mascot purchases.
+// YOU MUST REPLACE THESE with your actual Stripe Price IDs from your Stripe Dashboard.
+export const MASCOT_PRICE_IDS: Record<string, string> = {
+    // Free mascots (shouldn't be purchasable, but just in case)
+    '1': '',
+    '2': '',
+    '3': '',
+    '4': '',
+
+    // Premium mascots
+    '5': 'price_XXXXXXXXXXXXXXXXXXXXXXXX', // Teacher Owl
+    '6': 'price_XXXXXXXXXXXXXXXXXXXXXXXX', // Prompt Turtle
+    '7': 'price_XXXXXXXXXXXXXXXXXXXXXXXX', // Data Badger
+    '8': 'price_XXXXXXXXXXXXXXXXXXXXXXXX', // Quick Mouse
+    '9': 'price_XXXXXXXXXXXXXXXXXXXXXXXX', // Creative Pig
+    '10': 'price_XXXXXXXXXXXXXXXXXXXXXXXX', // Code Cat
+    '11': 'price_XXXXXXXXXXXXXXXXXXXXXXXX', // Strategy Camel
+    '12': 'price_XXXXXXXXXXXXXXXXXXXXXXXX', // Marketing Frog
+    '13': 'price_XXXXXXXXXXXXXXXXXXXXXXXX', // Product Giraffe
+    '14': 'price_XXXXXXXXXXXXXXXXXXXXXXXX', // Support Lion
+    '15': 'price_XXXXXXXXXXXXXXXXXXXXXXXX', // Mentor Seahorse
+    '16': 'price_XXXXXXXXXXXXXXXXXXXXXXXX', // Project Camel
+    '17': 'price_XXXXXXXXXXXXXXXXXXXXXXXX', // Research Frog
+    '18': 'price_XXXXXXXXXXXXXXXXXXXXXXXX', // Agile Giraffe
+    '19': 'price_XXXXXXXXXXXXXXXXXXXXXXXX', // Brand Lion
+    '20': 'price_XXXXXXXXXXXXXXXXXXXXXXXX', // Dev Seahorse
 };

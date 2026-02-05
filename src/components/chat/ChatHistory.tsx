@@ -10,21 +10,22 @@ import { logger } from '@/lib/utils/logger';
 
 export type ChatHistoryProps = {
   mascotId?: string;
+  isMascotFree?: boolean;
   onConversationPress: (conversationId: string) => void;
   onNewChat: () => void;
   onSkillPress?: (skill: MascotSkill | string) => void;
 };
 
-export function ChatHistory({ mascotId, onConversationPress, onNewChat, onSkillPress }: ChatHistoryProps) {
+export function ChatHistory({ mascotId, isMascotFree = false, onConversationPress, onNewChat, onSkillPress }: ChatHistoryProps) {
   const { colors } = useTheme();
   const { conversations, isLoading, refetch } = useConversations(mascotId);
-  const { skills: dbSkills, isLoading: skillsLoading } = useMascotSkills(mascotId || '1');
+  const { skills: dbSkills, isLoading: skillsLoading } = useMascotSkills(mascotId || '1', isMascotFree);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [pinningId, setPinningId] = useState<string | null>(null);
 
   const handleDelete = async (conversationId: string, event: any) => {
     event?.stopPropagation?.(); // Prevent navigation when clicking delete
-    
+
     Alert.alert(
       'Delete Conversation',
       'Are you sure you want to delete this conversation? This action cannot be undone.',
@@ -43,7 +44,7 @@ export function ChatHistory({ mascotId, onConversationPress, onNewChat, onSkillP
               const errorMessage = error?.message || 'Unknown error occurred';
               logger.error('[ChatHistory] Error details:', errorMessage);
               Alert.alert(
-                'Error', 
+                'Error',
                 `Failed to delete conversation: ${errorMessage}\n\nCheck the browser console for more details.`
               );
             } finally {
@@ -57,7 +58,7 @@ export function ChatHistory({ mascotId, onConversationPress, onNewChat, onSkillP
 
   const handleTogglePin = async (conversationId: string, currentPinned: boolean, event: any) => {
     event?.stopPropagation?.(); // Prevent navigation when clicking pin
-    
+
     try {
       setPinningId(conversationId);
       await togglePinConversation(conversationId, !currentPinned);
@@ -145,8 +146,8 @@ export function ChatHistory({ mascotId, onConversationPress, onNewChat, onSkillP
               >
                 Or start with a skill:
               </Text>
-              <ScrollView 
-                horizontal 
+              <ScrollView
+                horizontal
                 showsHorizontalScrollIndicator={false}
                 contentContainerStyle={styles.skillsContent}
               >
@@ -222,10 +223,10 @@ export function ChatHistory({ mascotId, onConversationPress, onNewChat, onSkillP
                   {pinningId === item.id ? (
                     <ActivityIndicator size="small" color={colors.primary} />
                   ) : (
-                    <Icon 
-                      name={item.is_pinned ? "favourite-filled" : "favourite"} 
-                      size={18} 
-                      color={item.is_pinned ? colors.primary : colors.textMuted} 
+                    <Icon
+                      name={item.is_pinned ? "favourite-filled" : "favourite"}
+                      size={18}
+                      color={item.is_pinned ? colors.primary : colors.textMuted}
                     />
                   )}
                 </Pressable>
@@ -248,7 +249,7 @@ export function ChatHistory({ mascotId, onConversationPress, onNewChat, onSkillP
           onRefresh={refetch}
         />
       )}
-      
+
       {/* Skills section at bottom - always visible */}
       {onSkillPress && (dbSkills.length > 0 || mascotId) && (
         <View style={[styles.skillsSection, { borderTopColor: colors.outline }]}>
@@ -263,8 +264,8 @@ export function ChatHistory({ mascotId, onConversationPress, onNewChat, onSkillP
           >
             Start with a skill:
           </Text>
-          <ScrollView 
-            horizontal 
+          <ScrollView
+            horizontal
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.skillsContent}
           >

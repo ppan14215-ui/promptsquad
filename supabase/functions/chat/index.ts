@@ -137,6 +137,33 @@ serve(async (req: Request) => {
       console.log('[Edge Function] First message role:', messages[0].role, 'content:', messages[0].content.substring(0, 50) + '...');
     }
 
+    // Get current usage stats and subscription status
+    const { data: profile } = await supabaseAdmin
+      .from('profiles')
+      .select('is_subscribed')
+      .eq('id', userId)
+      .single();
+
+    const isSubscribed = profile?.is_subscribed || false;
+
+    // Helper: Determine if request is High-Tier
+    // High-Tier: Claude, OpenAI, Perplexity, Grok, or Gemini Pro/Ultra
+    // Free: Gemini Flash
+    function isHighTier(p: string, m: string): boolean {
+      if (p === 'gemini') {
+        return m.toLowerCase().includes('pro') || m.toLowerCase().includes('ultra');
+      }
+      return true; // All other providers are High-Tier
+    }
+
+    // Determine basic provider/model early for checking (final selection happens later if 'auto')
+    const tempProvider = provider || 'gemini'; // Default for checking
+    // Note: Model might change later based on deepThinking logic, but we can estimate
+    // If provider is 'auto', we assume it MIGHT switch to OpenAI/Claude, so treat as High Tier 
+    // UNLESS we are strictly Free tier, in which case we force 'gemini-flash' later?
+    // Actually, let's let the existing logic determine 'useProvider' and 'useModel' first,
+    // THEN check limits before making the fetch call.
+
     if (!mascotId || !messages || messages.length === 0) {
       return new Response(
         JSON.stringify({ error: 'Missing required fields' }),
@@ -276,6 +303,66 @@ serve(async (req: Request) => {
     }
 
     console.log(`[Edge Function] Using model: ${useModel} (provider: ${useProvider}, webSearch: ${webSearch}, deepThinking: ${deepThinking})`);
+
+    // --- MATH OF DEATH: HARD TOKEN LIMITS ---
+    if (isHighTier(useProvider, useModel)) {
+      if (!isSubscribed) {
+        console.log('[Edge Function] Blocked High-Tier request for non-subscriber.');
+        return new Response(
+          JSON.stringify({
+            error: 'Pro subscription required.',
+            details: `The model '${useModel}' is available on the Pro plan.`,
+            hint: 'Upgrade to Pro to use Claude, GPT-4, and other high-tier models.'
+          }),
+          { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      } else {
+        // Check Monthly Limit
+        const date = new Date();
+        const monthYear = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+
+        const { data: usage } = await supabaseAdmin
+          .from('user_monthly_usage')
+          .select('high_tier_count')
+          .eq('user_id', userId)
+          .eq('month_year', monthYear)
+          .maybeSingle();
+
+        const currentCount = usage?.high_tier_count || 0;
+        const LIMIT = 300; // Hard limit
+
+        console.log(`[Edge Function] Usage check: ${currentCount}/${LIMIT} for ${monthYear}`);
+
+        if (currentCount >= LIMIT) {
+          return new Response(
+            JSON.stringify({
+              error: 'Monthly Pro limit reached.',
+              details: `You have reached your limit of ${LIMIT} high-tier requests for this month.`,
+              hint: 'Usage resets next month.'
+            }),
+            { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        // Increment Usage
+        // We do this BEFORE the generation to strictly enforce the limit (bucket decrement style)
+        // or effectively "reserve" the slot.
+        const { error: rpcError } = await supabaseAdmin.rpc('increment_high_tier_usage', {
+          p_user_id: userId,
+          p_month_year: monthYear
+        });
+
+        if (rpcError) {
+          console.error('[Edge Function] Failed to increment usage:', rpcError);
+          // Optional: Fail open or closed? 
+          // Fail Safe (Closed): Return error if we can't track usage.
+          // Fail Open (Allow): Allow if tracking fails?
+          // "Math of Death" implies strictness. Let's log it but maybe proceed if it's just a metric?
+          // But strict limit means we MUST count. If DB is down, chat is probably down anyway.
+          // Let's proceed but log critical error.
+        }
+      }
+    }
 
     // OpenAI
     if (useProvider === 'openai' && openaiApiKey) {

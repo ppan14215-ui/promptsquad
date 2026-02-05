@@ -10,16 +10,19 @@ export type CreateCustomCardProps = {
   onPress?: () => void;
   /** Force a specific state for preview purposes */
   forceState?: CreateCustomCardState;
+  /** Whether the card is locked/disabled (e.g. for free users) */
+  isLocked?: boolean;
 };
 
-export function CreateCustomCard({ onPress, forceState }: CreateCustomCardProps) {
+export function CreateCustomCard({ onPress, forceState, isLocked }: CreateCustomCardProps) {
   const { colors } = useTheme();
   const { t } = useI18n();
   const [isHoveredInternal, setIsHoveredInternal] = useState(false);
-  
+
   // Determine effective state
   const effectiveState: CreateCustomCardState = forceState ?? (isHoveredInternal ? 'hover' : 'default');
-  const isHovered = effectiveState === 'hover';
+  // Hover effects disabled if locked
+  const isHovered = !isLocked && effectiveState === 'hover';
 
   // Shadow for hover state
   const shadowStyle = Platform.select({
@@ -35,6 +38,24 @@ export function CreateCustomCard({ onPress, forceState }: CreateCustomCardProps)
     default: {},
   });
 
+  const borderColor = isLocked
+    ? colors.outline
+    : isHovered
+      ? colors.primary
+      : colors.outline;
+
+  const iconColor = isLocked
+    ? colors.textMuted
+    : isHovered
+      ? colors.primary
+      : colors.icon;
+
+  const textColor = isLocked
+    ? colors.textMuted
+    : isHovered
+      ? colors.primary
+      : colors.textMuted;
+
   return (
     <Pressable
       onPress={onPress}
@@ -44,18 +65,19 @@ export function CreateCustomCard({ onPress, forceState }: CreateCustomCardProps)
         styles.container,
         webTransitionStyle,
         {
-          backgroundColor: colors.background,
-          borderColor: isHovered ? colors.primary : colors.outline,
+          backgroundColor: isLocked ? colors.surface : colors.background,
+          borderColor: borderColor,
+          opacity: isLocked ? 0.7 : 1,
         },
         isHovered && shadowStyle,
       ]}
     >
       <View style={styles.content}>
         <View style={styles.iconContainer}>
-          <Icon 
-            name="add-circle" 
-            size={24} 
-            color={isHovered ? colors.primary : colors.icon}
+          <Icon
+            name={isLocked ? "lock" : "add-circle"}
+            size={24}
+            color={iconColor}
           />
         </View>
         <Text
@@ -63,11 +85,11 @@ export function CreateCustomCard({ onPress, forceState }: CreateCustomCardProps)
             styles.label,
             {
               fontFamily: fontFamilies.figtree.semiBold,
-              color: isHovered ? colors.primary : colors.textMuted,
+              color: textColor,
             },
           ]}
         >
-          {t.home.createCustom}
+          {isLocked ? "Create Custom (Pro)" : t.home.createCustom}
         </Text>
       </View>
     </Pressable>

@@ -3,6 +3,7 @@ import { useMemo } from 'react';
 import { useMascots, MascotBasic } from '@/services/admin';
 import { useUnlockedMascots } from '@/services/mascot-access';
 import { useIsAdmin } from '@/services/admin';
+import { useSubscription } from '@/services/subscription';
 import { getMascotImageSource } from '@/services/admin/mascot-images';
 import {
     ALL_MASCOTS,
@@ -16,6 +17,7 @@ export function useMergedMascots() {
     const { mascots: dbMascots, isLoading: isLoadingMascots, error: mascotsError } = useMascots();
     const { unlockedMascotIds, isLoading: isLoadingUnlocked } = useUnlockedMascots();
     const { isAdmin } = useIsAdmin();
+    const { isSubscribed } = useSubscription();
 
     const availableMascots = useMemo(() => {
         let convertedMascots: OwnedMascot[] = [];
@@ -27,7 +29,11 @@ export function useMergedMascots() {
                     const imageSource = getMascotImageSource(m.image_url || null) || mascotImages.bear;
                     // Find matching hardcoded mascot for fallback questionPrompt
                     const hardcodedMascot = ALL_MASCOTS.find((hm) => hm.id === m.id);
-                    const isPro = m.is_pro !== undefined ? m.is_pro : (parseInt(m.id) > 4); // Fallback to old logic if DB flag missing
+
+                    // Logic: Trust DB is_free/is_pro if present. Fallback to index logic.
+                    // is_free is the source of truth in DB. is_pro is derived in useMascots.
+                    const isFree = m.is_free !== undefined ? m.is_free : (parseInt(m.id) <= 4);
+                    const isPro = !isFree;
 
                     return {
                         id: m.id,
@@ -40,6 +46,7 @@ export function useMergedMascots() {
                         models: hardcodedMascot?.models || [],
                         skills: hardcodedMascot?.skills || [], // Include hardcoded skills as fallback
                         isPro: isPro,
+                        isFree: isFree,
                     } as OwnedMascot;
                 });
 
@@ -69,8 +76,16 @@ export function useMergedMascots() {
             return [];
         }
 
-        return convertedMascots.filter(m => unlockedMascotIds.includes(m.id));
-    }, [dbMascots, isAdmin, unlockedMascotIds, isLoadingUnlocked]);
+        // Pro Users: Show whatever they have unlocked/selected
+        if (isSubscribed) {
+            return convertedMascots.filter(m => unlockedMascotIds.includes(m.id));
+        }
+
+        // Free Users: Strict enforcement - ONLY show mascots marked as Free
+        // Ignores unlockedMascotIds which might contain user selections from before
+        return convertedMascots.filter(m => m.isFree === true);
+
+    }, [dbMascots, isAdmin, isSubscribed, unlockedMascotIds, isLoadingUnlocked]);
 
     return {
         availableMascots,

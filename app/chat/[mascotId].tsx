@@ -519,7 +519,7 @@ export default function ChatScreen() {
   const { isSubscribed } = useSubscription();
 
   // Fetch skills and personality from database
-  const { skills: dbSkills, isLoading: skillsLoading } = useMascotSkills(mascotId || '1');
+  const { skills: dbSkills, isLoading: skillsLoading } = useMascotSkills(mascotId || '1', dbMascot?.is_free ?? false);
   const { personality: dbPersonality, isLoading: personalityLoading, refetch: refetchPersonality } = useMascotPersonality(mascotId || '1');
 
   // Fetch like data for mascot
@@ -1017,9 +1017,9 @@ export default function ChatScreen() {
         console.log(`[Chat] Premium Check: Model=${providerOverride}, Subscribed=${isSubscribed}, Admin=${isAdmin}, Dev=${__DEV__}`);
       }
 
-      if (isPremiumModel(providerOverride) && !isSubscribed && !isAdmin && !__DEV__) {
-        console.warn(`[Chat] User requested Premium Model (${providerOverride}) but is not Pro/Admin - falling back to undefined (Auto)`);
-        // providerOverride = undefined; // TEMPORARY: Disable fallback to test model selection
+      if (isPremiumModel(providerOverride) && !isSubscribed && !isAdmin) {
+        console.warn(`[Chat] User requested Premium Model (${providerOverride}) but is not Pro/Admin - falling back to Gemini`);
+        providerOverride = 'gemini'; // Free users always use Gemini
       }
 
       // Log which provider we're using
@@ -1324,7 +1324,10 @@ export default function ChatScreen() {
           if (skillId && activeSkillId && activeSkill) {
             // Determine explicit provider for this skill activation
             const skillProvider = activeSkill.preferred_provider as 'openai' | 'gemini' | 'perplexity' | 'grok' | 'claude' | 'auto' | undefined;
-            const explicitProvider = (skillProvider && skillProvider !== 'auto') ? skillProvider : undefined;
+            // Respect manual override if set
+            const explicitProvider = (chatLLM !== 'auto')
+              ? chatLLM
+              : ((skillProvider && skillProvider !== 'auto') ? skillProvider : undefined);
 
             // Send the skill label (user sees this), but LLM gets full prompt
             // Pass the skill provider explicitly to ensure it overrides defaults/auto
@@ -1449,7 +1452,11 @@ export default function ChatScreen() {
     let selectedLLM = chatLLM;
 
     // Set preferred model if defined for this skill
-    if (typeof skill !== 'string' && skill.preferred_provider && skill.preferred_provider !== 'auto') {
+    // Priority: User Manual Selection > Skill Preference > Auto/Default
+    if (chatLLM !== 'auto') {
+      console.log('[Chat] Preserving user manual selection:', chatLLM);
+      selectedLLM = chatLLM;
+    } else if (typeof skill !== 'string' && skill.preferred_provider && skill.preferred_provider !== 'auto') {
       console.log('[Chat] Setting preferred LLM from skill:', skill.preferred_provider);
       // Cast to any because LLMPreference comes from a different file but values mimic string literals
       selectedLLM = skill.preferred_provider as any;
@@ -2257,6 +2264,7 @@ export default function ChatScreen() {
       ) : activeTab === 'history' ? (
         <ChatHistory
           mascotId={mascotId}
+          isMascotFree={dbMascot?.is_free ?? false}
           onConversationPress={(conversationId) => {
             // Switch to the selected conversation
             // This will trigger the useEffect to load messages

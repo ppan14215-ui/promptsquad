@@ -3,6 +3,7 @@ import { supabase } from '@/services/supabase';
 import { useAuth } from '@/services/auth';
 import { logger } from '@/lib/utils/logger';
 import { useIsAdmin } from '@/services/admin';
+import { useOwnedMascots } from './useOwnedMascots';
 
 export type UserMascot = {
   id: string;
@@ -18,23 +19,35 @@ export async function getUnlockedMascots(): Promise<string[]> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return [];
 
-  const { data, error } = await supabase
+  // 1. Get manually unlocked (admin granted or onboarding)
+  const { data: unlockedData, error: unlockedError } = await supabase
     .from('user_mascots')
     .select('mascot_id')
     .eq('user_id', user.id);
 
-  if (error) {
-    // Self-healing: If unauthorized (401), just return empty
-    if (error.code === '401' || (error as any).status === 401) {
-      logger.warn('Auth error in getUnlockedMascots:', error);
+  if (unlockedError) {
+    if (unlockedError.code === '401' || (unlockedError as any).status === 401) {
+      logger.warn('Auth error in getUnlockedMascots (unlocked):', unlockedError);
       return [];
     }
-
-    logger.error('Error fetching unlocked mascots:', error);
-    return [];
+    logger.error('Error fetching unlocked mascots:', unlockedError);
   }
 
-  return (data as any[])?.map((m) => m.mascot_id) || [];
+  // 2. Get purchased (owned) mascots
+  const { data: ownedData, error: ownedError } = await supabase
+    .from('user_owned_mascots')
+    .select('mascot_id')
+    .eq('user_id', user.id);
+
+  if (ownedError && ownedError.code !== '401') {
+    logger.error('Error fetching owned mascots:', ownedError);
+  }
+
+  const unlockedIds = (unlockedData as any[])?.map((m) => m.mascot_id) || [];
+  const ownedIds = (ownedData as any[])?.map((m) => m.mascot_id) || [];
+
+  // Merge and deduplicate
+  return Array.from(new Set([...unlockedIds, ...ownedIds]));
 }
 
 /**
@@ -43,6 +56,28 @@ export async function getUnlockedMascots(): Promise<string[]> {
 export async function isMascotUnlocked(mascotId: string): Promise<boolean> {
   const unlocked = await getUnlockedMascots();
   return unlocked.includes(mascotId);
+}
+
+/**
+ * Check if a specific mascot is owned (purchased) by the current user
+ */
+export async function isMascotOwned(mascotId: string): Promise<boolean> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return false;
+
+  const { data, error } = await supabase
+    .from('user_owned_mascots')
+    .select('mascot_id')
+    .eq('user_id', user.id)
+    .eq('mascot_id', mascotId)
+    .maybeSingle();
+
+  if (error && error.code !== 'PGRST116') {
+    logger.error('Error checking mascot ownership:', error);
+    return false;
+  }
+
+  return !!data;
 }
 
 /**
@@ -187,7 +222,7 @@ export type TrialUsage = {
   limitReached: boolean;
 };
 
-const TRIAL_LIMIT = 5;
+const TRIAL_LIMIT = 3;
 
 /**
  * Get trial usage for a specific mascot
@@ -259,17 +294,50 @@ export async function incrementTrialUsage(mascotId: string, conversationId?: str
  */
 export async function canUseMascot(mascotId: string): Promise<{
   canUse: boolean;
-  reason: 'unlocked' | 'trial' | 'trial_exhausted' | 'locked';
+  reason: 'unlocked' | 'trial' | 'trial_exhausted' | 'locked' | 'pro' | 'free';
   trialCount?: number;
   trialLimit?: number;
 }> {
-  const isUnlocked = await isMascotUnlocked(mascotId);
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { canUse: false, reason: 'locked' };
 
+  // 1. Check if user is Pro
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('is_subscribed')
+    .eq('id', user.id)
+    .single();
+
+  if (profile?.is_subscribed) {
+    return { canUse: true, reason: 'pro' };
+  }
+
+  // 2. Check if mascot is "Free" (First 4: Analyst, Writer, UX, Advice)
+  // We can hardcode specific IDs if they are stable, or fetch the is_free flag.
+  // Fetching is safer.
+  const { data: mascot } = await supabase
+    .from('mascots')
+    .select('is_free')
+    .eq('id', mascotId)
+    .single();
+
+  if (mascot?.is_free) {
+    return { canUse: true, reason: 'free' };
+  }
+
+  // 3. Check for manual unlocks
+  const isUnlocked = await isMascotUnlocked(mascotId);
   if (isUnlocked) {
     return { canUse: true, reason: 'unlocked' };
   }
 
-  // Check trial usage
+  // 4. Check if purchased (owned)
+  const isOwned = await isMascotOwned(mascotId);
+  if (isOwned) {
+    return { canUse: true, reason: 'unlocked' }; // Treated effectively as unlocked
+  }
+
+  // 5. Check trial usage
   const trialUsage = await getTrialUsage(mascotId);
 
   if (trialUsage.limitReached) {
@@ -298,7 +366,7 @@ export async function canUseMascot(mascotId: string): Promise<{
  */
 export function useMascotAccess(mascotId: string | null): {
   canUse: boolean;
-  reason: 'unlocked' | 'trial' | 'trial_exhausted' | 'locked';
+  reason: 'unlocked' | 'trial' | 'trial_exhausted' | 'locked' | 'pro' | 'free';
   trialCount: number;
   trialLimit: number;
   isLoading: boolean;
@@ -307,11 +375,12 @@ export function useMascotAccess(mascotId: string | null): {
   const { user } = useAuth();
   const { isAdmin } = useIsAdmin();
   const [canUse, setCanUse] = React.useState(false);
-  const [reason, setReason] = React.useState<'unlocked' | 'trial' | 'trial_exhausted' | 'locked'>('locked');
+  const [reason, setReason] = React.useState<'unlocked' | 'trial' | 'trial_exhausted' | 'locked' | 'pro' | 'free'>('locked');
   const [trialCount, setTrialCount] = React.useState(0);
   const [trialLimit] = React.useState(TRIAL_LIMIT);
   const [isLoading, setIsLoading] = React.useState(true);
   const [refreshTrigger, setRefreshTrigger] = React.useState(0);
+  const { ownedMascots } = useOwnedMascots(); // Subscribe to ownership changes
 
   const checkAccess = React.useCallback(async () => {
     if (isAdmin) {
@@ -336,7 +405,7 @@ export function useMascotAccess(mascotId: string | null): {
     setReason(access.reason);
     setTrialCount(access.trialCount || 0);
     setIsLoading(false);
-  }, [user, mascotId, isAdmin]);
+  }, [user, mascotId, isAdmin, ownedMascots]); // Re-check when ownedMascots changes
 
   React.useEffect(() => {
     checkAccess();

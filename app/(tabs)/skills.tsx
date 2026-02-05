@@ -41,13 +41,16 @@ export default function SkillsScreen() {
   const [mascotEditorVisible, setMascotEditorVisible] = useState(false);
   const [editingSkill, setEditingSkill] = useState<MascotSkill | null>(null);
 
+  // Get the selected mascot for is_free check
+  const selectedMascot = mascots.find((m) => m.id === selectedMascotId);
+
   // Get skills and personality for selected mascot
   const {
     skills,
     isLoading: isSkillsLoading,
     refetch: refetchSkills,
     error: skillsError,
-  } = useMascotSkills(selectedMascotId);
+  } = useMascotSkills(selectedMascotId, selectedMascot?.is_free ?? false);
   const {
     personality: mascotPersonality,
     isLoading: isPersonalityLoading,
@@ -62,7 +65,6 @@ export default function SkillsScreen() {
     }
   }, [skills, selectedMascotId]);
 
-  const selectedMascot = mascots.find((m) => m.id === selectedMascotId);
   const mascotColor = resolveMascotColor(selectedMascot?.color);
 
   // Auto-select first mascot when loaded

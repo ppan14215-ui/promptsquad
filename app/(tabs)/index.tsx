@@ -1,8 +1,8 @@
-import { View, StyleSheet, Text, Pressable, Platform, Image, useWindowDimensions, Modal, ActivityIndicator, Keyboard, LayoutAnimation, KeyboardAvoidingView } from 'react-native';
+import { View, StyleSheet, Text, Pressable, Platform, Image, useWindowDimensions, Modal, ActivityIndicator, Keyboard, LayoutAnimation, KeyboardAvoidingView, ScrollView } from 'react-native';
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Icon, Skill, ChatInputBox, MascotDetails, LinkPill, HomeHeader, MascotCarousel } from '@/components';
+import { Icon, Skill, ChatInputBox, MascotDetails, LinkPill, HomeHeader, MascotCarousel, PaywallModal, FormattedText } from '@/components';
 import { useTheme, fontFamilies } from '@/design-system';
 import { useAuth } from '@/services/auth';
 import { useSubscription } from '@/services/subscription';
@@ -40,6 +40,7 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const [selectedIndex, setSelectedIndex] = useState(2); // Start with Panda selected (index 2)
   const [message, setMessage] = useState('');
+  const [paywallProps, setPaywallProps] = useState<{ visible: boolean; feature?: string; mascotId?: string; mascotName?: string }>({ visible: false });
 
   const {
     webSearchEnabled, setWebSearchEnabled,
@@ -107,7 +108,7 @@ export default function HomeScreen() {
   const selectedMascot = availableMascots[selectedIndex] || availableMascots[0];
 
   // Fetch skills from database for the selected mascot (only if mascot exists)
-  const { skills: dbSkills, isLoading: skillsLoading } = useMascotSkills(selectedMascot?.id || '');
+  const { skills: dbSkills, isLoading: skillsLoading } = useMascotSkills(selectedMascot?.id || '', selectedMascot?.isFree ?? false);
 
   // Use DB skills if available, otherwise fall back to hardcoded
   const displaySkills = useMemo(() => {
@@ -220,8 +221,13 @@ export default function HomeScreen() {
       return;
     }
 
-    // Find full skill data to get prompt
-    // 1. Check DB skills
+    // Check if skill object already has the prompt
+    if ('prompt' in skill && typeof (skill as any).prompt === 'string') {
+      setHoveredSkillPrompt((skill as any).prompt);
+      return;
+    }
+
+    // Fallback: Find full skill data in DB skills
     const dbSkill = dbSkills.find(s => s.id === skill.id);
     if (dbSkill?.skill_prompt) {
       setHoveredSkillPrompt(dbSkill.skill_prompt);
@@ -280,36 +286,64 @@ export default function HomeScreen() {
         {/* Spacer to push carousel and input to bottom */}
         <View style={styles.spacer}>
           {hoveredSkillPrompt && !keyboardVisible && (
-            <View style={styles.previewContainer}>
-              <Text
-                style={[
-                  styles.previewText,
-                  {
-                    color: colors.textMuted,
-                    fontFamily: fontFamilies.figtree.regular
-                  }
-                ]}
-                numberOfLines={6}
+            <ScrollView
+              style={styles.previewScrollContainer}
+              contentContainerStyle={styles.previewContentContainer}
+              showsVerticalScrollIndicator={false}
+            >
+              <FormattedText
+                style={styles.previewText}
+                baseColor={colors.textMuted}
               >
                 {hoveredSkillPrompt}
-              </Text>
-            </View>
+              </FormattedText>
+            </ScrollView>
           )}
         </View>
 
         {/* Bottom Section: Carousel + Input (Pinned to Bottom) */}
         <View style={styles.bottomSection}>
           <MascotCarousel
-            mascots={availableMascots.map(m => ({
-              id: m.id,
-              name: m.name,
-              subtitle: m.subtitle,
-              image: m.image,
-              color: m.color as any,
-              isPro: m.isPro,
-            }))}
+            mascots={availableMascots.map((m, index) => {
+              // Free tier limit: Only mascots marked as FREE in DB
+              // Unless user is Pro or Admin
+              // Fallback to index logic if isFree is undefined (should fail safe to locked)
+              const isFreeMascot = m.isFree !== undefined ? m.isFree : (index < 4);
+              const isLocked = !isFreeMascot && !isSubscribed && !isAdmin;
+
+              return {
+                id: m.id,
+                name: m.name,
+                subtitle: m.subtitle,
+                image: m.image,
+                color: m.color as any,
+                // If locked, we show Pro badge (or lock icon if supported)
+                // isPro is passed from useMergedMascots which is equivalent to !isFree
+                isPro: m.isPro || isLocked,
+              };
+            })}
             selectedIndex={selectedIndex}
-            onMascotPress={handleMascotCardPress}
+            onMascotPress={(mascot, actualIndex, isSelected) => {
+              // Find the full mascot object (since handler arg is incomplete)
+              // But we can check availableMascots[actualIndex]
+              const fullMascot = availableMascots[actualIndex];
+              const isFreeMascot = fullMascot?.isFree !== undefined ? fullMascot.isFree : (actualIndex < 4);
+              const isLocked = !isFreeMascot && !isSubscribed && !isAdmin;
+
+              if (isLocked) {
+                // Show upgrade alert
+                // Show paywall
+                setPaywallProps({
+                  visible: true,
+                  feature: 'Premium Mascot',
+                  mascotId: fullMascot.id,
+                  mascotName: fullMascot.name
+                });
+                return;
+              }
+
+              handleMascotCardPress(mascot, actualIndex, isSelected);
+            }}
             onPrev={handlePrevMascot}
             onNext={handleNextMascot}
             isDesktop={isDesktop}
@@ -406,7 +440,16 @@ export default function HomeScreen() {
           </Pressable>
         </Pressable>
       </Modal>
-    </SafeAreaView>
+
+
+      <PaywallModal
+        visible={paywallProps.visible}
+        onClose={() => setPaywallProps({ ...paywallProps, visible: false })}
+        feature={paywallProps.feature}
+        mascotId={paywallProps.mascotId}
+        mascotName={paywallProps.mascotName}
+      />
+    </SafeAreaView >
   );
 }
 
@@ -532,12 +575,17 @@ const styles = StyleSheet.create({
   modalContent: {
     // Prevents clicks from propagating to overlay
   },
-  previewContainer: {
-    paddingHorizontal: 24,
-    paddingTop: 8,
-    alignItems: 'center',
+  previewScrollContainer: {
+    flex: 1,
     maxWidth: 600,
     alignSelf: 'center',
+    width: '100%',
+  },
+  previewContentContainer: {
+    paddingHorizontal: 24,
+    paddingTop: 8,
+    paddingBottom: 16,
+    alignItems: 'center',
   },
   previewText: {
     fontSize: 14,

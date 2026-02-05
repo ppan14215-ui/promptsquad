@@ -13,10 +13,10 @@ export function ChangelogModal({ visible, onDismiss, version }: ChangelogModalPr
     const { colors } = useTheme();
 
     const updates = [
-        { title: '𝕏 Native X Search', description: 'Grok now uses real-time X (Twitter) search for live sentiment and trend analysis.' },
-        { title: '🌐 Live Web Search', description: 'Get up-to-date information from the web with native search tools.' },
-        { title: '💡 Deep Thinking Mode', description: 'Access Grok-4 Pro with enhanced reasoning capabilities.' },
-        { title: '⚡ Faster Responses', description: 'Improved streaming and response handling for all models.' }
+        { title: '🔒 Enhanced Security', description: 'Strict backend enforcement for Pro model access to ensure fair usage.' },
+        { title: '✨ New Pro Badges', description: 'Fresh, cleaner look for Pro tags across the entire app.' },
+        { title: '🤖 Model Selection Fixes', description: 'Improved manual model selection logic - your choice now sticks!' },
+        { title: '🚀 Stability Improvements', description: 'Updated core dependencies and optimized performance.' }
     ];
 
     const ModalContent = (

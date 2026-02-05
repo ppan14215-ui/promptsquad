@@ -4,6 +4,7 @@ import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme, textStyles, shadowToCSS, shadowToNative, skeuToGradient } from '@/design-system';
 import { MiniButton } from '../ui/MiniButton';
+import { ProBadge } from '../ui/ProBadge';
 
 export type MascotCardState = 'default' | 'hover' | 'locked' | 'locked-hover';
 
@@ -186,9 +187,7 @@ export function MascotCard({
 
       {/* Pro Badge */}
       {isPro && !effectiveIsComingSoon && (
-        <View style={[styles.proBadge, { backgroundColor: colors.primary }]}>
-          <Text style={[styles.proBadgeText, { color: colors.buttonText }]}>PRO</Text>
-        </View>
+        <ProBadge style={{ position: 'absolute', top: 8, right: 8, zIndex: 10 }} color={colors.primary} />
       )}
 
       {/* Coming Soon Badge */}

@@ -4,6 +4,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme, fontFamilies, textStyles } from '@/design-system';
 import { resolveMascotColor } from '@/lib/utils/mascot-colors';
 import { Icon } from '../ui/Icon';
+import { FormattedText } from '../ui/FormattedText';
 
 type SkillPreviewProps = {
   skillLabel: string;
@@ -57,20 +58,16 @@ export function SkillPreview({
 
       {/* Prompt content with fade effect for non-admins */}
       <View style={styles.contentContainer}>
-        <Text
-          style={[
-            styles.promptText,
-            {
-              fontFamily: textStyles.body.fontFamily,
-              fontSize: textStyles.body.fontSize,
-              lineHeight: textStyles.body.lineHeight,
-              color: colors.text, // Use theme text color
-            },
-          ]}
-          numberOfLines={isFullAccess ? undefined : 8}
+        <FormattedText
+          style={{
+            fontFamily: textStyles.body.fontFamily,
+            fontSize: textStyles.body.fontSize,
+            lineHeight: textStyles.body.lineHeight,
+          }}
+          baseColor={colors.text}
         >
-          {displayText}
-        </Text>
+          {isFullAccess ? (displayText || '') : (displayText || '').split('\n').slice(0, 8).join('\n')}
+        </FormattedText>
 
         {/* Fade overlay for non-admins */}
         {!isFullAccess && (

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/services/supabase';
 import { useAuth } from '@/services/auth';
+import { useSubscription } from '@/services/subscription';
 import { logger } from '@/lib/utils/logger';
 
 // Types
@@ -64,6 +65,11 @@ export async function updateMascot(
 
   if (updates.is_ready !== undefined) {
     safeUpdates.is_active = updates.is_ready;
+  }
+
+  // Map is_pro to is_free (Pro = !Free)
+  if (updates.is_pro !== undefined) {
+    safeUpdates.is_free = !updates.is_pro;
   }
 
   delete safeUpdates.is_pro;
@@ -185,8 +191,9 @@ export function useMascots() {
 }
 
 // Hook to get skills for a mascot
-export function useMascotSkills(mascotId: string | null) {
+export function useMascotSkills(mascotId: string | null, isMascotFree: boolean = false) {
   const { user } = useAuth();
+  const { isSubscribed } = useSubscription();
   const [isAdmin, setIsAdmin] = useState(false);
   const [skills, setSkills] = useState<MascotSkill[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -260,12 +267,14 @@ export function useMascotSkills(mascotId: string | null) {
 
           logger.debug('[useMascotSkills] Fetched skills:', data?.length || 0, 'skills');
 
+          // Full access: Admin, Pro users, OR free mascot (available to everyone)
+          const hasFullAccess = isAdmin || isSubscribed || isMascotFree;
           const enrichedData = (data || []).map((skill: any) => ({
             ...skill,
             skill_prompt: skill.skill_prompt || null,
             skill_prompt_preview: skill.skill_prompt_preview
               || (skill.skill_prompt ? skill.skill_prompt.substring(0, Math.max(1, Math.floor(skill.skill_prompt.length / 4))) : ''),
-            is_full_access: isAdmin
+            is_full_access: hasFullAccess
           }));
 
           setSkills(enrichedData as MascotSkill[]);
@@ -286,7 +295,7 @@ export function useMascotSkills(mascotId: string | null) {
     return () => {
       isActive = false;
     };
-  }, [mascotId, isAdmin, refreshKey]);
+  }, [mascotId, isAdmin, isSubscribed, isMascotFree, refreshKey]);
 
   // Refetch simply increments the key to re-trigger the effect
   const refetch = useCallback(async () => {

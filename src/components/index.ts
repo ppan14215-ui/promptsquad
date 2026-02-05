@@ -12,6 +12,9 @@ export * from './ui/SegmentedToggle';
 export * from './ui/InputField';
 export * from './ui/ChatInputBox';
 export * from './ui/HomeHeader';
+export * from './ui/UpgradeModal';
+export * from './ui/FormattedText';
+export * from './ui/PaywallModal';
 
 // Chat Components
 export * from './chat/ChatHeader';

@@ -11,6 +11,8 @@ import {
 } from 'react-native';
 import { useTheme, fontFamilies, shadowToCSS, shadowToNative, textStyles } from '@/design-system';
 import { Icon } from './Icon';
+import { PaywallModal } from './PaywallModal';
+import { ProBadge } from './ProBadge';
 import * as ImagePicker from 'expo-image-picker';
 import { LLM_OPTIONS, LLMPreference } from '@/services/preferences';
 
@@ -68,6 +70,7 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
 }, ref) => {
   const { mode, colors } = useTheme();
   const [showLLMDropdown, setShowLLMDropdown] = useState(false);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [showWebSearchTooltip, setShowWebSearchTooltip] = useState(false);
   const [showDeepThinkingTooltip, setShowDeepThinkingTooltip] = useState(false);
   const [inputHeight, setInputHeight] = useState(48); // Start with min height
@@ -322,8 +325,10 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
                   ]}
                 >
                   {LLM_OPTIONS.map((option) => {
-                    const isPerplexityOrGrok = option.code === 'perplexity' || option.code === 'grok';
-                    const isLocked = isPerplexityOrGrok && !isPro && !isAdmin && !__DEV__;
+                    const isProModel = option.code === 'perplexity' || option.code === 'grok' || option.code === 'claude';
+                    // Enable Pro models for: Admins, Pro Users (remove __DEV__ to test locally)
+                    const canAccessPro = isPro || isAdmin;
+                    const isLocked = isProModel && !canAccessPro;
                     const isSelected = chatLLM === option.code;
 
                     return (
@@ -332,11 +337,12 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
                         style={[
                           styles.llmDropdownItem,
                           isSelected && { backgroundColor: colors.primaryBg },
-                          isLocked && { opacity: 0.6 },
+                          isLocked && { opacity: 0.5, backgroundColor: mode === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.02)' },
                         ]}
                         onPress={() => {
                           if (isLocked) {
-                            // TODO: Show upgrade modal?
+                            setShowUpgradeModal(true);
+                            setShowLLMDropdown(false);
                             return;
                           }
                           onLLMChange(option.code);
@@ -349,15 +355,19 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
                               styles.llmDropdownItemText,
                               {
                                 fontFamily: fontFamilies.figtree.semiBold,
-                                color: isSelected ? (mode === 'dark' ? '#FFFFFF' : colors.primary) : colors.text,
+                                color: isSelected ? (mode === 'dark' ? '#FFFFFF' : colors.primary) : (isLocked ? colors.textMuted : colors.text),
                               },
                             ]}
                           >
                             {option.name}
                           </Text>
-                          {isPerplexityOrGrok && !isPro && !isAdmin && (
-                            <View style={{ backgroundColor: isSelected && mode === 'dark' ? '#FFFFFF' : colors.primary, paddingHorizontal: 4, paddingVertical: 2, borderRadius: 4, marginLeft: 6 }}>
-                              <Text style={{ fontFamily: fontFamilies.figtree.semiBold, fontSize: 9, color: isSelected && mode === 'dark' ? colors.primary : '#FFFFFF' }}>PRO</Text>
+                          {isProModel && (
+                            <View style={{ marginLeft: 6 }}>
+                              {isLocked ? (
+                                <Icon name="lock" size={12} color={colors.textMuted} />
+                              ) : (
+                                <ProBadge size="small" color={isSelected && mode === 'dark' ? colors.primary : '#8A2BE2'} />
+                              )}
                             </View>
                           )}
                         </View>
@@ -366,7 +376,7 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
                             styles.llmDropdownItemDesc,
                             {
                               fontFamily: fontFamilies.figtree.regular,
-                              color: isSelected ? (mode === 'dark' ? 'rgba(255,255,255,0.8)' : colors.primary) : colors.textMuted,
+                              color: isLocked ? colors.textMuted : (isSelected ? (mode === 'dark' ? 'rgba(255,255,255,0.8)' : colors.primary) : colors.textMuted),
                             },
                           ]}
                         >
@@ -507,6 +517,12 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
           </Pressable>
         </Pressable>
       </Modal>
+
+      <PaywallModal
+        visible={showUpgradeModal}
+        onClose={() => setShowUpgradeModal(false)}
+        feature="Premium AI Model"
+      />
     </>
   );
 });

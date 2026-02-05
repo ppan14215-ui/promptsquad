@@ -5,6 +5,7 @@ import { useI18n, LANGUAGES, Language } from '@/i18n';
 import { usePreferences, LLM_OPTIONS, LLMPreference } from '@/services/preferences';
 import { useAuth } from '@/services/auth';
 import { useIsAdmin } from '@/services/admin';
+import { useSubscription } from '@/services/subscription';
 import { Icon } from '@/components';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -248,6 +249,7 @@ export default function ProfileScreen() {
   const { preferredLLM, setPreferredLLM } = usePreferences();
   const { user, signOut } = useAuth();
   const { isAdmin } = useIsAdmin();
+  const { isSubscribed } = useSubscription();
 
   const userName = user?.user_metadata?.full_name || user?.user_metadata?.name || user?.email?.split('@')[0] || 'User';
   const userEmail = user?.email || '';
@@ -435,11 +437,15 @@ export default function ProfileScreen() {
           >
             {t.profile.account}
           </Text>
-          <SettingRow
-            label="Choose Mascots"
-            onPress={() => router.push('/(onboarding)/select-mascots')}
-            showCheckmark={false}
-          />
+
+          {/* Only show mascot chooser for Pro users or Admin */}
+          {(isSubscribed || isAdmin) && (
+            <SettingRow
+              label="Choose Mascots"
+              onPress={() => router.push('/(onboarding)/select-mascots')}
+              showCheckmark={false}
+            />
+          )}
           <Pressable
             style={[
               styles.signOutButton,

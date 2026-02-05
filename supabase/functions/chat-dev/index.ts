@@ -127,9 +127,45 @@ serve(async (req: Request) => {
     // Create admin client for database operations (bypassing RLS)
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
+    // Check subscription status
+    // NEW: Strictly enforce Pro access "Period"
+    let isPro = false;
+    let isAdmin = false; // logic to check admin if needed, usually via a role or specific ID check
+
+    // Check if user has 'admin' or 'pro' role or active subscription
+    const { data: profile, error: profileError } = await supabaseAdmin
+      .from('profiles')
+      .select('subscription_status, stripe_subscription_id, role')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (profile) {
+      isPro = profile.subscription_status === 'active' || !!profile.stripe_subscription_id || profile.role === 'admin';
+    }
+
     // Parse request body
     const body: ChatRequest = await req.json();
-    const { mascotId, messages, skillId, provider, deepThinking, image, taskCategory, webSearch } = body;
+    let { mascotId, messages, skillId, provider, deepThinking, image, taskCategory, webSearch } = body; // let variables to allow overrides
+
+    // ENFORCEMENT LOGIC
+    // Pro-only providers: Perplexity, Grok, Claude. 
+    // OpenAI and Gemini are allowed for free users (forced to mini/flash models by disabling deepThinking).
+    const PRO_PROVIDERS = ['perplexity', 'grok', 'claude'];
+
+    if (!isPro) {
+      // 1. Disable Deep Thinking
+      if (deepThinking) {
+        console.log('[Edge Function] Access Control: Disabling Deep Thinking for free user');
+        deepThinking = false;
+      }
+
+      // 2. Prevent Pro Providers
+      // If provider is explicitly requested as a Pro one, OR if it's 'auto' and we might pick a Pro one
+      if (PRO_PROVIDERS.includes(provider as string)) {
+        console.log(`[Edge Function] Access Control: Downgrading requested provider ${provider} to Gemini for free user`);
+        provider = 'gemini';
+      }
+    }
 
     console.log('[Edge Function] Received messages for mascot:', mascotId, 'provider:', provider, 'webSearch:', webSearch);
     console.log('[Edge Function] Message count:', messages?.length);
