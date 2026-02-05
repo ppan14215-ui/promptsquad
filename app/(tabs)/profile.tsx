@@ -326,11 +326,18 @@ export default function ProfileScreen() {
 
           {/* Only show mascot chooser for Pro users or Admin */}
           {(isSubscribed || isAdmin) && (
-            <SettingRow
-              label="Choose Mascots"
-              onPress={() => router.push('/(onboarding)/select-mascots')}
-              showCheckmark={false}
-            />
+            <>
+              <SettingRow
+                label="Choose Mascots"
+                onPress={() => router.push('/(onboarding)/select-mascots')}
+                showCheckmark={false}
+              />
+              <SettingRow
+                label="Create Custom Mascot"
+                onPress={() => router.push('/(mascot)/create')}
+                showCheckmark={false}
+              />
+            </>
           )}
           <Pressable
             style={[
