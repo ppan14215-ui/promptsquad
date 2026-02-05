@@ -4,7 +4,6 @@ import { useRouter } from 'expo-router';
 import { useTheme, fontFamilies, textStyles } from '@/design-system';
 import { useI18n, LANGUAGES, Language } from '@/i18n';
 import { useAuth } from '@/services/auth';
-import { useAuth } from '@/services/auth';
 import { useIsAdmin } from '@/services/admin';
 import { useSubscription } from '@/services/subscription';
 import { Icon } from '@/components';
@@ -167,73 +166,6 @@ function LanguageOption({ code, name, nativeName, isSelected, onPress }: Languag
           ]}
         >
           {name}
-        </Text>
-      </View>
-      {isSelected && (
-        <View style={[styles.checkIcon, { backgroundColor: mode === 'dark' ? colors.buttonText : colors.primary }]}>
-          <Text style={[styles.checkText, { color: mode === 'dark' ? colors.primary : '#FFFFFF' }]}>✓</Text>
-        </View>
-      )}
-    </Pressable>
-  );
-}
-
-type LLMOptionProps = {
-  code: LLMPreference;
-  name: string;
-  description: string;
-  isSelected: boolean;
-  onPress: () => void;
-};
-
-function LLMOption({ code, name, description, isSelected, onPress }: LLMOptionProps) {
-  const { colors, mode } = useTheme();
-
-  // Web-specific transition style
-  const webTransitionStyle = Platform.select({
-    web: {
-      transition: 'all 200ms ease-out',
-    } as unknown as object,
-    default: {},
-  });
-
-  // In dark mode with selected state, use white text since primaryBg is dark
-  const selectedTextColor = mode === 'dark' ? colors.buttonText : colors.primary;
-
-  return (
-    <Pressable
-      onPress={onPress}
-      style={[
-        styles.languageOption,
-        webTransitionStyle,
-        {
-          backgroundColor: isSelected ? colors.primaryBg : colors.background,
-          borderColor: isSelected ? colors.primary : colors.outline,
-        },
-      ]}
-    >
-      <View style={styles.languageTextContainer}>
-        <Text
-          style={[
-            styles.languageName,
-            {
-              fontFamily: fontFamilies.figtree.semiBold,
-              color: isSelected ? selectedTextColor : colors.text,
-            },
-          ]}
-        >
-          {name}
-        </Text>
-        <Text
-          style={[
-            styles.languageNative,
-            {
-              fontFamily: fontFamilies.figtree.regular,
-              color: isSelected && mode === 'dark' ? 'rgba(255,255,255,0.7)' : colors.text,
-            },
-          ]}
-        >
-          {description}
         </Text>
       </View>
       {isSelected && (
