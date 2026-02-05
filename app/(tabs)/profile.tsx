@@ -252,7 +252,6 @@ export default function ProfileScreen() {
   const { preferredLLM, setPreferredLLM } = usePreferences();
   const { user, signOut } = useAuth();
   const { isAdmin } = useIsAdmin();
-  const { isAdmin } = useIsAdmin();
   const { isSubscribed } = useSubscription();
   const [showChangelog, setShowChangelog] = React.useState(false);
 
