@@ -2,6 +2,8 @@ import React, { createContext, useContext, useEffect, useState, ReactNode } from
 import { Session, User } from '@supabase/supabase-js';
 import { Platform } from 'react-native';
 import * as Linking from 'expo-linking';
+import Constants from 'expo-constants';
+import * as WebBrowser from 'expo-web-browser';
 import { supabase } from '@/services/supabase';
 
 type AuthContextType = {
@@ -80,47 +82,108 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signInWithGoogle = async () => {
-    let redirectTo: string;
-
     if (Platform.OS === 'web') {
-      redirectTo = `${window.location.origin}/callback`;
-    } else {
-      redirectTo = Linking.createURL('/callback');
-    }
+      // Web: standard OAuth redirect flow
+      const redirectTo = `${window.location.origin}/callback`;
+      console.log('OAuth redirect URL (web):', redirectTo);
 
-    console.log('OAuth redirect URL:', redirectTo);
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo,
+        },
+      });
 
-    const { data, error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo,
-        skipBrowserRedirect: Platform.OS !== 'web',
-      },
-    });
-
-    if (error) {
-      console.error('OAuth sign-in error:', error);
-    } else if (data?.url && Platform.OS !== 'web') {
-      // On mobile, we need to open the URL manually since we skipped browser redirect
-      console.log('Opening OAuth URL:', data.url);
-      try {
-        const canOpen = await Linking.canOpenURL(data.url);
-        if (canOpen) {
-          await Linking.openURL(data.url);
-        } else {
-          // If we can't open it, it might be a malformed URL
-          console.error('Cannot open OAuth URL:', data.url);
-          // Try opening it anyway as fallback (sometimes canOpen returns false false negatives)
-          await Linking.openURL(data.url);
-        }
-      } catch (openError: any) {
-        console.error('Error opening OAuth URL:', openError);
-        // Alert the user so they see what happened
-        alert(`Failed to open login page: ${openError.message || 'Unknown error'}`);
+      if (error) {
+        console.error('OAuth sign-in error:', error);
       }
+      return { error: error as Error | null };
     }
 
-    return { error: error as Error | null };
+    // Native: use in-app browser session (expo-web-browser)
+    // This avoids deep link redirect issues and works in Expo Go + standalone builds
+    try {
+      // Use the relay pattern for robust Expo Go support
+      // 1. App deep link (exp://... or prompt-squad://...)
+      const deepLink = Linking.createURL('/callback');
+
+      // 2. Relay URL (hosted on Vercel) that will redirect back to deep link
+      // This solves the issue of dynamic Expo Go URLs not being whitelisting-able in Supabase
+      const authUrl = `https://prompt-squad-3.vercel.app/callback?redirect_to=${encodeURIComponent(deepLink)}`;
+
+      console.log(`OAuth relay flow: ${authUrl}`);
+      console.log(`Final deep link: ${deepLink}`);
+
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: authUrl,
+          skipBrowserRedirect: false,
+        },
+      });
+
+      if (error) {
+        console.error('OAuth sign-in error:', error);
+        return { error: error as Error };
+      }
+
+      if (!data?.url) {
+        return { error: new Error('No OAuth URL returned') };
+      }
+
+      // Open the OAuth URL in an in-app browser that captures the redirect
+      console.log('Opening OAuth URL in WebBrowser:', data.url);
+      const result = await WebBrowser.openAuthSessionAsync(
+        data.url,
+        deepLink, // We expect to return to the deep link
+        {
+          showInRecents: true,
+        }
+      );
+
+      if (result.type === 'success' && result.url) {
+        console.log('OAuth callback URL received:', result.url);
+
+        // Extract tokens from the URL hash fragment
+        // The URL looks like: scheme://callback#access_token=...&refresh_token=...
+        const url = result.url;
+        const hashIndex = url.indexOf('#');
+        if (hashIndex !== -1) {
+          const hash = url.substring(hashIndex + 1);
+          const params = new URLSearchParams(hash);
+          const accessToken = params.get('access_token');
+          const refreshToken = params.get('refresh_token');
+
+          if (accessToken && refreshToken) {
+            const { error: sessionError } = await supabase.auth.setSession({
+              access_token: accessToken,
+              refresh_token: refreshToken,
+            });
+
+            if (sessionError) {
+              console.error('Error setting session:', sessionError);
+              return { error: sessionError as Error };
+            }
+            return { error: null };
+          }
+        }
+
+        // Fallback: try to get the session (it might have been set automatically)
+        const { data: sessionData } = await supabase.auth.getSession();
+        if (sessionData.session) {
+          return { error: null };
+        }
+
+        return { error: new Error('Could not extract auth tokens from callback URL') };
+      } else {
+        // User cancelled the auth flow
+        console.log('OAuth flow cancelled or dismissed:', result.type);
+        return { error: null };
+      }
+    } catch (err: any) {
+      console.error('Error in native OAuth flow:', err);
+      return { error: err as Error };
+    }
   };
 
   return (

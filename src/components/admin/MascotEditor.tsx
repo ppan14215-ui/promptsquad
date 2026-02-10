@@ -17,6 +17,8 @@ import { BigPrimaryButton } from '../ui/BigPrimaryButton';
 import { BigSecondaryButton } from '../ui/BigSecondaryButton';
 import { InputField } from '../ui/InputField';
 
+type AccessTier = 'free' | 'pro';
+
 type MascotEditorProps = {
   visible: boolean;
   mascotId: string;
@@ -25,11 +27,17 @@ type MascotEditorProps = {
   currentIsPro?: boolean;
   currentIsFree?: boolean;
   currentIsReady?: boolean;
+  currentIsVisible?: boolean;
   currentSortOrder?: number;
   currentColor?: string;
   onClose: () => void;
-  onSave: (name: string, subtitle: string, isPro: boolean, isFree: boolean, isReady: boolean, sortOrder: number, color: string) => Promise<void>;
+  onSave: (name: string, subtitle: string, isPro: boolean, isFree: boolean, isReady: boolean, sortOrder: number, color: string, isVisible: boolean) => Promise<void>;
 };
+
+function getAccessTier(isPro: boolean, isFree: boolean): AccessTier {
+  if (isFree) return 'free';
+  return 'pro'; // Default to pro if not free
+}
 
 export function MascotEditor({
   visible,
@@ -37,8 +45,9 @@ export function MascotEditor({
   currentName,
   currentSubtitle,
   currentIsPro = false,
-  currentIsFree = false, // Default
+  currentIsFree = false,
   currentIsReady = false,
+  currentIsVisible = true,
   currentSortOrder = 0,
   currentColor = 'yellow',
   onClose,
@@ -47,25 +56,28 @@ export function MascotEditor({
   const { colors } = useTheme();
   const [name, setName] = useState(currentName);
   const [subtitle, setSubtitle] = useState(currentSubtitle || '');
-  const [isPro, setIsPro] = useState(currentIsPro);
-  const [isFree, setIsFree] = useState(currentIsFree); // State
+  const [accessTier, setAccessTier] = useState<AccessTier>(getAccessTier(currentIsPro, currentIsFree));
   const [isReady, setIsReady] = useState(currentIsReady);
+  const [isVisible, setIsVisible] = useState(currentIsVisible);
   const [sortOrder, setSortOrder] = useState(String(currentSortOrder));
   const [color, setColor] = useState(currentColor);
   const [error, setError] = useState<string | null>(null);
+
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     if (visible) {
       setName(currentName);
       setSubtitle(currentSubtitle || '');
-      setIsPro(currentIsPro);
-      setIsFree(currentIsFree);
+      setAccessTier(getAccessTier(currentIsPro, currentIsFree));
       setIsReady(currentIsReady);
+      setIsVisible(currentIsVisible);
       setSortOrder(String(currentSortOrder));
       setColor(currentColor);
       setError(null);
+      setIsSaving(false);
     }
-  }, [visible, currentName, currentSubtitle, currentIsPro, currentIsFree, currentIsReady, currentSortOrder, currentColor]);
+  }, [visible, currentName, currentSubtitle, currentIsPro, currentIsFree, currentIsReady, currentIsVisible, currentSortOrder, currentColor]);
 
   const handleSave = async () => {
     if (!name.trim()) {
@@ -73,14 +85,27 @@ export function MascotEditor({
       return;
     }
 
+    setIsSaving(true);
+    setError(null);
+
+    const isPro = accessTier === 'pro';
+    const isFree = accessTier === 'free';
+
     try {
-      await onSave(name.trim(), subtitle.trim(), isPro, isFree, isReady, parseInt(sortOrder, 10) || 0, color);
+      await onSave(name.trim(), subtitle.trim(), isPro, isFree, isReady, parseInt(sortOrder, 10) || 0, color, isVisible);
       onClose();
-    } catch (error) {
-      // Error handling is done in the parent component
-      // Don't close modal on error
+    } catch (err: any) {
+      console.error('MascotEditor save error:', err);
+      setError(err.message || 'Failed to save mascot');
+    } finally {
+      setIsSaving(false);
     }
   };
+
+  const tierOptions: { key: AccessTier; label: string; description: string }[] = [
+    { key: 'free', label: 'Free', description: 'Available to all users' },
+    { key: 'pro', label: 'Pro', description: 'Requires subscription' },
+  ];
 
   return (
     <Modal
@@ -140,58 +165,85 @@ export function MascotEditor({
 
               <View style={styles.spacer} />
 
-              <View style={[styles.switchContainer, { borderColor: colors.outline }]}>
-                <View style={styles.switchInfo}>
-                  <Text style={[styles.switchLabel, { fontFamily: fontFamilies.figtree.medium, color: colors.text }]}>
-                    Pro Mascot
-                  </Text>
-                  <Text style={[styles.switchDescription, { fontFamily: fontFamilies.figtree.regular, color: colors.textMuted }]}>
-                    Requires subscription or purchase
-                  </Text>
+              {/* Access Tier Segmented Control */}
+              <View style={[styles.segmentedContainer, { borderColor: colors.outline }]}>
+                <Text style={[styles.switchLabel, { fontFamily: fontFamilies.figtree.medium, color: colors.text }]}>
+                  Access Tier
+                </Text>
+                <Text style={[styles.switchDescription, { fontFamily: fontFamilies.figtree.regular, color: colors.textMuted, marginBottom: 12 }]}>
+                  Determines which users can access this mascot
+                </Text>
+                <View style={[styles.segmentedControl, { backgroundColor: colors.outline + '40' }]}>
+                  {tierOptions.map((option) => {
+                    const isSelected = accessTier === option.key;
+                    return (
+                      <Pressable
+                        key={option.key}
+                        onPress={() => setAccessTier(option.key)}
+                        style={[
+                          styles.segmentedOption,
+                          isSelected && {
+                            backgroundColor: option.key === 'pro' ? colors.primary : option.key === 'free' ? colors.green : colors.text,
+                          },
+                        ]}
+                      >
+                        <Text style={[
+                          styles.segmentedOptionLabel,
+                          {
+                            fontFamily: fontFamilies.figtree.semiBold,
+                            color: isSelected ? '#ffffff' : colors.text,
+                          },
+                        ]}>
+                          {option.label}
+                        </Text>
+                        <Text style={[
+                          styles.segmentedOptionDesc,
+                          {
+                            fontFamily: fontFamilies.figtree.regular,
+                            color: isSelected ? 'rgba(255,255,255,0.75)' : colors.textMuted,
+                          },
+                        ]}>
+                          {option.description}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
                 </View>
-                <Switch
-                  value={isPro}
-                  onValueChange={(value) => {
-                    setIsPro(value);
-                    if (value) setIsFree(false); // Turn off Free when Pro is turned on
-                  }}
-                  trackColor={{ false: colors.outline, true: colors.primary }}
-                  thumbColor={'#ffffff'}
-                />
               </View>
 
-              <View style={[styles.switchContainer, { borderColor: colors.outline }]}>
-                <View style={styles.switchInfo}>
-                  <Text style={[styles.switchLabel, { fontFamily: fontFamilies.figtree.medium, color: colors.text }]}>
-                    Free Mascot
-                  </Text>
-                  <Text style={[styles.switchDescription, { fontFamily: fontFamilies.figtree.regular, color: colors.textMuted }]}>
-                    Available for free users (cheaper models)
-                  </Text>
-                </View>
-                <Switch
-                  value={isFree}
-                  onValueChange={(value) => {
-                    setIsFree(value);
-                    if (value) setIsPro(false); // Turn off Pro when Free is turned on
-                  }}
-                  trackColor={{ false: colors.outline, true: colors.green }}
-                  thumbColor={'#ffffff'}
-                />
-              </View>
+              <View style={styles.spacer} />
 
+              {/* Mascot Ready Toggle */}
               <View style={[styles.switchContainer, { borderColor: colors.outline }]}>
                 <View style={styles.switchInfo}>
                   <Text style={[styles.switchLabel, { fontFamily: fontFamilies.figtree.medium, color: colors.text }]}>
                     Mascot Ready
                   </Text>
                   <Text style={[styles.switchDescription, { fontFamily: fontFamilies.figtree.regular, color: colors.textMuted }]}>
-                    Visible to normal users in the app
+                    Configuration complete, skills & personality set up
                   </Text>
                 </View>
                 <Switch
                   value={isReady}
                   onValueChange={setIsReady}
+                  trackColor={{ false: colors.outline, true: colors.green }}
+                  thumbColor={'#ffffff'}
+                />
+              </View>
+
+              {/* Visible to Users Toggle */}
+              <View style={[styles.switchContainer, { borderColor: colors.outline }]}>
+                <View style={styles.switchInfo}>
+                  <Text style={[styles.switchLabel, { fontFamily: fontFamilies.figtree.medium, color: colors.text }]}>
+                    Visible to Users
+                  </Text>
+                  <Text style={[styles.switchDescription, { fontFamily: fontFamilies.figtree.regular, color: colors.textMuted }]}>
+                    When off, completely hidden from pro & standard users
+                  </Text>
+                </View>
+                <Switch
+                  value={isVisible}
+                  onValueChange={setIsVisible}
                   trackColor={{ false: colors.outline, true: colors.primary }}
                   thumbColor={'#ffffff'}
                 />
@@ -231,10 +283,23 @@ export function MascotEditor({
             </View>
           </ScrollView>
 
+          {/* Error Display */}
+          {error && (
+            <View style={[styles.errorContainer, { backgroundColor: colors.red + '20', borderColor: colors.red }]}>
+              <Text style={[styles.errorText, { color: colors.red, fontFamily: fontFamilies.figtree.medium }]}>
+                {error}
+              </Text>
+            </View>
+          )}
+
           {/* Footer */}
           <View style={[styles.footer, { borderTopColor: colors.outline }]}>
-            <BigSecondaryButton label="Cancel" onPress={onClose} />
-            <BigPrimaryButton label="Save Details" onPress={handleSave} />
+            <BigSecondaryButton label="Cancel" onPress={onClose} disabled={isSaving} />
+            <BigPrimaryButton
+              label={isSaving ? "Saving..." : "Save Details"}
+              onPress={handleSave}
+              disabled={isSaving}
+            />
           </View>
         </View >
       </KeyboardAvoidingView >
@@ -323,6 +388,31 @@ const styles = StyleSheet.create({
   switchDescription: {
     fontSize: 13,
   },
+  segmentedContainer: {
+    padding: 16,
+    borderWidth: 1,
+    borderRadius: 12,
+  },
+  segmentedControl: {
+    flexDirection: 'row',
+    borderRadius: 10,
+    padding: 3,
+    gap: 3,
+  },
+  segmentedOption: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+  },
+  segmentedOptionLabel: {
+    fontSize: 14,
+  },
+  segmentedOptionDesc: {
+    fontSize: 10,
+    marginTop: 2,
+  },
   colorSelector: {
     padding: 16,
     borderWidth: 1,
@@ -338,5 +428,16 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
+  },
+  errorContainer: {
+    marginHorizontal: 20,
+    marginBottom: 12,
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  errorText: {
+    fontSize: 14,
+    textAlign: 'center',
   },
 });

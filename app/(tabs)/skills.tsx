@@ -118,7 +118,7 @@ export default function SkillsScreen() {
     refetchPersonality();
   };
 
-  const handleMascotSaved = async (name: string, subtitle: string, isPro: boolean, isFree: boolean, isReady: boolean, sortOrder: number, color: string) => {
+  const handleMascotSaved = async (name: string, subtitle: string, isPro: boolean, isFree: boolean, isReady: boolean, sortOrder: number, color: string, isVisible: boolean) => {
     if (!selectedMascotId) return;
     try {
       await updateMascot(selectedMascotId, {
@@ -128,7 +128,8 @@ export default function SkillsScreen() {
         is_free: isFree,
         is_ready: isReady,
         sort_order: sortOrder,
-        color
+        color,
+        is_visible: isVisible,
       });
       // Refresh mascots list without reloading the page
       await refetchMascots();
@@ -253,8 +254,9 @@ export default function SkillsScreen() {
           {mascots.map((mascot) => {
             const isSelected = mascot.id === selectedMascotId;
             const mascotColor = resolveMascotColor(mascot.color);
+            const isNotReady = mascot.is_ready === false;
             return (
-              <View key={mascot.id} style={styles.mascotTabWrapper}>
+              <View key={mascot.id} style={[styles.mascotTabWrapper, isNotReady && { opacity: 0.5 }]}>
                 <Pressable
                   onPress={() => setSelectedMascotId(mascot.id)}
                   style={[
@@ -265,17 +267,24 @@ export default function SkillsScreen() {
                     },
                   ]}
                 >
-                  <Text
-                    style={[
-                      styles.mascotPillText,
-                      {
-                        fontFamily: fontFamilies.figtree.medium,
-                        color: isSelected ? getContrastColor(mascotColor) : colors.text,
-                      },
-                    ]}
-                  >
-                    {mascot.name}
-                  </Text>
+                  <View style={styles.mascotPillContent}>
+                    <Text
+                      style={[
+                        styles.mascotPillText,
+                        {
+                          fontFamily: fontFamilies.figtree.medium,
+                          color: isSelected ? getContrastColor(mascotColor) : colors.text,
+                        },
+                      ]}
+                    >
+                      {mascot.name}
+                    </Text>
+                    {mascot.is_pro && (
+                      <View style={[styles.proPillBadge, { backgroundColor: isSelected ? 'rgba(255,255,255,0.25)' : colors.primary }]}>
+                        <Text style={[styles.proPillBadgeText, { color: isSelected ? getContrastColor(mascotColor) : colors.buttonText }]}>PRO</Text>
+                      </View>
+                    )}
+                  </View>
                 </Pressable>
                 {isAdmin && isSelected && (
                   <View style={styles.reorderButtons}>
@@ -369,16 +378,23 @@ export default function SkillsScreen() {
                     </View>
                   )}
 
-                  {/* Ready Status - Only show if NOT ready (Hidden) */}
+                  {/* Ready Status - Only show if NOT ready */}
                   {!selectedMascot.is_ready && (
                     <View style={[styles.badge, { backgroundColor: colors.surface, borderColor: colors.textMuted }]}>
                       <Text style={[styles.badgeText, { color: colors.textMuted, fontFamily: fontFamilies.figtree.medium }]}>
-                        Draft (Hidden)
+                        Not Ready
                       </Text>
                     </View>
                   )}
 
-                  {/* If visible/ready, we don't show a badge (standard behavior) */}
+                  {/* Visibility Status - Only show if NOT visible */}
+                  {selectedMascot.is_visible === false && (
+                    <View style={[styles.badge, { backgroundColor: colors.red + '20', borderColor: colors.red }]}>
+                      <Text style={[styles.badgeText, { color: colors.red, fontFamily: fontFamilies.figtree.medium }]}>
+                        Hidden
+                      </Text>
+                    </View>
+                  )}
                 </View>
               </View>
             </View>
@@ -538,6 +554,7 @@ export default function SkillsScreen() {
           currentIsPro={selectedMascot.is_pro || false}
           currentIsFree={selectedMascot.is_free || false}
           currentIsReady={selectedMascot.is_ready !== false} // Default to true if null/undefined for backward compat
+          currentIsVisible={selectedMascot.is_visible !== false} // Default to true if null/undefined
           currentSortOrder={selectedMascot.sort_order || 0}
           currentColor={selectedMascot.color}
           onClose={() => setMascotEditorVisible(false)}
@@ -743,5 +760,20 @@ const styles = StyleSheet.create({
   },
   reorderButton: {
     padding: 2,
+  },
+  mascotPillContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  proPillBadge: {
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  proPillBadgeText: {
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 0.3,
   },
 });

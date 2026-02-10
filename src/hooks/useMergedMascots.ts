@@ -50,12 +50,14 @@ export function useMergedMascots() {
                     } as OwnedMascot;
                 });
 
-            // Filter out mascots that are not ready (unless admin)
+            // Filter out mascots that are not ready or not visible (unless admin)
             if (!isAdmin) {
                 convertedMascots = convertedMascots.filter((m) => {
                     const dbMascot = dbMascots.find(db => db.id === m.id);
-                    // Default to true (visible) if is_ready is null/undefined to avoid hiding everything before migration runs
-                    return dbMascot?.is_ready !== false;
+                    // Default to true (visible) if is_ready/is_visible is null/undefined to avoid hiding everything before migration runs
+                    const isReady = dbMascot?.is_ready !== false;
+                    const isVisible = dbMascot?.is_visible !== false;
+                    return isReady && isVisible;
                 });
             }
         } else {

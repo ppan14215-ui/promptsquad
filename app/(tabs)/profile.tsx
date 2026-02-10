@@ -6,7 +6,7 @@ import { useI18n, LANGUAGES, Language } from '@/i18n';
 import { useAuth } from '@/services/auth';
 import { useIsAdmin } from '@/services/admin';
 import { useSubscription } from '@/services/subscription';
-import { Icon } from '@/components';
+import { Icon, CreateMascotModal } from '@/components';
 import { ChangelogModal } from '@/components/ui/ChangelogModal';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Constants from 'expo-constants';
@@ -185,6 +185,7 @@ export default function ProfileScreen() {
   const { isAdmin } = useIsAdmin();
   const { isSubscribed } = useSubscription();
   const [showChangelog, setShowChangelog] = React.useState(false);
+  const [showCreateMascotModal, setShowCreateMascotModal] = React.useState(false);
 
   const userName = user?.user_metadata?.full_name || user?.user_metadata?.name || user?.email?.split('@')[0] || 'User';
   const userEmail = user?.email || '';
@@ -334,7 +335,7 @@ export default function ProfileScreen() {
               />
               <SettingRow
                 label="Create Custom Mascot"
-                onPress={() => router.push('/(mascot)/create')}
+                onPress={() => setShowCreateMascotModal(true)}
                 showCheckmark={false}
               />
             </>
@@ -404,6 +405,11 @@ export default function ProfileScreen() {
         visible={showChangelog}
         onDismiss={() => setShowChangelog(false)}
         version={Constants.expoConfig?.version || '1.1.2'}
+      />
+
+      <CreateMascotModal
+        visible={showCreateMascotModal}
+        onClose={() => setShowCreateMascotModal(false)}
       />
     </SafeAreaView>
   );

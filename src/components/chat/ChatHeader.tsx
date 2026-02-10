@@ -53,14 +53,139 @@ export function ChatHeader({
   // If very narrow, hide trial progress
   const showTrial = isTrial && width > 380;
 
-  // Responsive values
-  const backContainerWidth = isMobile ? 48 : 143;
-  const mascotLeft = isMobile ? 0 : 53;
-  const mascotTop = isMobile ? 24 : undefined; // Anchor top on mobile
-  const mascotBottom = isMobile ? undefined : 0; // Anchor bottom on desktop
-  const mascotSize = isMobile ? 80 : 100;
-  // Push tabs to right of mascot on mobile, or keep original left padding
-  const tabsPaddingLeft = isMobile ? 80 : 150;
+  if (isMobile) {
+    // ── Mobile layout ──
+    // Row 1: [Back] [Mascot Image] [Name + Subtitle] [Favourite]
+    // Row 2: [Tabs ..............................] [Trial]
+    const mascotSize = 48;
+
+    return (
+      <View
+        style={[
+          styles.header,
+          {
+            backgroundColor: colors.surface,
+            borderBottomColor: colors.outline,
+            paddingTop: Platform.OS !== 'web' ? Math.max(insets?.top ?? 0, 8) + 8 : 16,
+            paddingBottom: 12,
+          },
+        ]}
+      >
+        {/* Row 1: Back + Mascot image + Name/subtitle + Favourite */}
+        <View style={styles.mobileTopRow}>
+          <IconButton iconName="arrow-left" onPress={onBack} />
+
+          <Image
+            source={mascotImage}
+            style={{
+              width: mascotSize,
+              height: mascotSize,
+              borderRadius: mascotSize / 2,
+            }}
+            contentFit="cover"
+            transition={200}
+          />
+
+          <View style={styles.mobileTextContainer}>
+            <Text
+              style={[
+                styles.headerMascotName,
+                {
+                  fontFamily: textStyles.cardTitle.fontFamily,
+                  fontSize: 16,
+                  letterSpacing: 0.36,
+                  lineHeight: 20,
+                  color: colors.text,
+                },
+              ]}
+              numberOfLines={1}
+            >
+              {mascotName}
+            </Text>
+            <Text
+              style={[
+                styles.headerMascotSubtitle,
+                {
+                  fontFamily: fontFamilies.figtree.medium,
+                  fontSize: 11,
+                  letterSpacing: 0.5,
+                  color: colors.textMuted,
+                },
+              ]}
+              numberOfLines={1}
+            >
+              {mascotSubtitle}
+            </Text>
+          </View>
+
+          <View style={styles.favoriteContainer}>
+            <IconButton iconName="favourite" isSelected={isLiked} onPress={onToggleLike} disabled={isToggling} />
+            {likeCount > 0 && (
+              <Text
+                style={[
+                  styles.likeCount,
+                  {
+                    fontFamily: fontFamilies.figtree.medium,
+                    color: colors.textMuted,
+                  },
+                ]}
+              >
+                {likeCount}
+              </Text>
+            )}
+          </View>
+        </View>
+
+        {/* Row 2: Tabs + Optional trial bar */}
+        <View style={styles.mobileTabsRow}>
+          <View style={styles.tabsLeft}>
+            {tabs.map((tab) => (
+              <ColoredTab
+                key={tab.key}
+                label={tab.label}
+                isActive={activeTab === tab.key}
+                onPress={() => onTabChange(tab.key)}
+                activeBgColor={activeTab === tab.key ? mascotColor : undefined}
+              />
+            ))}
+          </View>
+
+          {showTrial && (
+            <View style={styles.trialProgressInline}>
+              <Text
+                style={[
+                  styles.trialProgressText,
+                  {
+                    fontFamily: fontFamilies.figtree.medium,
+                    fontSize: 10,
+                    color: colors.textMuted,
+                  },
+                ]}
+              >
+                Trial: {trialCount}/{trialLimit}
+              </Text>
+              <View style={[styles.trialProgressBarContainer, { backgroundColor: colors.outline }]}>
+                <View
+                  style={[
+                    styles.trialProgressBarFill,
+                    {
+                      width: `${(trialCount / trialLimit) * 100}%`,
+                      backgroundColor: colors.primary,
+                    },
+                  ]}
+                />
+              </View>
+            </View>
+          )}
+        </View>
+      </View>
+    );
+  }
+
+  // ── Desktop layout (unchanged) ──
+  const backContainerWidth = 143;
+  const mascotSize = 100;
+  const tabsPaddingLeft = 150;
 
   return (
     <View
@@ -70,8 +195,7 @@ export function ChatHeader({
           backgroundColor: colors.surface,
           borderBottomColor: colors.outline,
           paddingTop: Platform.OS !== 'web' ? Math.max(insets?.top ?? 0, 8) + 8 : 16,
-          // Add extra padding bottom on mobile to clear the mascot image if needed
-          paddingBottom: isMobile ? 12 : 16,
+          paddingBottom: 16,
         },
       ]}
     >
@@ -82,17 +206,15 @@ export function ChatHeader({
           {
             width: mascotSize,
             height: mascotSize,
-            left: mascotLeft,
-            bottom: mascotBottom,
-            top: mascotTop,
+            left: 53,
+            bottom: 0,
           }
         ]}
         contentFit="cover"
         transition={200}
       />
 
-      <View style={[styles.headerRow, isMobile && { paddingLeft: 60 }]}>
-        {/* Back button floats above on mobile or sits in flow on desktop */}
+      <View style={styles.headerRow}>
         <View style={[styles.headerBackContainer, { width: backContainerWidth }]}>
           <IconButton iconName="arrow-left" onPress={onBack} />
         </View>
@@ -103,9 +225,9 @@ export function ChatHeader({
               styles.headerMascotName,
               {
                 fontFamily: textStyles.cardTitle.fontFamily,
-                fontSize: isMobile ? 16 : 18,
+                fontSize: 18,
                 letterSpacing: 0.36,
-                lineHeight: isMobile ? 20 : 23,
+                lineHeight: 23,
                 color: colors.text,
               },
             ]}
@@ -147,11 +269,7 @@ export function ChatHeader({
 
       <View style={[
         styles.tabsContainer,
-        {
-          paddingLeft: isMobile ? 0 : tabsPaddingLeft,
-          // On mobile, push it down a bit
-          marginTop: isMobile ? 8 : 0,
-        }
+        { paddingLeft: tabsPaddingLeft }
       ]}>
         <View style={styles.tabsLeft}>
           {tabs.map((tab) => (
@@ -165,7 +283,6 @@ export function ChatHeader({
           ))}
         </View>
 
-        {/* Trial Progress Bar - Inline with tabs, right-aligned */}
         {showTrial && (
           <View style={styles.trialProgressInline}>
             <Text
@@ -208,6 +325,26 @@ const styles = StyleSheet.create({
     position: 'relative',
     overflow: 'visible',
   },
+  // ── Mobile-specific styles ──
+  mobileTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    zIndex: 1,
+  },
+  mobileTextContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    minWidth: 0, // Allow text truncation
+  },
+  mobileTabsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginTop: 10,
+  },
+  // ── Desktop-specific styles ──
   headerMascotImage: {
     position: 'absolute',
     bottom: 0,
@@ -229,6 +366,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
   },
+  // ── Shared styles ──
   headerMascotName: {
     textAlign: 'left',
   },
@@ -276,4 +414,3 @@ const styles = StyleSheet.create({
     borderRadius: 2,
   },
 });
-

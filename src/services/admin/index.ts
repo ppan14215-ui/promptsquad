@@ -40,6 +40,7 @@ export type MascotBasic = {
   is_pro?: boolean | null;
   is_ready?: boolean | null;
   is_active?: boolean | null;
+  is_visible?: boolean | null;
 };
 
 // ... existing code ...
@@ -57,6 +58,7 @@ export async function updateMascot(
     is_free?: boolean;
     is_pro?: boolean;
     is_ready?: boolean;
+    is_visible?: boolean;
   }
 ): Promise<MascotBasic> {
   // Sanitize updates to exclude columns that might not exist yet (is_pro, is_ready)
@@ -72,6 +74,8 @@ export async function updateMascot(
     safeUpdates.is_free = !updates.is_pro;
   }
 
+  // Keep is_visible as-is (direct DB column)
+
   delete safeUpdates.is_pro;
   delete safeUpdates.is_ready;
 
@@ -82,11 +86,11 @@ export async function updateMascot(
       updated_at: new Date().toISOString(),
     })
     .eq('id', mascotId)
-    .select('id, name, subtitle, image_url, color, question_prompt, sort_order, is_free, is_active')
+    .select('id, name, subtitle, image_url, color, question_prompt, sort_order, is_free, is_active, is_visible')
     .single();
 
   if (error) throw new Error(error.message);
-  return data;
+  return data as unknown as MascotBasic;
 }
 
 export type SkillQuestion = {
@@ -154,7 +158,7 @@ export function useMascots() {
     try {
       const { data, error } = await supabase
         .from('mascots')
-        .select('id, name, subtitle, image_url, color, question_prompt, sort_order, is_free, is_active')
+        .select('id, name, subtitle, image_url, color, question_prompt, sort_order, is_free, is_active, is_visible')
         .order('sort_order', { ascending: true });
 
       if (error) {
@@ -171,7 +175,8 @@ export function useMascots() {
         setMascots((data || []).map((m: any) => ({
           ...m,
           is_pro: m.is_pro !== undefined ? m.is_pro : !m.is_free,
-          is_ready: m.is_active // Map ready status from active status
+          is_ready: m.is_active, // Map ready status from active status
+          is_visible: m.is_visible !== undefined ? m.is_visible : true, // Default to visible
         })));
         setError(null);
       }

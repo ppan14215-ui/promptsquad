@@ -707,6 +707,18 @@ export default function ChatScreen() {
   const [thinkingStatus, setThinkingStatus] = useState<string | null>(null); // Transient thinking indicator
   const [isRecording, setIsRecording] = useState(false);
 
+  // Downgrade notification state
+  const [showDowngradeToast, setShowDowngradeToast] = useState(false);
+  const [downgradedModelName, setDowngradedModelName] = useState('');
+
+  const handleDowngrade = useCallback((originalModel: string) => {
+    console.log('[Chat] Model downgraded from:', originalModel);
+    setDowngradedModelName(mapTechnicalToPremiumModel(originalModel));
+    setShowDowngradeToast(true);
+    // Auto-hide after 6 seconds
+    setTimeout(() => setShowDowngradeToast(false), 6000);
+  }, []);
+
   // Animation for the thinking indicator
   const thinkingOpacity = useRef(new Animated.Value(1)).current;
   useEffect(() => {
@@ -1017,10 +1029,14 @@ export default function ChatScreen() {
         console.log(`[Chat] Premium Check: Model=${providerOverride}, Subscribed=${isSubscribed}, Admin=${isAdmin}, Dev=${__DEV__}`);
       }
 
+      // REMOVED: Client-side fallback. We now let the Edge Function handle the downgrade
+      // so we can receive the 'x-model-downgraded-from' header and show the specific toast.
+      /*
       if (isPremiumModel(providerOverride) && !isSubscribed && !isAdmin) {
         console.warn(`[Chat] User requested Premium Model (${providerOverride}) but is not Pro/Admin - falling back to Gemini`);
         providerOverride = 'gemini'; // Free users always use Gemini
       }
+      */
 
       // Log which provider we're using
       console.log('[Chat] Sending message with provider override:', providerOverride || 'auto (system chooses)');
@@ -1156,7 +1172,8 @@ export default function ChatScreen() {
         attachment && attachment.base64 ? { mimeType: attachment.mimeType || 'image/jpeg', base64: attachment.base64 } : undefined,
         mascot.taskCategory, // Pass task category for auto provider selection
         webSearchEnabled, // Enable web grounding
-        (thinking) => setThinkingStatus(thinking) // Transient thinking indicator callback
+        (thinking) => setThinkingStatus(thinking), // Transient thinking indicator callback
+        handleDowngrade
       );
 
       const assistantContent = response.content;
@@ -1726,7 +1743,8 @@ export default function ChatScreen() {
         undefined, // No image for skills
         mascot.taskCategory, // Pass task category for auto provider selection
         webSearchEnabled, // Enable web grounding
-        (thinking) => setThinkingStatus(thinking) // Transient thinking indicator callback
+        (thinking) => setThinkingStatus(thinking), // Transient thinking indicator callback
+        handleDowngrade
       );
 
       const assistantContent = response.content;
@@ -2415,7 +2433,8 @@ export default function ChatScreen() {
           ))}
 
           {/* Streaming response */}
-          {isLoading && streamingContent && typeof streamingContent === 'string' && streamingContent.trim() && (
+          {/* Streaming response */}
+          {isLoading && streamingContent && typeof streamingContent === 'string' && streamingContent.trim().length > 0 && (
             <View style={[styles.messageWrapper, styles.assistantMessageWrapper]}>
               <View style={styles.assistantMessage}>
                 <Markdown style={markdownStyles}>
@@ -2599,6 +2618,38 @@ export default function ChatScreen() {
           </Pressable>
         </Pressable>
       </Modal>
+      {/* Downgrade Notification Toast */}
+      {showDowngradeToast && (
+        <View style={styles.downgradeToast}>
+          <View style={styles.downgradeIconContainer}>
+            <Icon name="lock" size={24} color="#FFFFFF" />
+          </View>
+          <View style={styles.downgradeTextContainer}>
+            <Text style={styles.downgradeTitle}>Switched to free model</Text>
+            <Text style={styles.downgradeSubtitle}>
+              Upgrade to Pro to use {downgradedModelName}
+            </Text>
+          </View>
+          <Pressable
+            style={({ pressed }) => [
+              styles.downgradeButton,
+              pressed && { opacity: 0.8 }
+            ]}
+            onPress={() => {
+              setShowDowngradeToast(false);
+              router.push('/(tabs)/profile');
+            }}
+          >
+            <Text style={styles.downgradeButtonText}>Upgrade</Text>
+          </Pressable>
+          <Pressable
+            style={styles.downgradeCloseButton}
+            onPress={() => setShowDowngradeToast(false)}
+          >
+            <Icon name="close" size={16} color="rgba(255,255,255,0.7)" />
+          </Pressable>
+        </View>
+      )}
     </View>
   );
 }
@@ -2877,6 +2928,63 @@ const styles = StyleSheet.create({
   likeCount: {
     fontSize: 12,
     lineHeight: 16,
+  },
+  downgradeToast: {
+    position: 'absolute',
+    top: Platform.OS === 'web' ? 80 : 100, // Below header
+    left: 20,
+    right: 20,
+    maxWidth: 600,
+    alignSelf: 'center',
+    backgroundColor: '#2A2A2A', // Slightly lighter than background
+    borderWidth: 1,
+    borderColor: '#444', // Visible border
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    gap: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.5, // Stronger shadow
+    shadowRadius: 12,
+    elevation: 10,
+    zIndex: 9999, // Ensure it's on top
+  },
+  downgradeIconContainer: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#E64140', // Warning color or primary
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  downgradeTextContainer: {
+    flex: 1,
+  },
+  downgradeTitle: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  downgradeSubtitle: {
+    color: 'rgba(255,255,255,0.8)',
+    fontSize: 12,
+  },
+  downgradeButton: {
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  downgradeButtonText: {
+    color: '#323232',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  downgradeCloseButton: {
+    padding: 4,
   },
 });
 

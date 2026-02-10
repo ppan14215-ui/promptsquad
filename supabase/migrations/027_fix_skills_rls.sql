@@ -13,6 +13,7 @@ DROP POLICY IF EXISTS "Admins can manage mascot skills" ON public.mascot_skills;
 DROP POLICY IF EXISTS "Admins can read all mascot skills" ON public.mascot_skills;
 DROP POLICY IF EXISTS "Admins have full access" ON public.mascot_skills;
 DROP POLICY IF EXISTS "Admins Write Access" ON public.mascot_skills;
+DROP POLICY IF EXISTS "Admins Full Access" ON public.mascot_skills;
 
 -- 3. Create the definitive PUBLIC READ policy
 -- This allows anyone (auth or anon) to read active skills

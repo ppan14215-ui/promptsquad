@@ -1,12 +1,13 @@
 // @ts-nocheck - Deno runtime, not Node.js
 // Clean Edge Function for chat - Simple authentication
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { GoogleGenerativeAI } from 'https://esm.sh/@google/generative-ai@0.24.1';
+import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.94.1/+esm';
+import { GoogleGenerativeAI } from 'https://cdn.jsdelivr.net/npm/@google/generative-ai@0.24.1/+esm';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-user-token',
+  'Access-Control-Expose-Headers': 'x-model-downgraded-from',
 };
 
 interface ChatRequest {
@@ -140,18 +141,24 @@ serve(async (req: Request) => {
     // Get current usage stats and subscription status
     const { data: profile } = await supabaseAdmin
       .from('profiles')
-      .select('is_subscribed')
+      .select('is_subscribed, role')
       .eq('id', userId)
       .single();
 
     const isSubscribed = profile?.is_subscribed || false;
+    const isAdmin = profile?.role === 'admin';
 
     // Helper: Determine if request is High-Tier
-    // High-Tier: Claude, OpenAI, Perplexity, Grok, or Gemini Pro/Ultra
-    // Free: Gemini Flash
+    // High-Tier: Claude, Perplexity, Grok, Gemini Pro/Ultra, or OpenAI non-mini
+    // Free: Gemini Flash, GPT Mini
     function isHighTier(p: string, m: string): boolean {
+      const modelLower = m.toLowerCase();
       if (p === 'gemini') {
-        return m.toLowerCase().includes('pro') || m.toLowerCase().includes('ultra');
+        return modelLower.includes('pro') || modelLower.includes('ultra');
+      }
+      if (p === 'openai') {
+        // GPT Mini models are free tier
+        return !modelLower.includes('mini');
       }
       return true; // All other providers are High-Tier
     }
@@ -233,30 +240,36 @@ serve(async (req: Request) => {
       // Note: Chain of Thought / Thinking indicator is shown by the UI during loading, not embedded in response
     }
 
-    // Helper function to select provider based on task category
-    function selectProviderByTaskCategory(category?: string, webSearchRequested?: boolean): 'openai' | 'gemini' {
-      // If web search is on, Gemini's organic grounding is superior to system-injection
-      if (webSearchRequested) return 'gemini';
+    // Add search instructions if web search is enabled
+    // Only Add instructions if we are NOT using a provider that handles this natively (like Perplexity or Grok)
+    // Actually, for consistency, we can add a small note, but the tools definition handles the mechanism.
+    if (webSearch && provider !== 'perplexity' && provider !== 'grok') {
+      systemPrompt += `\n\n---\n\nWEB SEARCH ENABLED:\nYou have access to Google Search. Verify facts and provide up-to-date information. Cite your sources using [Title](URL) format at the end of your response.`;
+    }
 
-      switch (category) {
-        case 'coding':
-        case 'complex':
-          return 'openai';
-        case 'analysis':
-        case 'creative':
-        case 'ux':
-        case 'conversation':
-        case 'quick':
-        default:
-          return 'gemini';
+    // Determine Provider and Model
+    // 1. User manual selection (highest priority if Pro/Admin)
+    let useProvider = provider;
+
+    // 2. Default/Auto selection
+    if (!useProvider || useProvider === 'auto' as any) {
+      if (taskCategory === 'creative') {
+        useProvider = 'gemini'; // Gemini 1.5 Pro is great for creative
+      } else if (taskCategory === 'ux' || taskCategory === 'coding') {
+        useProvider = 'claude'; // Claude is king of code/UX
+      } else if (taskCategory === 'analysis') {
+        useProvider = 'openai'; // GPT-5 is good at analysis
+      } else {
+        useProvider = 'gemini'; // Default
       }
     }
 
-    // Determine provider and model
-    // If provider is not specified or is 'auto', use task category to select
-    let useProvider = !provider || provider === 'auto'
-      ? selectProviderByTaskCategory(taskCategory, webSearch)
-      : provider;
+    // Override: If web search is requested, prefer Perplexity or Gemini (native search)
+    // If user specifically asked for 'openai' + web search, we accept it (using our manual tool)
+    // But if 'auto', we route to Gemini for better grounding
+    if (webSearch && (!provider || provider === 'auto' as any)) {
+      useProvider = 'gemini';
+    }
 
     // FORCE SWITCH: If web search is enabled, we MUST use a provider that supports it.
     // Our OpenAI implementation now supports web tools via Tavily if configured.
@@ -299,67 +312,63 @@ serve(async (req: Request) => {
         : (useProvider === 'openai' ? 'gpt-5-mini' :
           useProvider === 'perplexity' ? 'sonar' :
             useProvider === 'claude' ? 'claude-sonnet-4-5-20250929' :
-              'gemini-3-flash-preview');
+              'gemini-3-flash-preview'); // Use Gemini 3 Flash for free tier
     }
 
     console.log(`[Edge Function] Using model: ${useModel} (provider: ${useProvider}, webSearch: ${webSearch}, deepThinking: ${deepThinking})`);
 
+    // Flag to track if we downgraded
+    let downgradedFrom: string | null = null;
+
     // --- MATH OF DEATH: HARD TOKEN LIMITS ---
     if (isHighTier(useProvider, useModel)) {
-      if (!isSubscribed) {
-        console.log('[Edge Function] Blocked High-Tier request for non-subscriber.');
-        return new Response(
-          JSON.stringify({
-            error: 'Pro subscription required.',
-            details: `The model '${useModel}' is available on the Pro plan.`,
-            hint: 'Upgrade to Pro to use Claude, GPT-4, and other high-tier models.'
-          }),
-          { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
+      if (!isSubscribed && !isAdmin) {
+        // --- FALLBACK LOGIC ---
+        // Instead of blocking, we downgrade to Gemini Flash (Free)
+        console.log(`[Edge Function] Downgrading Free user from ${useModel} to Gemini 3 Flash`);
+        downgradedFrom = useModel;
+        useProvider = 'gemini';
+        useModel = 'gemini-3-flash-preview'; // Fallback to Gemini 3 Flash (Free tier)
       } else {
-        // Check Monthly Limit
-        const date = new Date();
-        const monthYear = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+        // Check Monthly Limit (Skip if Admin)
+        if (!isAdmin) {
+          const date = new Date();
+          const monthYear = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
 
-        const { data: usage } = await supabaseAdmin
-          .from('user_monthly_usage')
-          .select('high_tier_count')
-          .eq('user_id', userId)
-          .eq('month_year', monthYear)
-          .maybeSingle();
+          const { data: usage } = await supabaseAdmin
+            .from('user_monthly_usage')
+            .select('high_tier_count')
+            .eq('user_id', userId)
+            .eq('month_year', monthYear)
+            .maybeSingle();
 
-        const currentCount = usage?.high_tier_count || 0;
-        const LIMIT = 300; // Hard limit
+          const currentCount = usage?.high_tier_count || 0;
+          const LIMIT = 300; // Hard limit
 
-        console.log(`[Edge Function] Usage check: ${currentCount}/${LIMIT} for ${monthYear}`);
+          console.log(`[Edge Function] Usage check: ${currentCount}/${LIMIT} for ${monthYear}`);
 
-        if (currentCount >= LIMIT) {
-          return new Response(
-            JSON.stringify({
-              error: 'Monthly Pro limit reached.',
-              details: `You have reached your limit of ${LIMIT} high-tier requests for this month.`,
-              hint: 'Usage resets next month.'
-            }),
-            { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-          );
-        }
+          if (currentCount >= LIMIT) {
+            return new Response(
+              JSON.stringify({
+                error: 'Monthly Pro limit reached.',
+                details: `You have reached your limit of ${LIMIT} high-tier requests for this month.`,
+                hint: 'Usage resets next month.'
+              }),
+              { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            );
+          }
 
-        // Increment Usage
-        // We do this BEFORE the generation to strictly enforce the limit (bucket decrement style)
-        // or effectively "reserve" the slot.
-        const { error: rpcError } = await supabaseAdmin.rpc('increment_high_tier_usage', {
-          p_user_id: userId,
-          p_month_year: monthYear
-        });
+          // Increment Usage
+          // We do this BEFORE the generation to strictly enforce the limit (bucket decrement style)
+          // or effectively "reserve" the slot.
+          const { error: rpcError } = await supabaseAdmin.rpc('increment_high_tier_usage', {
+            p_user_id: userId,
+            p_month_year: monthYear
+          });
 
-        if (rpcError) {
-          console.error('[Edge Function] Failed to increment usage:', rpcError);
-          // Optional: Fail open or closed? 
-          // Fail Safe (Closed): Return error if we can't track usage.
-          // Fail Open (Allow): Allow if tracking fails?
-          // "Math of Death" implies strictness. Let's log it but maybe proceed if it's just a metric?
-          // But strict limit means we MUST count. If DB is down, chat is probably down anyway.
-          // Let's proceed but log critical error.
+          if (rpcError) {
+            console.error('[Edge Function] Failed to increment usage:', rpcError);
+          }
         }
       }
     }
@@ -856,8 +865,10 @@ serve(async (req: Request) => {
     // Enable tools if webSearch is requested
     const tools = webSearch ? [{ googleSearch: {} }] : undefined;
 
+    console.log(`[Edge Function] FINAL GEMINI MODEL: '${useModel.trim()}' (Length: ${useModel.trim().length})`);
+
     const model = genAI.getGenerativeModel({
-      model: useModel,
+      model: useModel.trim(),
       systemInstruction: systemPrompt,
       tools: tools,
     });
@@ -933,6 +944,7 @@ serve(async (req: Request) => {
         ...corsHeaders,
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
+        ...(downgradedFrom ? { 'x-model-downgraded-from': downgradedFrom } : {}),
       },
     });
 

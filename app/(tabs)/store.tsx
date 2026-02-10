@@ -1,7 +1,7 @@
 import { View, StyleSheet, ScrollView, Text, Modal, Pressable, Platform, useWindowDimensions, TouchableWithoutFeedback } from 'react-native';
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { MascotCard, TextButton, BigPrimaryButton, CreateCustomCard, MascotDetails, Skill, PaywallModal } from '@/components';
+import { MascotCard, TextButton, BigPrimaryButton, CreateCustomCard, MascotDetails, Skill, PaywallModal, CreateMascotModal } from '@/components';
 import { useTheme, textStyles, fontFamilies } from '@/design-system';
 import { useI18n } from '@/i18n';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -439,6 +439,7 @@ export default function StoreScreen() {
   const [selectedMascotId, setSelectedMascotId] = useState<string | null>(null);
   const [paywallProps, setPaywallProps] = useState<{ visible: boolean; feature?: string; mascotId?: string; mascotName?: string }>({ visible: false });
   const [sortBy, setSortBy] = useState<'default' | 'most-liked'>('default');
+  const [showCreateMascotModal, setShowCreateMascotModal] = useState(false);
 
   // Fetch mascots from database with fallback to hardcoded
   const { mascots: dbMascots, isLoading: isLoadingMascots, error: mascotsError } = useMascots();
@@ -447,7 +448,7 @@ export default function StoreScreen() {
   const allMascots: Mascot[] = useMemo(() => {
     if (dbMascots.length > 0) {
       // Convert database mascots to Mascot type
-      return dbMascots.map((m: MascotBasic) => {
+      let converted = dbMascots.map((m: MascotBasic) => {
         const imageSource = getMascotImageSource(m.image_url || null) || mascotImages.bear;
         const grayscaleSource = getMascotGrayscaleImageSource(m.image_url || null);
         // Find matching hardcoded mascot for fallback data
@@ -479,6 +480,18 @@ export default function StoreScreen() {
           isComingSoon: isComingSoon,
         };
       });
+
+      // Hide non-active or non-visible mascots for non-admin users
+      if (!isAdmin) {
+        converted = converted.filter(m => {
+          const dbMascot = dbMascots.find(db => db.id === m.id);
+          const isReady = (dbMascot as any)?.is_active !== false;
+          const isVisible = (dbMascot as any)?.is_visible !== false;
+          return isReady && isVisible;
+        });
+      }
+
+      return converted;
     }
     // Fallback to hardcoded data
     return SAMPLE_MASCOTS.map((m) => {
@@ -780,7 +793,7 @@ export default function StoreScreen() {
                     });
                     return;
                   }
-                  console.log('Create custom pressed');
+                  setShowCreateMascotModal(true);
                 }}
                 isLocked={!isSubscribed && !isAdmin}
               />
@@ -842,6 +855,15 @@ export default function StoreScreen() {
         feature={paywallProps.feature}
         mascotId={paywallProps.mascotId}
         mascotName={paywallProps.mascotName}
+      />
+
+      <CreateMascotModal
+        visible={showCreateMascotModal}
+        onClose={() => setShowCreateMascotModal(false)}
+        onSuccess={() => {
+          // Refresh mascots list after creation
+          // The mascots hook should auto-refresh
+        }}
       />
     </SafeAreaView>
   );

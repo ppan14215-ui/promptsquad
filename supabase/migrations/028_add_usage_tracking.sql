@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS public.user_monthly_usage (
 ALTER TABLE public.user_monthly_usage ENABLE ROW LEVEL SECURITY;
 
 -- Policy: Users can view their own usage
+DROP POLICY IF EXISTS "Users can view own usage" ON public.user_monthly_usage;
 CREATE POLICY "Users can view own usage"
   ON public.user_monthly_usage FOR SELECT
   TO authenticated

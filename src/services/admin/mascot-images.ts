@@ -4,9 +4,10 @@
  */
 import { ImageSourcePropType } from 'react-native';
 
+// All available mascot images
 const mascotImages = {
+  // Original mascots
   bear: require('../../../assets/mascots/Bear.png'),
-  cat: require('../../../assets/mascots/cat.png'),
   fox: require('../../../assets/mascots/fox.png'),
   owl: require('../../../assets/mascots/owl.png'),
   panda: require('../../../assets/mascots/panda.png'),
@@ -20,6 +21,17 @@ const mascotImages = {
   giraffe: require('../../../assets/mascots/giraffe.png'),
   lion: require('../../../assets/mascots/lion.png'),
   seahorse: require('../../../assets/mascots/searhorse.png'),
+
+  // New mascots
+  ant: require('../../../assets/mascots/ant.png'),
+  beaver: require('../../../assets/mascots/beaver.png'),
+  bull: require('../../../assets/mascots/bull.png'),
+  cat: require('../../../assets/mascots/cat.png'),
+  eagle: require('../../../assets/mascots/eagle.png'),
+  horse: require('../../../assets/mascots/horse.png'),
+  koala: require('../../../assets/mascots/koala.png'),
+  monkey: require('../../../assets/mascots/monkey.png'),
+  penguin: require('../../../assets/mascots/penguin.png'),
 };
 
 const grayscaleImages: Partial<Record<keyof typeof mascotImages, ImageSourcePropType>> = {
@@ -37,17 +49,29 @@ const grayscaleImages: Partial<Record<keyof typeof mascotImages, ImageSourceProp
   seahorse: require('../../../assets/mascots/searhorse-grayscale.png'),
   turtle: require('../../../assets/mascots/turtle-grayscale.png'),
   zebra: require('../../../assets/mascots/zebra-grayscale.png'),
+  // New mascots grayscale
+  ant: require('../../../assets/mascots/ant-grayscale.png'),
+  beaver: require('../../../assets/mascots/beaver-grayscale.png'),
+  bull: require('../../../assets/mascots/bull-grayscale.png'),
+  eagle: require('../../../assets/mascots/eagle-grayscale.png'),
+  horse: require('../../../assets/mascots/horse-grayscale.png'),
+  koala: require('../../../assets/mascots/koala-grayscale.png'),
+  monkey: require('../../../assets/mascots/monkey-grayscale.png'),
+  penguin: require('../../../assets/mascots/penguin-grayscale.png'),
 };
+
+// Export the list of all available mascot image keys
+export const MASCOT_IMAGE_KEYS = Object.keys(mascotImages) as (keyof typeof mascotImages)[];
 
 /**
  * Get local image source from database image_url
  */
 export function getMascotImageSource(imageUrl: string | null): ImageSourcePropType | undefined {
   if (!imageUrl) return undefined;
-  
+
   // Extract image key from URL (e.g., 'bear' from '/mascots/bear.png' or just 'bear')
   const imageKey = imageUrl.split('/').pop()?.split('.')[0] || imageUrl;
-  
+
   return mascotImages[imageKey as keyof typeof mascotImages];
 }
 
@@ -56,9 +80,9 @@ export function getMascotImageSource(imageUrl: string | null): ImageSourcePropTy
  */
 export function getMascotGrayscaleImageSource(imageUrl: string | null): ImageSourcePropType | undefined {
   if (!imageUrl) return undefined;
-  
+
   // Extract image key from URL
   const imageKey = imageUrl.split('/').pop()?.split('.')[0] || imageUrl;
-  
+
   return grayscaleImages[imageKey as keyof typeof grayscaleImages];
 }

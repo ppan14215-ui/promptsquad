@@ -49,7 +49,8 @@
     "plugins": [
       "expo-router",
       "expo-font",
-      "expo-speech-recognition"
+      "expo-speech-recognition",
+      "expo-navigation-bar"
     ]
   }
 }

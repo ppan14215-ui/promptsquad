@@ -20,10 +20,10 @@ export default function TabsLayout() {
           backgroundColor: colors.background,
           borderTopColor: colors.outline,
           borderTopWidth: 1,
-          // Standard height + safe area
-          height: Platform.OS === 'ios' ? 60 + insets.bottom : 70,
+          // Standard height + safe area (accounts for edge-to-edge on Android)
+          height: 60 + insets.bottom,
           paddingTop: 10,
-          paddingBottom: Platform.OS === 'ios' ? insets.bottom : 10,
+          paddingBottom: insets.bottom,
         },
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.textMuted,

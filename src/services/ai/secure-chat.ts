@@ -10,6 +10,7 @@ export type SecureChatResponse = {
   model: string;
   provider?: 'openai' | 'gemini' | 'perplexity' | 'grok' | 'claude';
   citations?: string[]; // Citation URLs from Perplexity
+  downgradedFrom?: string; // Original model if downgraded
 };
 
 /**
@@ -26,7 +27,8 @@ export async function secureChatStream(
   image?: { mimeType: string; base64: string },
   taskCategory?: string,
   webSearch?: boolean,
-  onThinking?: (thinkingStatus: string | null) => void
+  onThinking?: (thinkingStatus: string | null) => void,
+  onDowngrade?: (originalModel: string) => void
 ): Promise<SecureChatResponse> {
   // Get fresh session (getUser refreshes token if needed)
   const { data: { user: currentUser }, error: userError } = await supabase.auth.getUser();
@@ -151,6 +153,12 @@ export async function secureChatStream(
     body: JSON.stringify(requestBody),
   });
 
+  // Check for downgrade header
+  const downgradedFrom = response.headers.get('x-model-downgraded-from');
+  if (downgradedFrom && onDowngrade) {
+    onDowngrade(downgradedFrom);
+  }
+
   if (!response.ok) {
     const errorText = await response.text();
     console.error('[SecureChat] Request failed:', {
@@ -178,7 +186,6 @@ export async function secureChatStream(
     throw new Error(`Chat error (${response.status}): ${errorMessage}. ${errorDetails}`);
   }
 
-  // Handle SSE stream
   // Handle SSE stream
   const reader = response.body?.getReader();
 
@@ -216,7 +223,7 @@ export async function secureChatStream(
           throw e; // Re-throw actual errors
         }
       }
-      return { content: fullContent, model, provider: actualProvider, citations };
+      return { content: fullContent, model, provider: actualProvider, citations, downgradedFrom: downgradedFrom || undefined };
     } catch (e: any) {
       console.error('[SecureChat] Fallback failed:', e);
       throw new Error(`No response body and fallback failed: ${e.message}`);
@@ -265,7 +272,7 @@ export async function secureChatStream(
     }
   }
 
-  return { content: fullContent, model, provider: actualProvider, citations };
+  return { content: fullContent, model, provider: actualProvider, citations, downgradedFrom: downgradedFrom || undefined };
 }
 
 /**

@@ -26,6 +26,7 @@ export * from './mascot/CreateCustomCard';
 export * from './mascot/MascotDetails';
 export * from './mascot/SkillPreview';
 export * from './mascot/MascotCarousel';
+export * from './mascot/CreateMascotModal';
 
 // Admin Components
 export * from './admin/SkillEditor';

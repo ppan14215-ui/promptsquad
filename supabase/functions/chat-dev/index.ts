@@ -1,12 +1,13 @@
 // @ts-nocheck - Deno runtime, not Node.js
 // Clean Edge Function for chat - Simple authentication
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { GoogleGenerativeAI } from 'https://esm.sh/@google/generative-ai@0.24.1';
+import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.94.1/+esm';
+import { GoogleGenerativeAI } from 'https://cdn.jsdelivr.net/npm/@google/generative-ai@0.24.1/+esm';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-user-token',
+  'Access-Control-Expose-Headers': 'x-model-downgraded-from',
 };
 
 interface ChatRequest {
@@ -127,51 +128,48 @@ serve(async (req: Request) => {
     // Create admin client for database operations (bypassing RLS)
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Check subscription status
-    // NEW: Strictly enforce Pro access "Period"
-    let isPro = false;
-    let isAdmin = false; // logic to check admin if needed, usually via a role or specific ID check
-
-    // Check if user has 'admin' or 'pro' role or active subscription
-    const { data: profile, error: profileError } = await supabaseAdmin
-      .from('profiles')
-      .select('subscription_status, stripe_subscription_id, role')
-      .eq('id', userId)
-      .maybeSingle();
-
-    if (profile) {
-      isPro = profile.subscription_status === 'active' || !!profile.stripe_subscription_id || profile.role === 'admin';
-    }
-
     // Parse request body
     const body: ChatRequest = await req.json();
-    let { mascotId, messages, skillId, provider, deepThinking, image, taskCategory, webSearch } = body; // let variables to allow overrides
-
-    // ENFORCEMENT LOGIC
-    // Pro-only providers: Perplexity, Grok, Claude. 
-    // OpenAI and Gemini are allowed for free users (forced to mini/flash models by disabling deepThinking).
-    const PRO_PROVIDERS = ['perplexity', 'grok', 'claude'];
-
-    if (!isPro) {
-      // 1. Disable Deep Thinking
-      if (deepThinking) {
-        console.log('[Edge Function] Access Control: Disabling Deep Thinking for free user');
-        deepThinking = false;
-      }
-
-      // 2. Prevent Pro Providers
-      // If provider is explicitly requested as a Pro one, OR if it's 'auto' and we might pick a Pro one
-      if (PRO_PROVIDERS.includes(provider as string)) {
-        console.log(`[Edge Function] Access Control: Downgrading requested provider ${provider} to Gemini for free user`);
-        provider = 'gemini';
-      }
-    }
+    const { mascotId, messages, skillId, provider, deepThinking, image, taskCategory, webSearch } = body;
 
     console.log('[Edge Function] Received messages for mascot:', mascotId, 'provider:', provider, 'webSearch:', webSearch);
     console.log('[Edge Function] Message count:', messages?.length);
     if (messages?.length > 0) {
       console.log('[Edge Function] First message role:', messages[0].role, 'content:', messages[0].content.substring(0, 50) + '...');
     }
+
+    // Get current usage stats and subscription status
+    const { data: profile } = await supabaseAdmin
+      .from('profiles')
+      .select('is_subscribed, role')
+      .eq('id', userId)
+      .single();
+
+    const isSubscribed = profile?.is_subscribed || false;
+    const isAdmin = profile?.role === 'admin';
+
+    // Helper: Determine if request is High-Tier
+    // High-Tier: Claude, Perplexity, Grok, Gemini Pro/Ultra, or OpenAI non-mini
+    // Free: Gemini Flash, GPT Mini
+    function isHighTier(p: string, m: string): boolean {
+      const modelLower = m.toLowerCase();
+      if (p === 'gemini') {
+        return modelLower.includes('pro') || modelLower.includes('ultra');
+      }
+      if (p === 'openai') {
+        // GPT Mini models are free tier
+        return !modelLower.includes('mini');
+      }
+      return true; // All other providers are High-Tier
+    }
+
+    // Determine basic provider/model early for checking (final selection happens later if 'auto')
+    const tempProvider = provider || 'gemini'; // Default for checking
+    // Note: Model might change later based on deepThinking logic, but we can estimate
+    // If provider is 'auto', we assume it MIGHT switch to OpenAI/Claude, so treat as High Tier 
+    // UNLESS we are strictly Free tier, in which case we force 'gemini-flash' later?
+    // Actually, let's let the existing logic determine 'useProvider' and 'useModel' first,
+    // THEN check limits before making the fetch call.
 
     if (!mascotId || !messages || messages.length === 0) {
       return new Response(
@@ -242,30 +240,36 @@ serve(async (req: Request) => {
       // Note: Chain of Thought / Thinking indicator is shown by the UI during loading, not embedded in response
     }
 
-    // Helper function to select provider based on task category
-    function selectProviderByTaskCategory(category?: string, webSearchRequested?: boolean): 'openai' | 'gemini' {
-      // If web search is on, Gemini's organic grounding is superior to system-injection
-      if (webSearchRequested) return 'gemini';
+    // Add search instructions if web search is enabled
+    // Only Add instructions if we are NOT using a provider that handles this natively (like Perplexity or Grok)
+    // Actually, for consistency, we can add a small note, but the tools definition handles the mechanism.
+    if (webSearch && provider !== 'perplexity' && provider !== 'grok') {
+      systemPrompt += `\n\n---\n\nWEB SEARCH ENABLED:\nYou have access to Google Search. Verify facts and provide up-to-date information. Cite your sources using [Title](URL) format at the end of your response.`;
+    }
 
-      switch (category) {
-        case 'coding':
-        case 'complex':
-          return 'openai';
-        case 'analysis':
-        case 'creative':
-        case 'ux':
-        case 'conversation':
-        case 'quick':
-        default:
-          return 'gemini';
+    // Determine Provider and Model
+    // 1. User manual selection (highest priority if Pro/Admin)
+    let useProvider = provider;
+
+    // 2. Default/Auto selection
+    if (!useProvider || useProvider === 'auto' as any) {
+      if (taskCategory === 'creative') {
+        useProvider = 'gemini'; // Gemini 1.5 Pro is great for creative
+      } else if (taskCategory === 'ux' || taskCategory === 'coding') {
+        useProvider = 'claude'; // Claude is king of code/UX
+      } else if (taskCategory === 'analysis') {
+        useProvider = 'openai'; // GPT-5 is good at analysis
+      } else {
+        useProvider = 'gemini'; // Default
       }
     }
 
-    // Determine provider and model
-    // If provider is not specified or is 'auto', use task category to select
-    let useProvider = !provider || provider === 'auto'
-      ? selectProviderByTaskCategory(taskCategory, webSearch)
-      : provider;
+    // Override: If web search is requested, prefer Perplexity or Gemini (native search)
+    // If user specifically asked for 'openai' + web search, we accept it (using our manual tool)
+    // But if 'auto', we route to Gemini for better grounding
+    if (webSearch && (!provider || provider === 'auto' as any)) {
+      useProvider = 'gemini';
+    }
 
     // FORCE SWITCH: If web search is enabled, we MUST use a provider that supports it.
     // Our OpenAI implementation now supports web tools via Tavily if configured.
@@ -308,22 +312,80 @@ serve(async (req: Request) => {
         : (useProvider === 'openai' ? 'gpt-5-mini' :
           useProvider === 'perplexity' ? 'sonar' :
             useProvider === 'claude' ? 'claude-sonnet-4-5-20250929' :
-              'gemini-3-flash-preview');
+              'gemini-3-flash-preview'); // Use Gemini 3 Flash for free tier
     }
 
     console.log(`[Edge Function] Using model: ${useModel} (provider: ${useProvider}, webSearch: ${webSearch}, deepThinking: ${deepThinking})`);
+
+    // Flag to track if we downgraded
+    let downgradedFrom: string | null = null;
+
+    // --- MATH OF DEATH: HARD TOKEN LIMITS ---
+    if (isHighTier(useProvider, useModel)) {
+      if (!isSubscribed && !isAdmin) {
+        // --- FALLBACK LOGIC ---
+        // Instead of blocking, we downgrade to Gemini Flash (Free)
+        console.log(`[Edge Function] Downgrading Free user from ${useModel} to Gemini 3 Flash`);
+        downgradedFrom = useModel;
+        useProvider = 'gemini';
+        useModel = 'gemini-3-flash-preview'; // Fallback to Gemini 3 Flash (Free tier)
+      } else {
+        // Check Monthly Limit (Skip if Admin)
+        if (!isAdmin) {
+          const date = new Date();
+          const monthYear = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+
+          const { data: usage } = await supabaseAdmin
+            .from('user_monthly_usage')
+            .select('high_tier_count')
+            .eq('user_id', userId)
+            .eq('month_year', monthYear)
+            .maybeSingle();
+
+          const currentCount = usage?.high_tier_count || 0;
+          const LIMIT = 300; // Hard limit
+
+          console.log(`[Edge Function] Usage check: ${currentCount}/${LIMIT} for ${monthYear}`);
+
+          if (currentCount >= LIMIT) {
+            return new Response(
+              JSON.stringify({
+                error: 'Monthly Pro limit reached.',
+                details: `You have reached your limit of ${LIMIT} high-tier requests for this month.`,
+                hint: 'Usage resets next month.'
+              }),
+              { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            );
+          }
+
+          // Increment Usage
+          // We do this BEFORE the generation to strictly enforce the limit (bucket decrement style)
+          // or effectively "reserve" the slot.
+          const { error: rpcError } = await supabaseAdmin.rpc('increment_high_tier_usage', {
+            p_user_id: userId,
+            p_month_year: monthYear
+          });
+
+          if (rpcError) {
+            console.error('[Edge Function] Failed to increment usage:', rpcError);
+          }
+        }
+      }
+    }
 
     // OpenAI
     if (useProvider === 'openai' && openaiApiKey) {
       // Perform Web Search if enabled and Key is present
       if (webSearch && tavilyApiKey && messages.length > 0) {
         try {
-          // Use the last user message as the query
-          // In a real app, you might want to generate a search query from conversation history
+          // Emit thinking step for OpenAI search
+          const searchEncoder = new TextEncoder();
+          // We can't easily emit here because the response stream hasn't started.
+          // However, we can log it for now.
+          console.log('[Edge Function] Performing Tavily search for OpenAI');
+
           const lastUserMsg = messages[messages.length - 1];
           const query = lastUserMsg.content;
-
-          console.log('[Edge Function] Performing Tavily search for query:', query.substring(0, 50));
 
           const searchResponse = await fetch('https://api.tavily.com/search', {
             method: 'POST',
@@ -339,17 +401,13 @@ serve(async (req: Request) => {
 
           if (searchResponse.ok) {
             const searchData = await searchResponse.json();
-            // Format results
             const resultsContext = searchData.results
               .map((r: any) => `[Title: ${r.title}]\n[URL: ${r.url}]\n${r.content}`)
               .join('\n\n');
 
             if (resultsContext) {
               systemPrompt += `\n\n---\n\nWEB SEARCH RESULTS (Current Date: ${new Date().toISOString().split('T')[0]}):\n\nThe user has requested a web search. Use the following search results to answer the question. Cite your sources using [Title](URL) format.\n\n${resultsContext}\n\n---`;
-              console.log('[Edge Function] Added search results to system prompt');
             }
-          } else {
-            console.warn('[Edge Function] Tavily search failed:', await searchResponse.text());
           }
         } catch (e) {
           console.error('[Edge Function] Error during Tavily search:', e);
@@ -681,9 +739,9 @@ serve(async (req: Request) => {
       // Perform Web Search if enabled and Key is present (Manual Grounding)
       if (webSearch && tavilyApiKey && messages.length > 0) {
         try {
+          console.log('[Edge Function] Performing Tavily search for Claude');
           const lastUserMsg = messages[messages.length - 1];
           const query = lastUserMsg.content;
-          console.log('[Edge Function] performing Tavily search for Claude, query:', query.substring(0, 50));
 
           const searchResponse = await fetch('https://api.tavily.com/search', {
             method: 'POST',
@@ -704,38 +762,36 @@ serve(async (req: Request) => {
               .join('\n\n');
 
             if (resultsContext) {
-              // Update system prompt with search results
               systemPrompt += `\n\n---\n\nWEB SEARCH RESULTS (Current Date: ${new Date().toISOString().split('T')[0]}):\n\nThe user has requested a web search. Use the following search results to answer the question. Cite your sources using [Title](URL) format.\n\n${resultsContext}\n\n---`;
-              console.log('[Edge Function] Added search results to system prompt for Claude');
             }
-          } else {
-            console.warn('[Edge Function] Tavily search failed for Claude:', await searchResponse.text());
           }
         } catch (e) {
           console.error('[Edge Function] Error during Tavily search for Claude:', e);
         }
       }
 
-      const claudeMessages = messages.map((m, index) => {
-        // If this is the last message and we have an image, attach it
-        if (index === messages.length - 1 && image) {
-          return {
-            role: m.role,
-            content: [
-              {
-                type: 'image',
-                source: {
-                  type: 'base64',
-                  media_type: image.mimeType,
-                  data: image.base64,
+      const claudeMessages = messages
+        .filter(m => m.content && m.content.trim().length > 0) // Filter out empty messages
+        .map((m, index, arr) => {
+          // If this is the last message and we have an image, attach it
+          if (index === arr.length - 1 && image) {
+            return {
+              role: m.role,
+              content: [
+                {
+                  type: 'image',
+                  source: {
+                    type: 'base64',
+                    media_type: image.mimeType,
+                    data: image.base64,
+                  },
                 },
-              },
-              { type: 'text', text: m.content },
-            ],
-          };
-        }
-        return { role: m.role, content: m.content };
-      });
+                { type: 'text', text: m.content },
+              ],
+            };
+          }
+          return { role: m.role, content: m.content };
+        });
 
       const response = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
@@ -809,8 +865,10 @@ serve(async (req: Request) => {
     // Enable tools if webSearch is requested
     const tools = webSearch ? [{ googleSearch: {} }] : undefined;
 
+    console.log(`[Edge Function] FINAL GEMINI MODEL: '${useModel.trim()}' (Length: ${useModel.trim().length})`);
+
     const model = genAI.getGenerativeModel({
-      model: useModel,
+      model: useModel.trim(),
       systemInstruction: systemPrompt,
       tools: tools,
     });
@@ -886,6 +944,7 @@ serve(async (req: Request) => {
         ...corsHeaders,
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
+        ...(downgradedFrom ? { 'x-model-downgraded-from': downgradedFrom } : {}),
       },
     });
 

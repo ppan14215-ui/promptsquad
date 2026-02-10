@@ -18,6 +18,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ChangelogModal } from '@/components/ui/ChangelogModal';
+import * as NavigationBar from 'expo-navigation-bar';
 
 const CURRENT_VERSION = '1.2.0';
 const CHANGELOG_VERSION_KEY = 'last_seen_changelog_version';
@@ -37,6 +38,19 @@ function StatusBarWrapper() {
     );
   }
   return <StatusBar style={statusBarStyle} />;
+}
+
+function NavigationBarWrapper() {
+  const { colors, mode } = useTheme();
+
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    // Set the Android system navigation bar color to match the app theme
+    NavigationBar.setBackgroundColorAsync(colors.background).catch(() => { });
+    NavigationBar.setButtonStyleAsync(mode === 'light' ? 'dark' : 'light').catch(() => { });
+  }, [colors.background, mode]);
+
+  return null;
 }
 
 function AuthGate({ children }: { children: React.ReactNode }) {
@@ -124,6 +138,22 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   );
 }
 
+function ThemedStack() {
+  const { colors } = useTheme();
+  return (
+    <>
+      <StatusBarWrapper />
+      <NavigationBarWrapper />
+      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.background } }}>
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+        <Stack.Screen name="(onboarding)" options={{ headerShown: false }} />
+        <Stack.Screen name="chat/[mascotId]" options={{ headerShown: false }} />
+      </Stack>
+    </>
+  );
+}
+
 export default function RootLayout() {
   const [fontsLoaded] = useFonts({
     Figtree_400Regular,
@@ -145,16 +175,10 @@ export default function RootLayout() {
       <AuthProvider>
         <PreferencesProvider>
           <ThemeProvider>
-            <StatusBarWrapper />
             <I18nProvider>
               <ChatPreferencesProvider>
                 <AuthGate>
-                  <Stack screenOptions={{ headerShown: false }}>
-                    <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-                    <Stack.Screen name="(auth)" options={{ headerShown: false }} />
-                    <Stack.Screen name="(onboarding)" options={{ headerShown: false }} />
-                    <Stack.Screen name="chat/[mascotId]" options={{ headerShown: false }} />
-                  </Stack>
+                  <ThemedStack />
                 </AuthGate>
               </ChatPreferencesProvider>
             </I18nProvider>
