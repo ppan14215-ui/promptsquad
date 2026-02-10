@@ -32,22 +32,29 @@ Deno.serve(async (req: Request) => {
             )
         }
 
+        // Extract the JWT token from "Bearer <token>"
+        const token = authHeader.replace('Bearer ', '')
+
+        // Create a Supabase client and validate the user's JWT directly
         const supabase = createClient(supabaseUrl, supabaseAnonKey, {
             global: { headers: { Authorization: authHeader } },
             auth: { persistSession: false }
         })
 
-        const { data: { user }, error: userError } = await supabase.auth.getUser()
+        // Pass token directly to getUser — most reliable method
+        const { data: { user }, error: userError } = await supabase.auth.getUser(token)
         if (userError || !user) {
-            console.error('[Checkout] Auth failed:', userError?.message, 'Token (first 20):', authHeader?.substring(0, 27));
+            console.error('[Checkout] Auth failed:', userError?.message, 'Token length:', token?.length, 'Supabase URL:', supabaseUrl?.substring(0, 30));
             return new Response(
-                JSON.stringify({ 
+                JSON.stringify({
                     error: 'User not authenticated',
                     details: userError?.message || 'Session may have expired. Please sign in again.'
                 }),
                 { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
             )
         }
+
+        console.log('[Checkout] Auth success for user:', user.id, user.email);
 
         // Parse request body
         const { successUrl, cancelUrl, priceId, mode = 'subscription', metadata = {} } = await req.json()
