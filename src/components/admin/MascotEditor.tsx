@@ -10,6 +10,7 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Switch,
+  Alert,
 } from 'react-native';
 import { useTheme, fontFamilies, shadowToCSS } from '@/design-system';
 import { Icon } from '../ui/Icon';
@@ -32,6 +33,7 @@ type MascotEditorProps = {
   currentColor?: string;
   onClose: () => void;
   onSave: (name: string, subtitle: string, isPro: boolean, isFree: boolean, isReady: boolean, sortOrder: number, color: string, isVisible: boolean) => Promise<void>;
+  onDelete?: () => Promise<void>;
 };
 
 function getAccessTier(isPro: boolean, isFree: boolean): AccessTier {
@@ -52,6 +54,7 @@ export function MascotEditor({
   currentColor = 'yellow',
   onClose,
   onSave,
+  onDelete,
 }: MascotEditorProps) {
   const { colors } = useTheme();
   const [name, setName] = useState(currentName);
@@ -111,7 +114,6 @@ export function MascotEditor({
     <Modal
       visible={visible}
       animationType="slide"
-      presentationStyle="pageSheet"
       onRequestClose={onClose}
       transparent={true}
     >
@@ -281,6 +283,59 @@ export function MascotEditor({
               </View>
 
             </View>
+
+            <View style={styles.spacer} />
+
+            {/* Delete Button */}
+            {onDelete && (
+              <Pressable
+                style={({ pressed }) => [
+                  styles.deleteButton,
+                  {
+                    borderColor: colors.red,
+                    backgroundColor: colors.red + '10',
+                    opacity: pressed ? 0.7 : 1,
+                  }
+                ]}
+                onPress={async () => {
+                  if (Platform.OS === 'web') {
+                    if (window.confirm(`Are you sure you want to delete "${currentName}"? This action cannot be undone.`)) {
+                      try {
+                        await onDelete();
+                        onClose();
+                      } catch (err: any) {
+                        setError(err.message || 'Failed to delete mascot');
+                      }
+                    }
+                  } else {
+                    Alert.alert(
+                      'Delete Mascot',
+                      `Are you sure you want to delete "${currentName}"? This action cannot be undone.`,
+                      [
+                        { text: 'Cancel', style: 'cancel' },
+                        {
+                          text: 'Delete',
+                          style: 'destructive',
+                          onPress: async () => {
+                            try {
+                              await onDelete();
+                              onClose();
+                            } catch (err: any) {
+                              setError(err.message || 'Failed to delete mascot');
+                            }
+                          }
+                        }
+                      ]
+                    );
+                  }
+                }}
+              >
+                <Icon name="delete" size={20} color={colors.red} />
+                <Text style={[styles.deleteButtonText, { color: colors.red, fontFamily: fontFamilies.figtree.medium }]}>
+                  Delete Mascot
+                </Text>
+              </Pressable>
+            )}
           </ScrollView>
 
           {/* Error Display */}
@@ -439,5 +494,18 @@ const styles = StyleSheet.create({
   errorText: {
     fontSize: 14,
     textAlign: 'center',
+  },
+  deleteButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginTop: 8,
+    gap: 8,
+  },
+  deleteButtonText: {
+    fontSize: 16,
   },
 });

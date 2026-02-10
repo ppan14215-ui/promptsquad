@@ -1,4 +1,4 @@
-import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
+// import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import Stripe from 'https://esm.sh/stripe@14.14.0?target=deno'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3'
 
@@ -16,7 +16,7 @@ const corsHeaders = {
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-serve(async (req: Request) => {
+Deno.serve(async (req: Request) => {
     // Handle CORS preflight
     if (req.method === 'OPTIONS') {
         return new Response('ok', { headers: corsHeaders })
@@ -39,8 +39,12 @@ serve(async (req: Request) => {
 
         const { data: { user }, error: userError } = await supabase.auth.getUser()
         if (userError || !user) {
+            console.error('[Checkout] Auth failed:', userError?.message, 'Token (first 20):', authHeader?.substring(0, 27));
             return new Response(
-                JSON.stringify({ error: 'User not authenticated' }),
+                JSON.stringify({ 
+                    error: 'User not authenticated',
+                    details: userError?.message || 'Session may have expired. Please sign in again.'
+                }),
                 { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
             )
         }
@@ -123,10 +127,14 @@ serve(async (req: Request) => {
             JSON.stringify({ url: session.url, sessionId: session.id }),
             { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         )
-    } catch (err) {
+    } catch (err: any) {
         console.error('Checkout error:', err)
         return new Response(
-            JSON.stringify({ error: err.message }),
+            JSON.stringify({
+                error: err.message || 'Internal Server Error',
+                details: err.stack,
+                context: 'create-checkout-session catch block'
+            }),
             { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         )
     }

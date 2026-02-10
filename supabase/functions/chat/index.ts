@@ -148,6 +148,52 @@ serve(async (req: Request) => {
     const isSubscribed = profile?.is_subscribed || false;
     const isAdmin = profile?.role === 'admin';
 
+    // --- SECURITY: CORS Origin Check ---
+    const allowedOrigins = [
+      'http://localhost:3000',
+      'http://localhost:8081',
+      'https://prompt-squad-3.vercel.app',
+      'https://promptsquad.app',
+    ];
+
+    const origin = req.headers.get('origin');
+
+    // For browser requests, Origin is set. For mobile/native, it might be missing or null/file://
+    if (origin && !allowedOrigins.includes(origin) && origin !== 'null' && !origin.startsWith('devtools://')) {
+      console.warn(`[Edge Function] Blocked request from unauthorized origin: ${origin}`);
+      return new Response(
+        JSON.stringify({ error: 'CORS policy: Origin not allowed' }),
+        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // --- SECURITY: Rate Limiting ---
+    if (!isAdmin) {
+      // Free: 10 req/min, Pro: 30 req/min
+      const limit = isSubscribed ? 30 : 10;
+      const window = 60; // 1 minute
+
+      const { data: allowed, error: rateLimitError } = await supabaseAdmin.rpc('check_rate_limit', {
+        p_user_id: userId,
+        p_max_requests: limit, // Explicitly pass integer
+        p_window_seconds: window
+      });
+
+      if (rateLimitError) {
+        console.error('[Edge Function] Rate limit check failed:', rateLimitError);
+        // Fail open if DB error? Or fail closed? Fail open to avoid blocking users on DB glitch.
+      } else if (allowed === false) {
+        return new Response(
+          JSON.stringify({
+            error: 'Too many requests.',
+            details: `Rate limit exceeded (${limit} requests/minute). Please try again shortly.`,
+            hint: isSubscribed ? undefined : 'Upgrade to Pro for higher limits.'
+          }),
+          { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+    }
+
     // Helper: Determine if request is High-Tier
     // High-Tier: Claude, Perplexity, Grok, Gemini Pro/Ultra, or OpenAI non-mini
     // Free: Gemini Flash, GPT Mini

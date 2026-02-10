@@ -278,9 +278,7 @@ export function CreateMascotModal({ visible, onClose, onSuccess }: CreateMascotM
                 <View style={[styles.modalContainer, { backgroundColor: colors.background, borderColor: colors.outline }]}>
                     {/* Header */}
                     <View style={[styles.header, { borderBottomColor: colors.outline }]}>
-                        <View style={[styles.headerIcon, { backgroundColor: colors.primary }]}>
-                            <Icon name="add" size={24} color={colors.buttonText} />
-                        </View>
+
                         <View style={styles.headerText}>
                             <Text style={[styles.modalTitle, { fontFamily: fontFamilies.figtree.semiBold, color: colors.text }]}>
                                 {getStepTitle()}
@@ -350,16 +348,9 @@ const styles = StyleSheet.create({
     header: {
         flexDirection: 'row',
         alignItems: 'center',
-        padding: 20,
+        padding: 16,
         borderBottomWidth: 1,
         gap: 12,
-    },
-    headerIcon: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
-        justifyContent: 'center',
-        alignItems: 'center',
     },
     headerText: {
         flex: 1,
@@ -383,7 +374,7 @@ const styles = StyleSheet.create({
     footer: {
         flexDirection: 'row',
         justifyContent: 'flex-end',
-        padding: 20,
+        padding: 16,
         borderTopWidth: 1,
         gap: 12,
     },

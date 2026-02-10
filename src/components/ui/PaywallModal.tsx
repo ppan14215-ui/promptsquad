@@ -17,6 +17,7 @@ import { BigPrimaryButton } from './BigPrimaryButton';
 import { BigSecondaryButton } from './BigSecondaryButton'; // For the alternative option
 import { supabase } from '@/services/supabase';
 import { ProBadge } from './ProBadge';
+import { MASCOT_PRICE_IDS, SUBSCRIPTION_PRICE_ID } from '@/config/stripe';
 
 type PaywallModalProps = {
     visible: boolean;
@@ -39,15 +40,36 @@ export function PaywallModal({ visible, onClose, feature, mascotId, mascotName }
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    const handleSubscribe = async (mode: 'subscription' | 'payment', priceId?: string) => {
+    console.log('PaywallModal render:', { visible, feature, mascotId, mascotName });
+
+    const handleSubscribe = async (mode: 'subscription' | 'payment') => {
+        console.log('handleSubscribe called with mode:', mode, 'mascotId:', mascotId);
         setIsLoading(true);
         setError(null);
 
         try {
-            // Get current session
-            const { data: { session } } = await supabase.auth.getSession();
+            // First, validate the user server-side (not just local cache)
+            const { data: { user }, error: userError } = await supabase.auth.getUser();
+            
+            if (userError || !user) {
+                console.warn('[PaywallModal] User not authenticated:', userError?.message);
+                // Try refreshing the session
+                const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
+                
+                if (refreshError || !refreshData.session) {
+                    console.error('[PaywallModal] Session refresh failed:', refreshError?.message);
+                    setError('Please sign in to continue. Your session may have expired.');
+                    setIsLoading(false);
+                    return;
+                }
+            }
+
+            // Now get the (potentially refreshed) session for the access token
+            const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+            console.log('Session status:', { hasSession: !!session, hasUser: !!session?.user, sessionError: sessionError?.message });
+
             if (!session) {
-                setError('Please log in to subscribe');
+                setError('Please sign in to continue.');
                 setIsLoading(false);
                 return;
             }
@@ -68,23 +90,51 @@ export function PaywallModal({ visible, onClose, feature, mascotId, mascotName }
 
                 // Get configured price ID
                 const priceId = MASCOT_PRICE_IDS[mascotId];
-                if (priceId && priceId.startsWith('price_')) {
+                if (priceId) {
                     body.priceId = priceId;
                 } else {
-                    console.warn('No configured price ID for mascot', mascotId, '- checkout may fail or fallback to subscription price if not careful');
-                    // We might want to alert the user or prevent checkout
-                    // For now, let's proceed but backend might fallback to defaultPriceId which is WRONG for one-time payment.
-                    // Actually, if we don't send priceId, backend uses defaultPriceId.
-                    // Ideally we should block purchasing if no price ID is configured.
+                    console.warn('No configured price ID for mascot', mascotId, '- using fallback default if available or failing');
+                    // In production, you might want to show an error to the user here
+                    setError('This mascot is not currently available for purchase.');
+                    setIsLoading(false);
+                    return;
                 }
+            } else if (mode === 'subscription' && SUBSCRIPTION_PRICE_ID) {
+                // Use explicit subscription price ID if configured
+                body.priceId = SUBSCRIPTION_PRICE_ID;
             }
+
+            console.log('Invoking create-checkout-session with body:', body);
 
             const { data, error: fetchError } = await supabase.functions.invoke('create-checkout-session', {
                 body,
+                headers: {
+                    Authorization: `Bearer ${session.access_token}`
+                }
             });
 
             if (fetchError) {
-                throw new Error(fetchError.message);
+                console.error('Functions error details:', fetchError);
+                // Try to get detailed error from community body if available
+                let errorMessage = fetchError.message;
+                try {
+                    // FunctionsHttpError might have a response we can text()
+                    const errAny = fetchError as any;
+                    if (errAny.context && typeof errAny.context.json === 'function') {
+                        const json = await errAny.context.json();
+                        if (json.error) {
+                            // Map server errors to user-friendly messages
+                            if (json.error === 'User not authenticated' || json.error === 'No authorization header') {
+                                errorMessage = 'Please sign in to continue. Your session may have expired.';
+                            } else {
+                                errorMessage = json.details ? `${json.error}: ${json.details}` : json.error;
+                            }
+                        }
+                    }
+                } catch (e) {
+                    console.error('Failed to parse error body', e);
+                }
+                throw new Error(errorMessage);
             }
 
             if (data?.url) {
@@ -148,7 +198,7 @@ export function PaywallModal({ visible, onClose, feature, mascotId, mascotName }
                                 <Text style={[styles.optionTitle, { color: colors.text, fontFamily: fontFamilies.figtree.semiBold }]}>
                                     Buy {mascotName}
                                 </Text>
-                                <Text style={[styles.optionPrice, { color: colors.text, fontFamily: fontFamilies.figtree.semiBold }]}>$4.99</Text>
+                                <Text style={[styles.optionPrice, { color: colors.text, fontFamily: fontFamilies.figtree.semiBold }]}>2,99€</Text>
                                 <Text style={[styles.optionDesc, { color: colors.textMuted }]}>One-time payment</Text>
                                 <View style={{ marginTop: 12 }}>
                                     <BigSecondaryButton
@@ -164,7 +214,7 @@ export function PaywallModal({ visible, onClose, feature, mascotId, mascotName }
                                 <Text style={[styles.optionTitle, { color: colors.text, fontFamily: fontFamilies.figtree.semiBold }]}>
                                     Get Pro
                                 </Text>
-                                <Text style={[styles.optionPrice, { color: colors.text, fontFamily: fontFamilies.figtree.semiBold }]}>$9.99</Text>
+                                <Text style={[styles.optionPrice, { color: colors.text, fontFamily: fontFamilies.figtree.semiBold }]}>9,99€</Text>
                                 <Text style={[styles.optionDesc, { color: colors.textMuted }]}>/month (All Mascots)</Text>
                                 <View style={{ marginTop: 12 }}>
                                     <BigPrimaryButton
@@ -195,7 +245,7 @@ export function PaywallModal({ visible, onClose, feature, mascotId, mascotName }
                             {/* Price */}
                             <View style={styles.priceContainer}>
                                 <Text style={[styles.price, { color: colors.text, fontFamily: fontFamilies.figtree.semiBold }]}>
-                                    $9.99
+                                    9,99€
                                 </Text>
                                 <Text style={[styles.pricePeriod, { color: colors.textMuted, fontFamily: fontFamilies.figtree.regular }]}>
                                     /month

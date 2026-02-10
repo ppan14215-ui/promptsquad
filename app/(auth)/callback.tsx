@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { ActivityIndicator, View, StyleSheet, Platform } from 'react-native';
+import { ActivityIndicator, View, StyleSheet, Platform, Pressable, Text } from 'react-native';
 import { useRouter } from 'expo-router';
 import { supabase } from '@/services/supabase';
 import { useTheme } from '@/design-system';
@@ -43,9 +43,36 @@ export default function CallbackScreen() {
     handleOAuthCallback();
   }, [router]);
 
+  // Extract redirect_to for display
+  let redirectTo: string | null = null;
+  if (Platform.OS === 'web') {
+    const params = new URLSearchParams(window.location.search);
+    redirectTo = params.get('redirect_to');
+  }
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <ActivityIndicator size="large" color={colors.primary} />
+      <Text style={[styles.text, { color: colors.text, marginTop: 20 }]}>
+        Authenticating...
+      </Text>
+      {Platform.OS === 'web' && redirectTo && (
+        <View style={styles.webContainer}>
+          <Text style={[styles.subtext, { color: colors.textMuted }]}>
+            If you are not redirected automatically, please click below:
+          </Text>
+          <Pressable
+            style={[styles.button, { backgroundColor: colors.primary }]}
+            onPress={() => {
+              if (redirectTo) {
+                window.location.href = redirectTo + window.location.hash;
+              }
+            }}
+          >
+            <Text style={[styles.buttonText, { color: '#FFFFFF' }]}>Return to App</Text>
+          </Pressable>
+        </View>
+      )}
     </View>
   );
 }
@@ -55,5 +82,29 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    padding: 20,
+  },
+  webContainer: {
+    alignItems: 'center',
+    marginTop: 20,
+    gap: 16,
+  },
+  text: {
+    fontSize: 18,
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  subtext: {
+    fontSize: 14,
+    textAlign: 'center',
+  },
+  button: {
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+  },
+  buttonText: {
+    fontSize: 16,
+    fontWeight: '600',
   },
 });

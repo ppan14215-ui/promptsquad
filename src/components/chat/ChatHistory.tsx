@@ -1,7 +1,7 @@
 // Chat history component for displaying and navigating conversations
 
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, Pressable, FlatList, ActivityIndicator, Alert, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, Pressable, FlatList, ActivityIndicator, Alert, ScrollView, Platform } from 'react-native';
 import { useTheme, fontFamilies } from '@/design-system';
 import { useConversations, deleteConversation, togglePinConversation } from '@/services/chat-history';
 import { Icon, LinkPill } from '@/components';
@@ -26,34 +26,51 @@ export function ChatHistory({ mascotId, isMascotFree = false, onConversationPres
   const handleDelete = async (conversationId: string, event: any) => {
     event?.stopPropagation?.(); // Prevent navigation when clicking delete
 
-    Alert.alert(
-      'Delete Conversation',
-      'Are you sure you want to delete this conversation? This action cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              setDeletingId(conversationId);
-              await deleteConversation(conversationId);
-              await refetch();
-            } catch (error: any) {
-              logger.error('[ChatHistory] Error deleting conversation:', error);
-              const errorMessage = error?.message || 'Unknown error occurred';
-              logger.error('[ChatHistory] Error details:', errorMessage);
-              Alert.alert(
-                'Error',
-                `Failed to delete conversation: ${errorMessage}\n\nCheck the browser console for more details.`
-              );
-            } finally {
-              setDeletingId(null);
-            }
+    if (Platform.OS === 'web') {
+      if (window.confirm('Are you sure you want to delete this conversation? This action cannot be undone.')) {
+        try {
+          setDeletingId(conversationId);
+          await deleteConversation(conversationId);
+          await refetch();
+        } catch (error: any) {
+          logger.error('[ChatHistory] Error deleting conversation:', error);
+          const errorMessage = error?.message || 'Unknown error occurred';
+          logger.error('[ChatHistory] Error details:', errorMessage);
+          window.alert(`Error: Failed to delete conversation: ${errorMessage}`);
+        } finally {
+          setDeletingId(null);
+        }
+      }
+    } else {
+      Alert.alert(
+        'Delete Conversation',
+        'Are you sure you want to delete this conversation? This action cannot be undone.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Delete',
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                setDeletingId(conversationId);
+                await deleteConversation(conversationId);
+                await refetch();
+              } catch (error: any) {
+                logger.error('[ChatHistory] Error deleting conversation:', error);
+                const errorMessage = error?.message || 'Unknown error occurred';
+                logger.error('[ChatHistory] Error details:', errorMessage);
+                Alert.alert(
+                  'Error',
+                  `Failed to delete conversation: ${errorMessage}\n\nCheck the browser console for more details.`
+                );
+              } finally {
+                setDeletingId(null);
+              }
+            },
           },
-        },
-      ]
-    );
+        ]
+      );
+    }
   };
 
   const handleTogglePin = async (conversationId: string, currentPinned: boolean, event: any) => {
@@ -89,7 +106,7 @@ export function ChatHistory({ mascotId, isMascotFree = false, onConversationPres
           onPress={onNewChat}
           style={[styles.newChatButton, { backgroundColor: colors.primary }]}
         >
-          <Icon name="plus" size={18} color="#FFFFFF" />
+          <Icon name="add" size={18} color="#FFFFFF" />
           <Text
             style={[
               styles.newChatText,
@@ -194,7 +211,9 @@ export function ChatHistory({ mascotId, isMascotFree = false, onConversationPres
                     {item.title || 'New Conversation'}
                   </Text>
                   {item.is_pinned && (
-                    <Icon name="favourite-filled" size={14} color={colors.primary} style={styles.pinIcon} />
+                    <View style={styles.pinIcon}>
+                      <Icon name="favourite-filled" size={14} color={colors.primary} />
+                    </View>
                   )}
                 </View>
                 <Text
@@ -241,7 +260,9 @@ export function ChatHistory({ mascotId, isMascotFree = false, onConversationPres
                     <Icon name="delete" size={18} color={colors.textMuted} />
                   )}
                 </Pressable>
-                <Icon name="chevron-right" size={20} color={colors.textMuted} style={styles.chevronIcon} />
+                <View style={styles.chevronIcon}>
+                  <Icon name="arrow-right" size={20} color={colors.textMuted} />
+                </View>
               </View>
             </Pressable>
           )}

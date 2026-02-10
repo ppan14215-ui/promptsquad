@@ -26,6 +26,7 @@ import {
   useMascotPersonality,
   MascotSkill,
   updateMascot,
+  deleteMascot,
 } from '@/services/admin';
 import { useAuth } from '@/services/auth';
 
@@ -135,6 +136,19 @@ export default function SkillsScreen() {
       await refetchMascots();
     } catch (error) {
       console.error('Error updating mascot:', error);
+      throw error;
+    }
+  };
+
+  const handleDeleteMascot = async () => {
+    if (!selectedMascotId) return;
+    try {
+      await deleteMascot(selectedMascotId);
+      // Refresh mascots list without reloading the page
+      await refetchMascots();
+      setSelectedMascotId(null); // Force reset, useEffect will pick first available
+    } catch (error) {
+      console.error('Error deleting mascot:', error);
       throw error;
     }
   };
@@ -559,6 +573,7 @@ export default function SkillsScreen() {
           currentColor={selectedMascot.color}
           onClose={() => setMascotEditorVisible(false)}
           onSave={handleMascotSaved}
+          onDelete={handleDeleteMascot}
         />
       )}
     </SafeAreaView>

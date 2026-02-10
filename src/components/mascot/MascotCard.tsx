@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, Pressable, Platform, ImageSourcePropType } from 'react-native';
 import { Image } from 'expo-image';
-import { LinearGradient } from 'expo-linear-gradient';
-import { useTheme, textStyles, shadowToCSS, shadowToNative, skeuToGradient } from '@/design-system';
+import { useTheme, textStyles, shadowToCSS, shadowToNative } from '@/design-system';
 import { MiniButton } from '../ui/MiniButton';
 import { ProBadge } from '../ui/ProBadge';
 
@@ -19,6 +18,7 @@ export type MascotCardProps = {
   imageSource?: ImageSourcePropType;
   grayscaleImageSource?: ImageSourcePropType; // Grayscale version of the image
   onPress?: () => void;
+  onUnlock?: () => void;
   isLocked?: boolean;
   isPro?: boolean; // True if mascot is exclusively for pro subscription
   isUnlocked?: boolean; // True if mascot is unlocked for the user (affects badge color)
@@ -38,6 +38,7 @@ export function MascotCard({
   imageSource,
   grayscaleImageSource,
   onPress,
+  onUnlock,
   isLocked = false,
   isPro = false,
   isUnlocked = false,
@@ -81,18 +82,11 @@ export function MascotCard({
     default: {},
   });
 
-  // Grayscale filter for locked state or when forceGrayscale is true
-  const shouldGrayscale = forceGrayscale !== undefined ? forceGrayscale : isLockedState;
-
   return (
     <Pressable
       onPress={effectiveIsComingSoon ? undefined : onPress} // Disable press if coming soon
       onHoverIn={() => !forceState && !effectiveIsComingSoon && setIsHoveredInternal(true)}
-      onHoverOut={(e) => {
-        if (!forceState) {
-          setIsHoveredInternal(false);
-        }
-      }}
+      onHoverOut={() => !forceState && setIsHoveredInternal(false)}
       style={[
         styles.container,
         webTransitionStyle,
@@ -180,7 +174,7 @@ export function MascotCard({
         >
           <MiniButton
             label={isPro ? "Unlock for 2,99€" : "Unlock for 1,99€"}
-            onPress={onPress}
+            onPress={onUnlock || onPress}
           />
         </View>
       )}
@@ -214,10 +208,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     overflow: 'hidden',
     position: 'relative',
-  },
-  pressed: {
-    opacity: 0.9,
-    transform: [{ scale: 0.98 }],
   },
   textContainer: {
     alignItems: 'center',
@@ -277,4 +267,3 @@ const styles = StyleSheet.create({
 });
 
 export default MascotCard;
-

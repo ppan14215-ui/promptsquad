@@ -598,11 +598,22 @@ export default function StoreScreen() {
     // But selectedMascotId state controls details modal.
 
     // Wire up paywall
+    console.log('handleUnlock called for:', selectedMascot.id, selectedMascot.name);
     setPaywallProps({
       visible: true,
       feature: selectedMascot.name,
       mascotId: selectedMascot.id,
       mascotName: selectedMascot.name
+    });
+  };
+
+  const handleMascotUnlock = (mascot: Mascot) => {
+    console.log('handleMascotUnlock called for:', mascot.id, mascot.name);
+    setPaywallProps({
+      visible: true,
+      feature: mascot.name,
+      mascotId: mascot.id,
+      mascotName: mascot.name
     });
   };
 
@@ -781,6 +792,7 @@ export default function StoreScreen() {
                     isUnlocked={mascot.isUnlocked || false}
                     isComingSoon={mascot.isComingSoon}
                     onPress={() => handleMascotPress(mascot.id)}
+                    onUnlock={() => handleMascotUnlock(mascot)}
                   />
                 );
               })}

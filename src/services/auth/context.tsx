@@ -24,15 +24,55 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Get initial session
+    // Get initial session - use getSession() first for fast startup
+    // Then validate in background to catch stale tokens
     supabase.auth.getSession()
       .then(({ data: { session }, error }) => {
         if (error) {
           console.error('[AuthProvider] Error getting session:', error);
         }
+        // Set initial state from cache for fast startup
         setSession(session);
         setUser(session?.user ?? null);
         setIsLoading(false);
+        
+        // Validate in background (non-blocking)
+        if (session) {
+          supabase.auth.getUser()
+            .then(({ data: { user: validUser }, error: userError }) => {
+              if (userError || !validUser) {
+                // Token is stale/invalid — try refreshing
+                console.warn('[AuthProvider] Cached session invalid, attempting refresh:', userError?.message);
+                supabase.auth.refreshSession()
+                  .then(({ data: refreshData, error: refreshError }) => {
+                    if (refreshError || !refreshData.session) {
+                      // Session is truly dead — sign out to clear stale data
+                      console.error('[AuthProvider] Session refresh failed, clearing stale session:', refreshError?.message);
+                      supabase.auth.signOut().then(() => {
+                        setSession(null);
+                        setUser(null);
+                      });
+                    } else {
+                      // Refresh succeeded
+                      console.log('[AuthProvider] Session refreshed successfully');
+                      setSession(refreshData.session);
+                      setUser(refreshData.session.user);
+                    }
+                  })
+                  .catch((refreshErr) => {
+                    console.error('[AuthProvider] Refresh error:', refreshErr);
+                    // Don't block - just log the error
+                  });
+              } else {
+                // Session is valid - update with server-validated user
+                setUser(validUser);
+              }
+            })
+            .catch((validateErr) => {
+              console.error('[AuthProvider] Validation error:', validateErr);
+              // Don't block - session might still work
+            });
+        }
       })
       .catch((error) => {
         console.error('[AuthProvider] Failed to get session:', error);

@@ -93,6 +93,16 @@ export async function updateMascot(
   return data as unknown as MascotBasic;
 }
 
+// Delete mascot
+export async function deleteMascot(mascotId: string): Promise<void> {
+  const { error } = await supabase
+    .from('mascots')
+    .delete()
+    .eq('id', mascotId);
+
+  if (error) throw new Error(error.message);
+}
+
 export type SkillQuestion = {
   id: string;
   label: string;
