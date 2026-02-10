@@ -15,6 +15,7 @@ import { useTheme, fontFamilies, shadowToNative } from '@/design-system';
 import { Icon } from './Icon';
 import { BigPrimaryButton } from './BigPrimaryButton';
 import { BigSecondaryButton } from './BigSecondaryButton'; // For the alternative option
+import { useAuth } from '@/services/auth/context';
 import { supabase } from '@/services/supabase';
 import { ProBadge } from './ProBadge';
 import { MASCOT_PRICE_IDS, SUBSCRIPTION_PRICE_ID } from '@/config/stripe';
@@ -37,6 +38,7 @@ const PRO_FEATURES = [
 
 export function PaywallModal({ visible, onClose, feature, mascotId, mascotName }: PaywallModalProps) {
     const { colors } = useTheme();
+    const { signOut } = useAuth();
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -50,15 +52,17 @@ export function PaywallModal({ visible, onClose, feature, mascotId, mascotName }
         try {
             // First, validate the user server-side (not just local cache)
             const { data: { user }, error: userError } = await supabase.auth.getUser();
-            
+
             if (userError || !user) {
                 console.warn('[PaywallModal] User not authenticated:', userError?.message);
                 // Try refreshing the session
                 const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
-                
+
                 if (refreshError || !refreshData.session) {
                     console.error('[PaywallModal] Session refresh failed:', refreshError?.message);
-                    setError('Please sign in to continue. Your session may have expired.');
+                    // Session is truly dead — sign out to clear stale data and redirect to login
+                    onClose();
+                    await signOut();
                     setIsLoading(false);
                     return;
                 }
@@ -69,7 +73,9 @@ export function PaywallModal({ visible, onClose, feature, mascotId, mascotName }
             console.log('Session status:', { hasSession: !!session, hasUser: !!session?.user, sessionError: sessionError?.message });
 
             if (!session) {
-                setError('Please sign in to continue.');
+                // No session at all — sign out to redirect to login
+                onClose();
+                await signOut();
                 setIsLoading(false);
                 return;
             }
@@ -117,6 +123,7 @@ export function PaywallModal({ visible, onClose, feature, mascotId, mascotName }
                 console.error('Functions error details:', fetchError);
                 // Try to get detailed error from community body if available
                 let errorMessage = fetchError.message;
+                let isAuthError = false;
                 try {
                     // FunctionsHttpError might have a response we can text()
                     const errAny = fetchError as any;
@@ -125,7 +132,7 @@ export function PaywallModal({ visible, onClose, feature, mascotId, mascotName }
                         if (json.error) {
                             // Map server errors to user-friendly messages
                             if (json.error === 'User not authenticated' || json.error === 'No authorization header') {
-                                errorMessage = 'Please sign in to continue. Your session may have expired.';
+                                isAuthError = true;
                             } else {
                                 errorMessage = json.details ? `${json.error}: ${json.details}` : json.error;
                             }
@@ -133,6 +140,12 @@ export function PaywallModal({ visible, onClose, feature, mascotId, mascotName }
                     }
                 } catch (e) {
                     console.error('Failed to parse error body', e);
+                }
+                if (isAuthError) {
+                    // Session is invalid server-side — sign out and redirect to login
+                    onClose();
+                    await signOut();
+                    return;
                 }
                 throw new Error(errorMessage);
             }
