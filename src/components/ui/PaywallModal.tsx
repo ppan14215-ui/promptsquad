@@ -15,7 +15,6 @@ import { useTheme, fontFamilies, shadowToNative } from '@/design-system';
 import { Icon } from './Icon';
 import { BigPrimaryButton } from './BigPrimaryButton';
 import { BigSecondaryButton } from './BigSecondaryButton'; // For the alternative option
-import { useAuth } from '@/services/auth/context';
 import { supabase } from '@/services/supabase';
 import { ProBadge } from './ProBadge';
 import { MASCOT_PRICE_IDS, SUBSCRIPTION_PRICE_ID } from '@/config/stripe';
@@ -38,7 +37,6 @@ const PRO_FEATURES = [
 
 export function PaywallModal({ visible, onClose, feature, mascotId, mascotName }: PaywallModalProps) {
     const { colors } = useTheme();
-    const { signOut } = useAuth();
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -50,35 +48,26 @@ export function PaywallModal({ visible, onClose, feature, mascotId, mascotName }
         setError(null);
 
         try {
-            // First, validate the user server-side (not just local cache)
-            const { data: { user }, error: userError } = await supabase.auth.getUser();
+            // Always refresh the session first to ensure a fresh access token
+            // This prevents stale token issues with the edge function
+            const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
 
-            if (userError || !user) {
-                console.warn('[PaywallModal] User not authenticated:', userError?.message);
-                // Try refreshing the session
-                const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
+            let session = refreshData?.session;
 
-                if (refreshError || !refreshData.session) {
-                    console.error('[PaywallModal] Session refresh failed:', refreshError?.message);
-                    // Session is truly dead — sign out to clear stale data and redirect to login
-                    onClose();
-                    await signOut();
-                    setIsLoading(false);
-                    return;
-                }
+            if (refreshError || !session) {
+                console.warn('[PaywallModal] Session refresh failed, trying getSession:', refreshError?.message);
+                // Fall back to existing session (might still work if token is recent)
+                const { data: sessionData } = await supabase.auth.getSession();
+                session = sessionData?.session;
             }
 
-            // Now get the (potentially refreshed) session for the access token
-            const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-            console.log('Session status:', { hasSession: !!session, hasUser: !!session?.user, sessionError: sessionError?.message });
-
             if (!session) {
-                // No session at all — sign out to redirect to login
-                onClose();
-                await signOut();
+                setError('Please sign in to continue. Your session may have expired.');
                 setIsLoading(false);
                 return;
             }
+
+            console.log('[PaywallModal] Using access token (first 20):', session.access_token?.substring(0, 20));
 
             // Call the checkout session edge function
             const body: any = {
@@ -100,7 +89,6 @@ export function PaywallModal({ visible, onClose, feature, mascotId, mascotName }
                     body.priceId = priceId;
                 } else {
                     console.warn('No configured price ID for mascot', mascotId, '- using fallback default if available or failing');
-                    // In production, you might want to show an error to the user here
                     setError('This mascot is not currently available for purchase.');
                     setIsLoading(false);
                     return;
@@ -121,18 +109,14 @@ export function PaywallModal({ visible, onClose, feature, mascotId, mascotName }
 
             if (fetchError) {
                 console.error('Functions error details:', fetchError);
-                // Try to get detailed error from community body if available
                 let errorMessage = fetchError.message;
-                let isAuthError = false;
                 try {
-                    // FunctionsHttpError might have a response we can text()
                     const errAny = fetchError as any;
                     if (errAny.context && typeof errAny.context.json === 'function') {
                         const json = await errAny.context.json();
                         if (json.error) {
-                            // Map server errors to user-friendly messages
                             if (json.error === 'User not authenticated' || json.error === 'No authorization header') {
-                                isAuthError = true;
+                                errorMessage = 'Authentication failed. Please try signing out and back in.';
                             } else {
                                 errorMessage = json.details ? `${json.error}: ${json.details}` : json.error;
                             }
@@ -140,12 +124,6 @@ export function PaywallModal({ visible, onClose, feature, mascotId, mascotName }
                     }
                 } catch (e) {
                     console.error('Failed to parse error body', e);
-                }
-                if (isAuthError) {
-                    // Session is invalid server-side — sign out and redirect to login
-                    onClose();
-                    await signOut();
-                    return;
                 }
                 throw new Error(errorMessage);
             }
