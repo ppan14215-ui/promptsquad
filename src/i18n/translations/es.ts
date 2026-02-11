@@ -74,6 +74,7 @@ export const es: TranslationKeys = {
       passwordTooShort: 'La contraseña debe tener al menos 6 caracteres',
       passwordMismatch: 'Las contraseñas no coinciden',
       generic: 'Algo salió mal. Por favor intenta de nuevo.',
+      rateLimit: 'Demasiados intentos. Por favor espera un momento e inténtalo de nuevo.',
     },
   },
 

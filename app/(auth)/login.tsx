@@ -100,7 +100,12 @@ export default function LoginScreen() {
         : await signUp(email, password);
 
       if (authError) {
-        setError(authError.message || t.auth.errors.generic);
+        const message = authError.message || '';
+        if (message.toLowerCase().includes('rate limit')) {
+          setError(t.auth.errors.rateLimit);
+        } else {
+          setError(message || t.auth.errors.generic);
+        }
       } else {
         // Save email only if "Remember Me" is checked (password should never be stored)
         if (isLogin && rememberMe) {
@@ -140,7 +145,12 @@ export default function LoginScreen() {
     try {
       const { error: authError } = await signInWithGoogle();
       if (authError) {
-        setError(authError.message || t.auth.errors.generic);
+        const message = authError.message || '';
+        if (message.toLowerCase().includes('rate limit')) {
+          setError(t.auth.errors.rateLimit);
+        } else {
+          setError(message || t.auth.errors.generic);
+        }
       }
     } catch (e) {
       setError(t.auth.errors.generic);

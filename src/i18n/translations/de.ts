@@ -74,6 +74,7 @@ export const de: TranslationKeys = {
       passwordTooShort: 'Passwort muss mindestens 6 Zeichen haben',
       passwordMismatch: 'Passwörter stimmen nicht überein',
       generic: 'Etwas ist schief gelaufen. Bitte versuche es erneut.',
+      rateLimit: 'Zu viele Versuche. Bitte warten Sie einen Moment und versuchen Sie es erneut.',
     },
   },
 

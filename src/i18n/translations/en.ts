@@ -72,6 +72,7 @@ export const en = {
       passwordTooShort: 'Password must be at least 6 characters',
       passwordMismatch: 'Passwords do not match',
       generic: 'Something went wrong. Please try again.',
+      rateLimit: 'Too many attempts. Please wait a moment and try again.',
     },
   },
 
@@ -131,7 +132,8 @@ export const en = {
     brandPig: { name: 'Brand Pig', subtitle: 'Brand strategy' },
     devCat: { name: 'Dev Cat', subtitle: 'Full-stack developer' },
   },
-} as const;
+}
+
 
 export type TranslationKeys = typeof en;
 
