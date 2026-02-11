@@ -29,6 +29,9 @@ export default function CallbackScreen() {
   const { colors } = useTheme();
 
   useEffect(() => {
+    // Flag to prevent multiple redirects
+    let isRedirecting = false;
+
     const handleOAuthCallback = async () => {
       // Logic for Web Relay Pattern (Expo Go support)
       if (Platform.OS === 'web') {
@@ -57,47 +60,63 @@ export default function CallbackScreen() {
           }
 
           // Relay the hash to the deep link
-          window.location.href = destination + window.location.hash;
+          // Ensure we don't redirect to self to avoid loops
+          if (destination !== window.location.href) {
+            window.location.href = destination + window.location.hash;
+          }
           return;
         }
       }
 
-      // Standard logic: parse the hash fragment / check session
-      const { data, error } = await supabase.auth.getSession();
+      // Standard logic: Wait for Supabase to detect the session from URL
+      // We use onAuthStateChange which is more reliable than getSession() immediately
+      // for hash-based redirects.
+      const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+        if (isRedirecting) return;
 
-      const proceed = async () => {
-        // Check for saved redirect path
-        const redirectPath = await AsyncStorage.getItem('redirect_after_login');
-        if (isRestorablePath(redirectPath)) {
-          await AsyncStorage.removeItem('redirect_after_login');
-          router.replace(redirectPath as string);
+        if (event === 'SIGNED_IN' || session) {
+          isRedirecting = true;
+
+          // Check for saved redirect path
+          const redirectPath = await AsyncStorage.getItem('redirect_after_login');
+          if (isRestorablePath(redirectPath)) {
+            await AsyncStorage.removeItem('redirect_after_login');
+            router.replace(redirectPath as string);
+            return;
+          }
+
+          // Fallback to last route the user was on
+          const lastVisitedPath = await AsyncStorage.getItem(LAST_VISITED_PATH_KEY);
+          if (isRestorablePath(lastVisitedPath)) {
+            router.replace(lastVisitedPath as string);
+            return;
+          }
+
+          router.replace('/(tabs)');
+        }
+      });
+
+      // Validating session with a timeout fallback
+      // If Supabase doesn't trigger state change within 3 seconds, assume failure/login needed
+      const timeoutId = setTimeout(async () => {
+        if (isRedirecting) return;
+
+        // Final check
+        const { data } = await supabase.auth.getSession();
+        if (data.session) {
+          // handled by auth listener usually, but just in case
           return;
         }
 
-        // Fallback to last route the user was on before auth/callback.
-        const lastVisitedPath = await AsyncStorage.getItem(LAST_VISITED_PATH_KEY);
-        if (isRestorablePath(lastVisitedPath)) {
-          router.replace(lastVisitedPath as string);
-          return;
-        }
+        isRedirecting = true;
+        subscription.unsubscribe();
+        router.replace('/(auth)/login');
+      }, 3000);
 
-        router.replace('/(tabs)');
+      return () => {
+        clearTimeout(timeoutId);
+        subscription.unsubscribe();
       };
-
-      if (!error && data.session) {
-        await proceed();
-        return;
-      }
-
-      // If session not ready, try again once
-      const { data: data2, error: error2 } = await supabase.auth.getSession();
-      if (!error2 && data2.session) {
-        await proceed();
-        return;
-      }
-
-      // Fallback: go to login
-      router.replace('/(auth)/login');
     };
 
     handleOAuthCallback();
