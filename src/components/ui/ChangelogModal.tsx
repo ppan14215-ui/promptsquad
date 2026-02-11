@@ -13,10 +13,10 @@ export function ChangelogModal({ visible, onDismiss, version }: ChangelogModalPr
     const { colors } = useTheme();
 
     const updates = [
-        { title: '🔒 Enhanced Security', description: 'Strict backend enforcement for Pro model access to ensure fair usage.' },
-        { title: '✨ New Pro Badges', description: 'Fresh, cleaner look for Pro tags across the entire app.' },
-        { title: '🤖 Model Selection Fixes', description: 'Improved manual model selection logic - your choice now sticks!' },
-        { title: '🚀 Stability Improvements', description: 'Updated core dependencies and optimized performance.' }
+        { title: '💎 Pro Subscription', description: 'Unlock all mascots and features with our new Pro plan.' },
+        { title: '🎨 Custom Mascots', description: 'Create your own AI companions with unique personalities and skills.' },
+        { title: '🔒 Local Privacy', description: 'Your custom mascots stay locally on your device for enhanced privacy.' },
+        { title: '✨ UI Refinements', description: 'Smoother animations and cleaner design across the app.' }
     ];
 
     const ModalContent = (

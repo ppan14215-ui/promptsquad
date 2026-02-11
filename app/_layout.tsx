@@ -20,7 +20,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ChangelogModal } from '@/components/ui/ChangelogModal';
 import * as NavigationBar from 'expo-navigation-bar';
 
-const CURRENT_VERSION = '1.2.0';
+const CURRENT_VERSION = '1.3.0';
 const CHANGELOG_VERSION_KEY = 'last_seen_changelog_version';
 const LAST_VISITED_PATH_KEY = 'last_visited_path';
 
