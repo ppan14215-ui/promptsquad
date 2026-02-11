@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, View, StyleSheet, Platform, Pressable, Text } from 'react-native';
 import { useRouter } from 'expo-router';
 import { supabase } from '@/services/supabase';
+import { useAuth } from '@/services/auth';
 import { useTheme } from '@/design-system';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -27,6 +28,8 @@ function isRestorablePath(path: string | null | undefined) {
 export default function CallbackScreen() {
   const router = useRouter();
   const { colors } = useTheme();
+
+  const { user } = useAuth();
 
   useEffect(() => {
     // Flag to prevent multiple redirects
@@ -68,61 +71,51 @@ export default function CallbackScreen() {
         }
       }
 
-      // Standard logic: Wait for Supabase to detect the session from URL
-      const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-        if (isRedirecting) return;
+      // Standard logic: Wait for AuthContext (which listens to Supabase) to detect the session
+      if (user) {
+        isRedirecting = true;
 
-        if (event === 'SIGNED_IN' || session) {
-          isRedirecting = true;
-
-          // Small delay to allow AuthContext to update its state
-          // This prevents AuthGate from reacting to stale user=null state
-          setTimeout(async () => {
-            // Check for saved redirect path
-            const redirectPath = await AsyncStorage.getItem('redirect_after_login');
-            if (isRestorablePath(redirectPath)) {
-              await AsyncStorage.removeItem('redirect_after_login');
-              router.replace(redirectPath as string);
-              return;
-            }
-
-            // Fallback to last route the user was on
-            const lastVisitedPath = await AsyncStorage.getItem(LAST_VISITED_PATH_KEY);
-            if (isRestorablePath(lastVisitedPath)) {
-              router.replace(lastVisitedPath as string);
-              return;
-            }
-
-            router.replace('/(tabs)');
-          }, 500);
-        }
-      });
-
-      // Validating session with a timeout fallback
-      // STOP AUTO-REDIRECT LOOP: If we time out, show a button instead of redirecting.
-      const timeoutId = setTimeout(async () => {
-        if (isRedirecting) return;
-
-        // Final check
-        const { data } = await supabase.auth.getSession();
-        if (data.session) {
+        // Check for saved redirect path
+        const redirectPath = await AsyncStorage.getItem('redirect_after_login');
+        if (isRestorablePath(redirectPath)) {
+          await AsyncStorage.removeItem('redirect_after_login');
+          router.replace(redirectPath as string);
           return;
         }
 
-        // Do NOT auto-redirect to login here, as it can cause loops.
-        // Just show the manual button.
-        setManualCheck(true);
-        subscription.unsubscribe();
-      }, 4000);
+        // Fallback to last route the user was on
+        const lastVisitedPath = await AsyncStorage.getItem(LAST_VISITED_PATH_KEY);
+        if (isRestorablePath(lastVisitedPath)) {
+          router.replace(lastVisitedPath as string);
+          return;
+        }
 
-      return () => {
-        clearTimeout(timeoutId);
-        subscription.unsubscribe();
-      };
+        router.replace('/(tabs)');
+      } else {
+        // If no user, wait a bit then show manual button if still nothing
+        // The timeout here matches the manual check timeout below
+      }
     };
 
     handleOAuthCallback();
-  }, [router]);
+  }, [router, user]);
+
+  useEffect(() => {
+    if (user) return; // If user exists, we are handled above.
+
+    const timeoutId = setTimeout(async () => {
+      // Final check
+      const { data } = await supabase.auth.getSession();
+      if (data.session) {
+        // Should be picked up by useAuth soon
+        return;
+      }
+
+      setManualCheck(true);
+    }, 4000);
+
+    return () => clearTimeout(timeoutId);
+  }, [user]);
 
   const [manualCheck, setManualCheck] = useState(false);
 

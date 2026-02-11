@@ -129,7 +129,8 @@ function AuthGate({ children }: { children: React.ReactNode }) {
         router.replace('/(auth)/login');
       }
       // 2. Logged in, but on Auth pages (Login/Callback) -> Redirect to App
-      else if (user && inAuthGroup) {
+      // EXEMPTION: Do not auto-redirect if on 'callback'. Let callback page handle it.
+      else if (user && inAuthGroup && first !== 'callback') {
         // Check if we have a saved redirect
         const redirectPath = await AsyncStorage.getItem('redirect_after_login');
         if (isRestorablePath(redirectPath)) {
