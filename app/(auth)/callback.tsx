@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { ActivityIndicator, View, StyleSheet, Platform, Pressable, Text } from 'react-native';
 import { useRouter } from 'expo-router';
 import { supabase } from '@/services/supabase';
@@ -69,49 +69,51 @@ export default function CallbackScreen() {
       }
 
       // Standard logic: Wait for Supabase to detect the session from URL
-      // We use onAuthStateChange which is more reliable than getSession() immediately
-      // for hash-based redirects.
       const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
         if (isRedirecting) return;
 
         if (event === 'SIGNED_IN' || session) {
           isRedirecting = true;
 
-          // Check for saved redirect path
-          const redirectPath = await AsyncStorage.getItem('redirect_after_login');
-          if (isRestorablePath(redirectPath)) {
-            await AsyncStorage.removeItem('redirect_after_login');
-            router.replace(redirectPath as string);
-            return;
-          }
+          // Small delay to allow AuthContext to update its state
+          // This prevents AuthGate from reacting to stale user=null state
+          setTimeout(async () => {
+            // Check for saved redirect path
+            const redirectPath = await AsyncStorage.getItem('redirect_after_login');
+            if (isRestorablePath(redirectPath)) {
+              await AsyncStorage.removeItem('redirect_after_login');
+              router.replace(redirectPath as string);
+              return;
+            }
 
-          // Fallback to last route the user was on
-          const lastVisitedPath = await AsyncStorage.getItem(LAST_VISITED_PATH_KEY);
-          if (isRestorablePath(lastVisitedPath)) {
-            router.replace(lastVisitedPath as string);
-            return;
-          }
+            // Fallback to last route the user was on
+            const lastVisitedPath = await AsyncStorage.getItem(LAST_VISITED_PATH_KEY);
+            if (isRestorablePath(lastVisitedPath)) {
+              router.replace(lastVisitedPath as string);
+              return;
+            }
 
-          router.replace('/(tabs)');
+            router.replace('/(tabs)');
+          }, 500);
         }
       });
 
       // Validating session with a timeout fallback
-      // If Supabase doesn't trigger state change within 3 seconds, assume failure/login needed
+      // STOP AUTO-REDIRECT LOOP: If we time out, show a button instead of redirecting.
       const timeoutId = setTimeout(async () => {
         if (isRedirecting) return;
 
         // Final check
         const { data } = await supabase.auth.getSession();
         if (data.session) {
-          // handled by auth listener usually, but just in case
           return;
         }
 
-        isRedirecting = true;
+        // Do NOT auto-redirect to login here, as it can cause loops.
+        // Just show the manual button.
+        setManualCheck(true);
         subscription.unsubscribe();
-        router.replace('/(auth)/login');
-      }, 3000);
+      }, 4000);
 
       return () => {
         clearTimeout(timeoutId);
@@ -121,6 +123,8 @@ export default function CallbackScreen() {
 
     handleOAuthCallback();
   }, [router]);
+
+  const [manualCheck, setManualCheck] = useState(false);
 
   // Extract redirect_to for display
   let redirectTo: string | null = null;
@@ -137,6 +141,21 @@ export default function CallbackScreen() {
       <Text style={[styles.text, { color: colors.text, marginTop: 20 }]}>
         Authenticating...
       </Text>
+
+      {manualCheck && (
+        <View style={styles.webContainer}>
+          <Text style={[styles.subtext, { color: colors.red || 'orange' }]}>
+            It seems appropriate session details were not found.
+          </Text>
+          <Pressable
+            style={[styles.button, { backgroundColor: colors.primary }]}
+            onPress={() => router.replace('/(auth)/login')}
+          >
+            <Text style={[styles.buttonText, { color: '#FFFFFF' }]}>Go to Login</Text>
+          </Pressable>
+        </View>
+      )}
+
       {Platform.OS === 'web' && redirectTo && (
         <View style={styles.webContainer}>
           <Text style={[styles.subtext, { color: colors.textMuted }]}>
