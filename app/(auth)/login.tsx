@@ -10,7 +10,6 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useRouter } from 'expo-router';
 import { useTheme, fontFamilies, textStyles } from '@/design-system';
 import { useI18n } from '@/i18n';
 import { useAuth } from '@/services/auth';
@@ -30,7 +29,6 @@ export default function LoginScreen() {
   const { colors } = useTheme();
   const { t } = useI18n();
   const { signIn, signUp, signInWithGoogle } = useAuth();
-  const router = useRouter();
 
   const [mode, setMode] = useState<AuthMode>('login');
   const [email, setEmail] = useState('');
@@ -126,8 +124,7 @@ export default function LoginScreen() {
           }
         }
 
-        // Navigation will be handled by auth state change in layout
-        router.replace('/(tabs)');
+        // Navigation is handled by AuthGate so redirect-after-login can be honored.
       }
     } catch (e) {
       setError(t.auth.errors.generic);

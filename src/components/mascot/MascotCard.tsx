@@ -19,8 +19,11 @@ export type MascotCardProps = {
   grayscaleImageSource?: ImageSourcePropType; // Grayscale version of the image
   onPress?: () => void;
   onUnlock?: () => void;
+  onHoverAction?: () => void;
+  hoverActionLabel?: string;
   isLocked?: boolean;
   isPro?: boolean; // True if mascot is exclusively for pro subscription
+  isCustom?: boolean; // True if mascot is user-created custom mascot
   isUnlocked?: boolean; // True if mascot is unlocked for the user (affects badge color)
   isComingSoon?: boolean; // True if mascot is not yet active/ready
   /** Force a specific state for preview purposes */
@@ -29,6 +32,8 @@ export type MascotCardProps = {
   colorVariant?: MascotColorVariant;
   /** Force grayscale filter on the image */
   forceGrayscale?: boolean;
+  /** Optional responsive card size override */
+  cardSize?: number;
 };
 
 export function MascotCard({
@@ -39,13 +44,17 @@ export function MascotCard({
   grayscaleImageSource,
   onPress,
   onUnlock,
+  onHoverAction,
+  hoverActionLabel,
   isLocked = false,
   isPro = false,
+  isCustom = false,
   isUnlocked = false,
   forceState,
   colorVariant = 'yellow',
   isComingSoon = false,
   forceGrayscale = false,
+  cardSize,
 }: MascotCardProps) {
   const { colors } = useTheme();
   const [isHoveredInternal, setIsHoveredInternal] = useState(false);
@@ -64,6 +73,9 @@ export function MascotCard({
   const isHovered = effectiveState === 'hover';
   const isLockedState = effectiveState === 'locked' || effectiveState === 'locked-hover';
   const isLockedHover = effectiveState === 'locked-hover';
+  const effectiveCardSize = cardSize ?? CARD_SIZE;
+  const imageSizeDefault = Math.round(effectiveCardSize * (128 / 192));
+  const imageSizeHover = Math.round(effectiveCardSize * (140 / 192));
 
   // Get the hover border color based on variant
   const hoverBorderColor = colors[colorVariant];
@@ -91,6 +103,12 @@ export function MascotCard({
         styles.container,
         webTransitionStyle,
         {
+          width: effectiveCardSize,
+          height: effectiveCardSize,
+          paddingTop: Math.round(effectiveCardSize * (24 / 192)),
+          paddingHorizontal: Math.round(effectiveCardSize * (24 / 192)),
+        },
+        {
           backgroundColor: colors.background,
           borderWidth: Platform.OS === 'web' ? 0 : 1,
           borderColor: colors.outline,
@@ -108,7 +126,19 @@ export function MascotCard({
       <View
         style={[
           styles.imageContainer,
+          {
+            width: imageSizeDefault,
+            height: imageSizeDefault,
+            top: effectiveCardSize - imageSizeDefault,
+            left: (effectiveCardSize - imageSizeDefault) / 2,
+          },
           (isHovered || isLockedHover) && styles.imageContainerHover,
+          (isHovered || isLockedHover) && {
+            width: imageSizeHover,
+            height: imageSizeHover,
+            top: effectiveCardSize - imageSizeHover,
+            left: (effectiveCardSize - imageSizeHover) / 2,
+          },
           Platform.OS === 'web' && ({ transition: 'all 200ms ease-out' } as unknown as object),
           isLockedState && !grayscaleImageSource && { opacity: 0.3 },
         ]}
@@ -167,7 +197,7 @@ export function MascotCard({
       {/* Unlock Button - Only for locked-hover, NOT for coming soon */}
       {isLockedHover && !effectiveIsComingSoon && (
         <View
-          style={styles.buttonContainer}
+          style={[styles.buttonContainer, { left: (effectiveCardSize - 97) / 2 }]}
           {...(Platform.OS === 'web' && {
             onMouseEnter: () => !forceState && setIsHoveredInternal(true),
           })}
@@ -179,9 +209,30 @@ export function MascotCard({
         </View>
       )}
 
-      {/* Pro Badge */}
-      {isPro && !effectiveIsComingSoon && (
-        <ProBadge style={{ position: 'absolute', top: 8, right: 8, zIndex: 10 }} color={colors.primary} />
+      {/* Quick action button - only for unlocked hover cards */}
+      {isHovered && !isLocked && !effectiveIsComingSoon && onHoverAction && hoverActionLabel && (
+        <View
+          style={[styles.buttonContainer, { left: (effectiveCardSize - 97) / 2 }]}
+          {...(Platform.OS === 'web' && {
+            onMouseEnter: () => !forceState && setIsHoveredInternal(true),
+          })}
+        >
+          <MiniButton
+            label={hoverActionLabel}
+            onPress={onHoverAction}
+            variant="primary"
+            color={colorVariant}
+          />
+        </View>
+      )}
+
+      {/* Access Badge */}
+      {!effectiveIsComingSoon && (isCustom || isPro) && (
+        <ProBadge
+          style={{ position: 'absolute', top: 8, right: 8, zIndex: 10 }}
+          color={isCustom ? colors.teal : colors.primary}
+          label={isCustom ? 'CUSTOM' : 'PRO'}
+        />
       )}
 
       {/* Coming Soon Badge */}
@@ -195,16 +246,10 @@ export function MascotCard({
 }
 
 const CARD_SIZE = 192;
-const IMAGE_SIZE_DEFAULT = 128;
-const IMAGE_SIZE_HOVER = 140;
 
 const styles = StyleSheet.create({
   container: {
-    width: CARD_SIZE,
-    height: CARD_SIZE,
     borderRadius: 16,
-    paddingTop: 24,
-    paddingHorizontal: 24,
     alignItems: 'center',
     overflow: 'hidden',
     position: 'relative',
@@ -227,17 +272,9 @@ const styles = StyleSheet.create({
   },
   imageContainer: {
     position: 'absolute',
-    width: IMAGE_SIZE_DEFAULT,
-    height: IMAGE_SIZE_DEFAULT,
-    top: 64, // bottom aligns with card border (192 - 128 = 64)
-    left: (CARD_SIZE - IMAGE_SIZE_DEFAULT) / 2,
     zIndex: 1,
   },
   imageContainerHover: {
-    width: IMAGE_SIZE_HOVER,
-    height: IMAGE_SIZE_HOVER,
-    top: CARD_SIZE - IMAGE_SIZE_HOVER, // 192 - 140 = 52; stay fully inside border
-    left: (CARD_SIZE - IMAGE_SIZE_HOVER) / 2,
     zIndex: 5, // Higher than text on hover
   },
   image: {

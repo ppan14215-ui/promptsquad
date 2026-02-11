@@ -3,6 +3,26 @@ import { ActivityIndicator, View, StyleSheet, Platform, Pressable, Text } from '
 import { useRouter } from 'expo-router';
 import { supabase } from '@/services/supabase';
 import { useTheme } from '@/design-system';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+const LAST_VISITED_PATH_KEY = 'last_visited_path';
+
+function getCurrentWebPath() {
+  if (Platform.OS === 'web' && typeof window !== 'undefined') {
+    return `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  }
+  return '/';
+}
+
+function isRestorablePath(path: string | null | undefined) {
+  if (!path) return false;
+  if (path === '/' || path.startsWith('/?') || path.startsWith('/#')) return false;
+  if (path.startsWith('/(auth)')) return false;
+  if (path.startsWith('/(onboarding)')) return false;
+  if (path.includes('/callback')) return false;
+  if (path.includes('/login')) return false;
+  return true;
+}
 
 export default function CallbackScreen() {
   const router = useRouter();
@@ -12,11 +32,32 @@ export default function CallbackScreen() {
     const handleOAuthCallback = async () => {
       // Logic for Web Relay Pattern (Expo Go support)
       if (Platform.OS === 'web') {
+        const currentPath = getCurrentWebPath();
+        if (isRestorablePath(currentPath)) {
+          await AsyncStorage.setItem(LAST_VISITED_PATH_KEY, currentPath);
+        }
+
         const params = new URLSearchParams(window.location.search);
         const redirectTo = params.get('redirect_to');
         if (redirectTo) {
+          let destination = redirectTo;
+          const lastVisitedPath = await AsyncStorage.getItem(LAST_VISITED_PATH_KEY);
+          if (isRestorablePath(lastVisitedPath)) {
+            try {
+              const parsedRedirect = new URL(redirectTo, window.location.origin);
+              const isSameOriginRoot =
+                parsedRedirect.origin === window.location.origin &&
+                (parsedRedirect.pathname === '/' || parsedRedirect.pathname === '');
+              if (isSameOriginRoot) {
+                destination = `${window.location.origin}${lastVisitedPath}`;
+              }
+            } catch {
+              // If redirect URL can't be parsed, use redirectTo as-is.
+            }
+          }
+
           // Relay the hash to the deep link
-          window.location.href = redirectTo + window.location.hash;
+          window.location.href = destination + window.location.hash;
           return;
         }
       }
@@ -24,15 +65,34 @@ export default function CallbackScreen() {
       // Standard logic: parse the hash fragment / check session
       const { data, error } = await supabase.auth.getSession();
 
-      if (!error && data.session) {
+      const proceed = async () => {
+        // Check for saved redirect path
+        const redirectPath = await AsyncStorage.getItem('redirect_after_login');
+        if (isRestorablePath(redirectPath)) {
+          await AsyncStorage.removeItem('redirect_after_login');
+          router.replace(redirectPath as string);
+          return;
+        }
+
+        // Fallback to last route the user was on before auth/callback.
+        const lastVisitedPath = await AsyncStorage.getItem(LAST_VISITED_PATH_KEY);
+        if (isRestorablePath(lastVisitedPath)) {
+          router.replace(lastVisitedPath as string);
+          return;
+        }
+
         router.replace('/(tabs)');
+      };
+
+      if (!error && data.session) {
+        await proceed();
         return;
       }
 
       // If session not ready, try again once
       const { data: data2, error: error2 } = await supabase.auth.getSession();
       if (!error2 && data2.session) {
-        router.replace('/(tabs)');
+        await proceed();
         return;
       }
 
@@ -45,9 +105,11 @@ export default function CallbackScreen() {
 
   // Extract redirect_to for display
   let redirectTo: string | null = null;
+  let fallbackDestination: string | null = null;
   if (Platform.OS === 'web') {
     const params = new URLSearchParams(window.location.search);
     redirectTo = params.get('redirect_to');
+    fallbackDestination = `${window.location.origin}/(tabs)`;
   }
 
   return (
@@ -66,6 +128,8 @@ export default function CallbackScreen() {
             onPress={() => {
               if (redirectTo) {
                 window.location.href = redirectTo + window.location.hash;
+              } else if (fallbackDestination) {
+                window.location.href = fallbackDestination;
               }
             }}
           >

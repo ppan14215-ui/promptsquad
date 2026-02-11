@@ -12,9 +12,11 @@ export type CreateCustomCardProps = {
   forceState?: CreateCustomCardState;
   /** Whether the card is locked/disabled (e.g. for free users) */
   isLocked?: boolean;
+  /** Optional responsive card size override */
+  cardSize?: number;
 };
 
-export function CreateCustomCard({ onPress, forceState, isLocked }: CreateCustomCardProps) {
+export function CreateCustomCard({ onPress, forceState, isLocked, cardSize }: CreateCustomCardProps) {
   const { colors } = useTheme();
   const { t } = useI18n();
   const [isHoveredInternal, setIsHoveredInternal] = useState(false);
@@ -65,6 +67,10 @@ export function CreateCustomCard({ onPress, forceState, isLocked }: CreateCustom
         styles.container,
         webTransitionStyle,
         {
+          width: cardSize ?? CARD_SIZE,
+          height: cardSize ?? CARD_SIZE,
+        },
+        {
           backgroundColor: isLocked ? colors.surface : colors.background,
           borderColor: borderColor,
           opacity: isLocked ? 0.7 : 1,
@@ -100,8 +106,6 @@ const CARD_SIZE = 192;
 
 const styles = StyleSheet.create({
   container: {
-    width: CARD_SIZE,
-    height: CARD_SIZE,
     borderRadius: 16,
     borderWidth: 1,
     borderStyle: 'dashed',

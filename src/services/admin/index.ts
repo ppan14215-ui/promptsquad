@@ -41,6 +41,8 @@ export type MascotBasic = {
   is_ready?: boolean | null;
   is_active?: boolean | null;
   is_visible?: boolean | null;
+  owner_id?: string | null;
+  is_custom?: boolean | null;
 };
 
 // ... existing code ...
@@ -160,6 +162,7 @@ export function useIsAdmin() {
 
 // Hook to get all mascots
 export function useMascots() {
+  const { user } = useAuth();
   const [mascots, setMascots] = useState<MascotBasic[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -168,7 +171,7 @@ export function useMascots() {
     try {
       const { data, error } = await supabase
         .from('mascots')
-        .select('id, name, subtitle, image_url, color, question_prompt, sort_order, is_free, is_active, is_visible')
+        .select('id, name, subtitle, image_url, color, question_prompt, sort_order, is_free, is_active, is_visible, owner_id, is_custom')
         .order('sort_order', { ascending: true });
 
       if (error) {
@@ -182,12 +185,21 @@ export function useMascots() {
         setError(error.message);
         setMascots([]);
       } else {
-        setMascots((data || []).map((m: any) => ({
+        const normalized = (data || []).map((m: any) => ({
           ...m,
           is_pro: m.is_pro !== undefined ? m.is_pro : !m.is_free,
           is_ready: m.is_active, // Map ready status from active status
           is_visible: m.is_visible !== undefined ? m.is_visible : true, // Default to visible
-        })));
+        })) as MascotBasic[];
+
+        // Custom mascots are private to their owner only, including against admin accounts.
+        const ownerOnlyMascots = normalized.filter((m) => {
+          if (!m.is_custom) return true;
+          if (!user?.id) return false;
+          return m.owner_id === user.id;
+        });
+
+        setMascots(ownerOnlyMascots);
         setError(null);
       }
     } catch (err: any) {
@@ -196,7 +208,7 @@ export function useMascots() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [user?.id]);
 
   useEffect(() => {
     fetchMascots();

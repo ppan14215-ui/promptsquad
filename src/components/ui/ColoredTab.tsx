@@ -39,7 +39,8 @@ export function ColoredTab({
   };
 
   const finalActiveBgColor = resolveMascotColor(activeBgColor) || colors.primaryBg;
-  const finalActiveTextColor = manualActiveTextColor || (activeBgColor ? calculateContrast(resolveMascotColor(activeBgColor)) : (mode === 'dark' ? colors.buttonText : colors.primary));
+  const finalActiveTextColor =
+    manualActiveTextColor || getContrastColor(finalActiveBgColor);
 
   // Web-specific transition style
   const webTransitionStyle = Platform.select({

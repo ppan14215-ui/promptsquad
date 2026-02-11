@@ -33,6 +33,8 @@ export type OwnedMascot = {
     models: string[];
     isPro?: boolean;
     isFree?: boolean;
+    isCustom?: boolean;
+    ownerId?: string;
 };
 
 export const FREE_MASCOTS: OwnedMascot[] = [

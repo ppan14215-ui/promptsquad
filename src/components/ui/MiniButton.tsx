@@ -1,19 +1,37 @@
 import React, { useState } from 'react';
 import { Text, Pressable, Platform, StyleSheet } from 'react-native';
 import { useTheme, textStyles, skeuToCSS, shadowToNative } from '@/design-system';
+import { resolveMascotColor, getContrastColor } from '@/lib/utils/mascot-colors';
 
 export type MiniButtonState = 'default' | 'hover';
 
 export type MiniButtonProps = {
   label: string;
   onPress?: () => void;
+  /** Visual style variant */
+  variant?: 'primary' | 'dark';
+  /** Optional custom background color (key or hex) */
+  color?: string;
   /** Force a specific state for preview purposes */
   forceState?: MiniButtonState;
 };
 
+function darkenHex(hexColor: string, amount = 0.12): string {
+  if (!hexColor.startsWith('#') || hexColor.length !== 7) return hexColor;
+  const clamp = (value: number) => Math.max(0, Math.min(255, value));
+  const r = clamp(Math.round(parseInt(hexColor.slice(1, 3), 16) * (1 - amount)));
+  const g = clamp(Math.round(parseInt(hexColor.slice(3, 5), 16) * (1 - amount)));
+  const b = clamp(Math.round(parseInt(hexColor.slice(5, 7), 16) * (1 - amount)));
+  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b
+    .toString(16)
+    .padStart(2, '0')}`;
+}
+
 export function MiniButton({
   label,
   onPress,
+  variant = 'primary',
+  color,
   forceState,
 }: MiniButtonProps) {
   const { colors } = useTheme();
@@ -40,6 +58,13 @@ export function MiniButton({
 
   // Gradient removed - inner shadows don't look good on mobile
 
+  const customBgColor = color ? resolveMascotColor(color) : undefined;
+  const defaultBgColor = customBgColor || (variant === 'dark' ? colors.darkButton : colors.primary);
+  const hoverBgColor = customBgColor
+    ? darkenHex(defaultBgColor)
+    : (variant === 'dark' ? colors.darkButtonHover : colors.primaryHover);
+  const textColor = customBgColor ? getContrastColor(defaultBgColor) : colors.buttonText;
+
   return (
     <Pressable
       onPress={onPress}
@@ -49,7 +74,7 @@ export function MiniButton({
         styles.container,
         webTransitionStyle,
         {
-          backgroundColor: isHovered ? colors.primaryHover : colors.primary,
+          backgroundColor: isHovered ? hoverBgColor : defaultBgColor,
         },
         skeuShadowStyle,
       ]}
@@ -64,7 +89,7 @@ export function MiniButton({
             lineHeight: textStyles.miniButton.lineHeight,
             letterSpacing: textStyles.miniButton.letterSpacing,
             fontWeight: textStyles.miniButton.fontWeight,
-            color: colors.buttonText,
+            color: textColor,
           },
         ]}
       >

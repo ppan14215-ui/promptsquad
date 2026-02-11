@@ -30,9 +30,13 @@ import { useSubscription } from '@/services/subscription';
 import { supabase } from '@/services/supabase';
 import { ChatHeader, LinkPill, ChatInputBox, SkillPreview, ChatHistory, Icon, BigPrimaryButton } from '@/components';
 import type { ChatInputBoxRef } from '@/components/ui/ChatInputBox';
+import { useAuth } from '@/services/auth';
+import { SkillEditor } from '@/components/admin/SkillEditor';
+import { PersonalityEditor } from '@/components/admin/PersonalityEditor';
 import { secureChatStream } from '@/services/ai/secure-chat';
 import type { ChatMessage, AI_CONFIG, WebSource, SecureChatMessage } from '@/services/ai';
-import { useMascotSkills, useMascotPersonality, MascotSkill, getCombinedPrompt, useIsAdmin, updatePersonality, resetPersonalityToDefault, MascotBasic } from '@/services/admin';
+import { useMascotSkills, useMascotPersonality, MascotSkill, getCombinedPrompt, useIsAdmin, MascotBasic } from '@/services/admin';
+import { getMascotImageSource } from '@/services/admin/mascot-images';
 import { useMascotLike } from '@/services/mascot-likes';
 import { createConversation, saveMessage, generateConversationTitle, useConversationMessages, deleteConversation, getConversation } from '@/services/chat-history';
 import { useMascotAccess, incrementTrialUsage } from '@/services/mascot-access';
@@ -59,8 +63,9 @@ type Message = {
 // Chat tabs
 type ChatTab = 'chat' | 'sources' | 'skills' | 'personality' | 'history';
 
-// Local mascot images
+// Local mascot images (fallback when getMascotImageSource doesn't match)
 const mascotImages: Record<string, ImageSourcePropType> = {
+  // Original mascots
   bear: require('../../assets/mascots/Bear.png'),
   cat: require('../../assets/mascots/cat.png'),
   fox: require('../../assets/mascots/fox.png'),
@@ -76,6 +81,15 @@ const mascotImages: Record<string, ImageSourcePropType> = {
   giraffe: require('../../assets/mascots/giraffe.png'),
   lion: require('../../assets/mascots/lion.png'),
   seahorse: require('../../assets/mascots/searhorse.png'),
+  // Newer mascots
+  ant: require('../../assets/mascots/ant.png'),
+  beaver: require('../../assets/mascots/beaver.png'),
+  bull: require('../../assets/mascots/bull.png'),
+  eagle: require('../../assets/mascots/eagle.png'),
+  horse: require('../../assets/mascots/horse.png'),
+  koala: require('../../assets/mascots/koala.png'),
+  monkey: require('../../assets/mascots/monkey.png'),
+  penguin: require('../../assets/mascots/penguin.png'),
 };
 
 /**
@@ -506,20 +520,35 @@ export default function ChatScreen() {
     name: dbMascot?.name || staticMascot.name,
     subtitle: dbMascot?.subtitle || staticMascot.subtitle,
     greeting: dbMascot?.question_prompt || staticMascot.greeting,
+    image: dbMascot?.image_url || staticMascot.image,
+    color: dbMascot?.color || staticMascot.color,
   }), [staticMascot, dbMascot]);
 
-  const mascotImage = mascotImages[mascot.image] || mascotImages.bear; // Fallback to bear if image not found
+  // Resolve mascot image: use getMascotImageSource for consistent lookup (handles all mascots),
+  // then fall back to local map, then default to bear
+  const mascotImage = getMascotImageSource(mascot.image) || mascotImages[mascot.image] || mascotImages.bear;
   const headerSubtitle = mascot.subtitle || 'Your AI assistant';
   const { preferredLLM } = usePreferences();
 
   // Check if user is admin
   const { isAdmin } = useIsAdmin();
 
+  // Get current user for ownership check
+  const { user } = useAuth();
+
+  // Check if current user is the owner of this custom mascot
+  const isOwner = !!(user && dbMascot?.owner_id && dbMascot.owner_id === user.id);
+
   // Check subscription status
   const { isSubscribed } = useSubscription();
 
+  // Edit access in mascot tabs:
+  // - Admins can always edit
+  // - Custom mascot owners can edit only on Pro plans
+  const canEdit = isAdmin || (isOwner && isSubscribed);
+
   // Fetch skills and personality from database
-  const { skills: dbSkills, isLoading: skillsLoading } = useMascotSkills(mascotId || '1', dbMascot?.is_free ?? false);
+  const { skills: dbSkills, isLoading: skillsLoading, refetch: refetchSkills } = useMascotSkills(mascotId || '1', dbMascot?.is_free ?? false);
   const { personality: dbPersonality, isLoading: personalityLoading, refetch: refetchPersonality } = useMascotPersonality(mascotId || '1');
 
   // Fetch like data for mascot
@@ -542,21 +571,12 @@ export default function ChatScreen() {
   const [activeSkillId, setActiveSkillId] = useState<string | null>(skillId || null);
   const activeSkill = dbSkills.find((s) => s.id === activeSkillId);
 
-  // Personality editing state
-  const [isEditingPersonality, setIsEditingPersonality] = useState(false);
-  const [editedPersonality, setEditedPersonality] = useState('');
-  const [isSavingPersonality, setIsSavingPersonality] = useState(false);
-  const [isResettingPersonality, setIsResettingPersonality] = useState(false);
+  // Skill editing state
+  const [isSkillEditorVisible, setIsSkillEditorVisible] = useState(false);
+  const [isPersonalityEditorVisible, setIsPersonalityEditorVisible] = useState(false);
 
   // Smart auto-scroll: Use ref to avoid closure issues in streaming callback
   const isUserScrollingRef = useRef(false);
-
-  // Sync editedPersonality when dbPersonality changes (but not when editing)
-  useEffect(() => {
-    if (!isEditingPersonality && dbPersonality) {
-      setEditedPersonality(dbPersonality.personality);
-    }
-  }, [dbPersonality, isEditingPersonality]);
 
   // Conversation management
   const [currentConversationId, setCurrentConversationId] = useState<string | null>(urlConversationId || null);
@@ -1989,7 +2009,6 @@ export default function ChatScreen() {
         isTrial={isTrial}
         trialCount={localTrialCount}
         trialLimit={trialLimit}
-        mascotColor={mascot.color}
       />
 
       {activeTab === 'skills' ? (
@@ -1999,54 +2018,110 @@ export default function ChatScreen() {
         >
           {skillsLoading ? (
             <ActivityIndicator size="large" color={colors.primary} />
-          ) : dbSkills.length === 0 ? (
-            <Text
-              style={[
-                styles.sourcesMessage,
-                {
-                  fontFamily: textStyles.body.fontFamily,
-                  color: colors.textMuted,
-                },
-              ]}
-            >
-              No skills configured for this mascot yet.
-            </Text>
           ) : (
-            dbSkills.map((skill) => {
-              // Check if skill is locked (user doesn't have full access)
-              const isSkillLocked = !skill.is_full_access;
+            <>
+              {/* Add Skill Button (for owners/admins) */}
+              {canEdit && (
+                dbMascot?.is_custom ? (
+                  <View style={styles.customAddSkillButtonRow}>
+                    <Pressable
+                      onPress={() => {
+                        setIsSkillEditorVisible(true);
+                      }}
+                      style={[styles.customAddSkillButton, { backgroundColor: colors.primary }]}
+                    >
+                      <Icon name="add" size={18} color={colors.buttonText} />
+                      <Text
+                        style={[
+                          styles.customAddSkillButtonText,
+                          { fontFamily: fontFamilies.figtree.medium, color: colors.buttonText },
+                        ]}
+                      >
+                        Add Skill
+                      </Text>
+                    </Pressable>
+                  </View>
+                ) : (
+                  <Pressable
+                    onPress={() => {
+                      setIsSkillEditorVisible(true);
+                    }}
+                    style={{
+                      backgroundColor: colors.surface,
+                      borderColor: colors.outline,
+                      borderWidth: 1,
+                      borderStyle: 'dashed',
+                      borderRadius: 12,
+                      padding: 16,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 8,
+                      marginBottom: 16,
+                    }}
+                  >
+                    <Icon name="add" size={20} color={mascot.color} />
+                    <Text style={{
+                      fontFamily: fontFamilies.figtree.medium,
+                      color: mascot.color,
+                      fontSize: 15
+                    }}>
+                      Add New Skill
+                    </Text>
+                  </Pressable>
+                )
+              )}
 
-              return (
-                <Pressable
-                  key={skill.id}
-                  onPress={() => {
-                    // Only allow clicking if skill is not locked or user has access
-                    if (!isSkillLocked || skill.is_full_access) {
-                      handleSkillPress(skill);
-                    }
-                  }}
-                  disabled={isSkillLocked && !skill.is_full_access}
+              {dbSkills.length === 0 ? (
+                <Text
                   style={[
-                    styles.skillPreviewCard,
-                    activeSkillId === skill.id && { borderColor: mascot.color, borderWidth: 2 },
-                    isSkillLocked && !skill.is_full_access && { opacity: 0.6 },
+                    styles.sourcesMessage,
+                    {
+                      fontFamily: textStyles.body.fontFamily,
+                      color: colors.textMuted,
+                    },
                   ]}
                 >
-                  <SkillPreview
-                    skillLabel={skill.skill_label}
-                    skillPromptPreview={skill.skill_prompt_preview || ''}
-                    isFullAccess={skill.is_full_access || false}
-                    fullPrompt={skill.skill_prompt}
-                    mascotColor={mascot.color}
-                  />
-                  {activeSkillId === skill.id && (
-                    <View style={[styles.activeSkillBadge, { backgroundColor: mascot.color }]}>
-                      <Text style={styles.activeSkillBadgeText}>Active</Text>
-                    </View>
-                  )}
-                </Pressable>
-              );
-            })
+                  No skills configured for this mascot yet.
+                </Text>
+              ) : (
+                dbSkills.map((skill) => {
+                  // Check if skill is locked (user doesn't have full access)
+                  const isSkillLocked = !skill.is_full_access;
+
+                  return (
+                    <Pressable
+                      key={skill.id}
+                      onPress={() => {
+                        // Only allow clicking if skill is not locked or user has access
+                        if (!isSkillLocked || skill.is_full_access) {
+                          handleSkillPress(skill);
+                        }
+                      }}
+                      disabled={isSkillLocked && !skill.is_full_access}
+                      style={[
+                        styles.skillPreviewCard,
+                        activeSkillId === skill.id && { borderColor: mascot.color, borderWidth: 2 },
+                        isSkillLocked && !skill.is_full_access && { opacity: 0.6 },
+                      ]}
+                    >
+                      <SkillPreview
+                        skillLabel={skill.skill_label}
+                        skillPromptPreview={skill.skill_prompt_preview || ''}
+                        isFullAccess={skill.is_full_access || false}
+                        fullPrompt={skill.skill_prompt}
+                        mascotColor={mascot.color}
+                      />
+                      {activeSkillId === skill.id && (
+                        <View style={[styles.activeSkillBadge, { backgroundColor: mascot.color }]}>
+                          <Text style={styles.activeSkillBadgeText}>Active</Text>
+                        </View>
+                      )}
+                    </Pressable>
+                  );
+                })
+              )}
+            </>
           )}
         </ScrollView>
       ) : activeTab === 'personality' ? (
@@ -2056,18 +2131,6 @@ export default function ChatScreen() {
         >
           {personalityLoading ? (
             <ActivityIndicator size="large" color={colors.primary} />
-          ) : !dbPersonality ? (
-            <Text
-              style={[
-                styles.sourcesMessage,
-                {
-                  fontFamily: textStyles.body.fontFamily,
-                  color: colors.textMuted,
-                },
-              ]}
-            >
-              No personality configured for this mascot yet.
-            </Text>
           ) : (
             <View
               style={[
@@ -2088,37 +2151,34 @@ export default function ChatScreen() {
                 >
                   Personality
                 </Text>
-                {!isEditingPersonality ? (
-                  <Pressable
-                    onPress={() => {
-                      if (!isAdmin) return;
-                      setEditedPersonality(dbPersonality.personality);
-                      setIsEditingPersonality(true);
-                    }}
-                    style={[styles.editButton, !isAdmin && { opacity: 0.5 }]}
+                <Pressable
+                  onPress={() => {
+                    if (!canEdit) return;
+                    setIsPersonalityEditorVisible(true);
+                  }}
+                  style={[styles.editButton, !canEdit && { opacity: 0.5 }]}
+                >
+                  <Icon
+                    name={canEdit ? "edit" : "lock"}
+                    size={18}
+                    color={canEdit ? colors.primary : colors.textMuted}
+                  />
+                  <Text
+                    style={[
+                      styles.editButtonText,
+                      {
+                        fontFamily: fontFamilies.figtree.medium,
+                        color: canEdit ? colors.primary : colors.textMuted,
+                      },
+                    ]}
                   >
-                    <Icon
-                      name={isAdmin ? "edit" : "lock"}
-                      size={18}
-                      color={isAdmin ? colors.primary : colors.textMuted}
-                    />
-                    <Text
-                      style={[
-                        styles.editButtonText,
-                        {
-                          fontFamily: fontFamilies.figtree.medium,
-                          color: isAdmin ? colors.primary : colors.textMuted,
-                        },
-                      ]}
-                    >
-                      {isAdmin ? "Edit" : "Locked"}
-                    </Text>
-                  </Pressable>
-                ) : null}
+                    {canEdit ? (dbPersonality ? "Edit" : "Add") : "Locked"}
+                  </Text>
+                </Pressable>
               </View>
 
-              {/* Pro Disclaimer for non-admins */}
-              {!isAdmin && (
+              {/* Pro Disclaimer for non-editors */}
+              {!canEdit && (
                 <View style={{ paddingHorizontal: 16, paddingBottom: 12 }}>
                   <Text style={{
                     fontFamily: fontFamilies.figtree.regular,
@@ -2131,150 +2191,14 @@ export default function ChatScreen() {
                 </View>
               )}
 
-              {/* Content: Edit mode or View mode */}
-              {isEditingPersonality ? (
-                <View style={styles.editContainer}>
-                  <TextInput
-                    style={[
-                      styles.personalityTextInput,
-                      {
-                        fontFamily: fontFamilies.figtree.regular,
-                        color: colors.text,
-                        borderColor: colors.outline,
-                        backgroundColor: colors.background,
-                      },
-                    ]}
-                    value={editedPersonality}
-                    onChangeText={setEditedPersonality}
-                    placeholder="Enter personality..."
-                    placeholderTextColor={colors.textMuted}
-                    multiline
-                    textAlignVertical="top"
-                  />
-                  <View style={styles.personalityActions}>
-                    {dbPersonality?.default_personality ? (
-                      <Pressable
-                        onPress={async () => {
-                          setIsResettingPersonality(true);
-                          try {
-                            await resetPersonalityToDefault(mascotId || '1');
-                            await refetchPersonality();
-                            // editedPersonality will be synced via useEffect when dbPersonality updates
-                          } catch (error) {
-                            console.error('Error resetting personality:', error);
-                          } finally {
-                            setIsResettingPersonality(false);
-                          }
-                        }}
-                        disabled={isSavingPersonality || isResettingPersonality}
-                        style={[
-                          styles.resetButton,
-                          {
-                            borderColor: colors.outline,
-                            opacity: (isSavingPersonality || isResettingPersonality) ? 0.6 : 1,
-                          },
-                        ]}
-                      >
-                        {isResettingPersonality ? (
-                          <ActivityIndicator size="small" color={colors.textMuted} />
-                        ) : (
-                          <>
-                            <Icon name="settings" size={16} color={colors.textMuted} />
-                            <Text
-                              style={[
-                                styles.resetButtonText,
-                                {
-                                  fontFamily: fontFamilies.figtree.medium,
-                                  color: colors.textMuted,
-                                },
-                              ]}
-                            >
-                              Reset to Default
-                            </Text>
-                          </>
-                        )}
-                      </Pressable>
-                    ) : (
-                      <View style={{ flex: 1 }} />
-                    )}
-                    <View style={styles.saveCancelButtons}>
-                      <Pressable
-                        onPress={() => {
-                          setIsEditingPersonality(false);
-                          setEditedPersonality(dbPersonality.personality);
-                        }}
-                        disabled={isSavingPersonality || isResettingPersonality}
-                        style={[
-                          styles.cancelButton,
-                          {
-                            borderColor: colors.outline,
-                            opacity: (isSavingPersonality || isResettingPersonality) ? 0.6 : 1,
-                          },
-                        ]}
-                      >
-                        <Text
-                          style={[
-                            styles.cancelButtonText,
-                            {
-                              fontFamily: fontFamilies.figtree.medium,
-                              color: colors.text,
-                            },
-                          ]}
-                        >
-                          Cancel
-                        </Text>
-                      </Pressable>
-                      <Pressable
-                        onPress={async () => {
-                          setIsSavingPersonality(true);
-                          try {
-                            await updatePersonality(mascotId || '1', editedPersonality);
-                            await refetchPersonality();
-                            setIsEditingPersonality(false);
-                          } catch (error) {
-                            console.error('Error saving personality:', error);
-                          } finally {
-                            setIsSavingPersonality(false);
-                          }
-                        }}
-                        disabled={isSavingPersonality || isResettingPersonality || !editedPersonality.trim()}
-                        style={[
-                          styles.saveButton,
-                          {
-                            backgroundColor: colors.primary,
-                            opacity: (isSavingPersonality || isResettingPersonality || !editedPersonality.trim()) ? 0.6 : 1,
-                          },
-                        ]}
-                      >
-                        {isSavingPersonality ? (
-                          <ActivityIndicator size="small" color="#FFFFFF" />
-                        ) : (
-                          <Text
-                            style={[
-                              styles.saveButtonText,
-                              {
-                                fontFamily: fontFamilies.figtree.medium,
-                                color: '#FFFFFF',
-                              },
-                            ]}
-                          >
-                            Save
-                          </Text>
-                        )}
-                      </Pressable>
-                    </View>
-                  </View>
-                </View>
+              {dbPersonality?.personality && typeof dbPersonality.personality === 'string' && dbPersonality.personality.trim() ? (
+                <Markdown style={markdownStyles}>
+                  {cleanMessageContent(dbPersonality.personality)}
+                </Markdown>
               ) : (
-                dbPersonality.personality && typeof dbPersonality.personality === 'string' && dbPersonality.personality.trim() ? (
-                  <Markdown style={markdownStyles}>
-                    {cleanMessageContent(dbPersonality.personality)}
-                  </Markdown>
-                ) : (
-                  <Text style={[styles.messageText, { color: colors.textMuted }]}>
-                    No personality available
-                  </Text>
-                )
+                <Text style={[styles.messageText, { color: colors.textMuted }]}>
+                  No personality configured yet.
+                </Text>
               )}
             </View>
           )}
@@ -2476,7 +2400,6 @@ export default function ChatScreen() {
                     key={skill.id}
                     label={skill.skill_label}
                     onPress={() => handleSkillPress(skill)}
-                    color={mascot.color}
                   />
                 ))
                 : mascot.skills.map((skill) => (
@@ -2532,7 +2455,6 @@ export default function ChatScreen() {
                 placeholder={t.chat.placeholder}
                 disabled={!canUse}
                 isLoading={isLoading}
-                mascotColor={mascot.color}
                 showLLMPicker={true}
                 chatLLM={chatLLM}
                 onLLMChange={setChatLLM}
@@ -2564,6 +2486,29 @@ export default function ChatScreen() {
           {content}
         </View>
       )}
+
+      <SkillEditor
+        visible={isSkillEditorVisible}
+        onClose={() => setIsSkillEditorVisible(false)}
+        onSave={() => {
+          refetchSkills();
+        }}
+        mascotId={mascotId || '1'}
+        mascotName={mascot.name}
+        mascotColor={mascot.color}
+        skill={null}
+      />
+
+      <PersonalityEditor
+        visible={isPersonalityEditorVisible}
+        onClose={() => setIsPersonalityEditorVisible(false)}
+        onSave={() => {
+          refetchPersonality();
+        }}
+        mascotId={mascotId || '1'}
+        mascotName={mascot.name}
+        personality={dbPersonality}
+      />
 
       {/* Image Preview Modal */}
       <Modal
@@ -2803,6 +2748,22 @@ const styles = StyleSheet.create({
   skillsTabContent: {
     padding: 16,
     gap: 16,
+  },
+  customAddSkillButtonRow: {
+    alignItems: 'flex-start',
+    marginBottom: 4,
+  },
+  customAddSkillButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  customAddSkillButtonText: {
+    fontSize: 14,
+    lineHeight: 18,
   },
   personalityContent: {
     padding: 16,

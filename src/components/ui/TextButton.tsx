@@ -7,6 +7,8 @@ export type TextButtonState = 'default' | 'hover';
 export type TextButtonProps = {
   label: string;
   onPress?: () => void;
+  /** Custom text color */
+  color?: string;
   /** Force a specific state for preview purposes */
   forceState?: TextButtonState;
 };
@@ -14,6 +16,7 @@ export type TextButtonProps = {
 export function TextButton({
   label,
   onPress,
+  color,
   forceState,
 }: TextButtonProps) {
   const { colors } = useTheme();
@@ -47,7 +50,7 @@ export function TextButton({
         styles.container,
         webTransitionStyle,
         {
-          backgroundColor: isHovered ? hexToRgba(colors.primary, 0.1) : 'transparent',
+          backgroundColor: isHovered ? hexToRgba(color || colors.primary, 0.1) : 'transparent',
         },
       ]}
     >
@@ -59,7 +62,7 @@ export function TextButton({
             fontSize: textStyles.button.fontSize,
             lineHeight: textStyles.button.lineHeight,
             letterSpacing: textStyles.button.letterSpacing,
-            color: colors.primary,
+            color: color || colors.primary,
           },
         ]}
       >

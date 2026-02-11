@@ -1,11 +1,10 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, Platform } from 'react-native';
-import { useRouter } from 'expo-router';
+import { View, Text, StyleSheet, ScrollView, Pressable, Platform, Alert } from 'react-native';
 import { useTheme, fontFamilies, textStyles } from '@/design-system';
 import { useI18n, LANGUAGES, Language } from '@/i18n';
 import { useAuth } from '@/services/auth';
 import { useIsAdmin } from '@/services/admin';
-import { useSubscription } from '@/services/subscription';
+import { useSubscription, openBillingPortal } from '@/services/subscription';
 import { Icon, CreateMascotModal } from '@/components';
 import { ChangelogModal } from '@/components/ui/ChangelogModal';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -178,7 +177,6 @@ function LanguageOption({ code, name, nativeName, isSelected, onPress }: Languag
 }
 
 export default function ProfileScreen() {
-  const router = useRouter();
   const { colors, mode, setMode } = useTheme();
   const { language, setLanguage, t } = useI18n();
   const { user, signOut } = useAuth();
@@ -186,9 +184,27 @@ export default function ProfileScreen() {
   const { isSubscribed } = useSubscription();
   const [showChangelog, setShowChangelog] = React.useState(false);
   const [showCreateMascotModal, setShowCreateMascotModal] = React.useState(false);
+  const [isOpeningPortal, setIsOpeningPortal] = React.useState(false);
 
   const userName = user?.user_metadata?.full_name || user?.user_metadata?.name || user?.email?.split('@')[0] || 'User';
   const userEmail = user?.email || '';
+
+  const handleManageSubscription = async () => {
+    if (isOpeningPortal) return;
+    setIsOpeningPortal(true);
+    try {
+      await openBillingPortal();
+    } catch (error: any) {
+      const message = error?.message || 'Failed to open subscription settings.';
+      if (Platform.OS === 'web') {
+        window.alert(message);
+      } else {
+        Alert.alert('Subscription', message);
+      }
+    } finally {
+      setIsOpeningPortal(false);
+    }
+  };
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
@@ -325,20 +341,23 @@ export default function ProfileScreen() {
             {t.profile.account}
           </Text>
 
-          {/* Only show mascot chooser for Pro users or Admin */}
+          {/* Only show mascot creation for Pro users or Admin */}
           {(isSubscribed || isAdmin) && (
             <>
-              <SettingRow
-                label="Choose Mascots"
-                onPress={() => router.push('/(onboarding)/select-mascots')}
-                showCheckmark={false}
-              />
               <SettingRow
                 label="Create Custom Mascot"
                 onPress={() => setShowCreateMascotModal(true)}
                 showCheckmark={false}
               />
             </>
+          )}
+          {isSubscribed && !isAdmin && (
+            <SettingRow
+              label={isOpeningPortal ? 'Opening subscription settings...' : 'Manage Subscription'}
+              value="Downgrade to Standard"
+              onPress={handleManageSubscription}
+              showCheckmark={false}
+            />
           )}
           <Pressable
             style={[

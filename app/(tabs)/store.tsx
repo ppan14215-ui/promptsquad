@@ -1,16 +1,17 @@
-import { View, StyleSheet, ScrollView, Text, Modal, Pressable, Platform, useWindowDimensions, TouchableWithoutFeedback } from 'react-native';
+import { View, StyleSheet, ScrollView, Text, Modal, Pressable, Platform, useWindowDimensions, TouchableWithoutFeedback, Alert } from 'react-native';
 import { useState, useEffect, useMemo } from 'react';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { MascotCard, TextButton, BigPrimaryButton, CreateCustomCard, MascotDetails, Skill, PaywallModal, CreateMascotModal } from '@/components';
 import { useTheme, textStyles, fontFamilies } from '@/design-system';
 import { useI18n } from '@/i18n';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useIsAdmin, useMascots, MascotBasic, useMascotSkills, MascotSkill } from '@/services/admin';
+import { useIsAdmin, useMascots, MascotBasic, useMascotSkills, MascotSkill, deleteMascot } from '@/services/admin';
+import { useAuth } from '@/services/auth';
 import { getMascotImageSource, getMascotGrayscaleImageSource } from '@/services/admin/mascot-images';
-import { useSubscription } from '@/services/subscription';
+import { useSubscription, openBillingPortal } from '@/services/subscription';
 import { useMascotLikeCounts } from '@/services/mascot-likes';
 import { useUnlockedMascots } from '@/services/mascot-access';
-import React from 'react';
+import React, { useCallback } from 'react';
 
 const DESKTOP_BREAKPOINT = 768;
 const CONTENT_MAX_WIDTH = 720;
@@ -93,11 +94,13 @@ type Mascot = {
   id: string;
   name: string;
   subtitle: string;
+  customBio?: string;
   image: any;
   grayscaleImage?: any; // Optional grayscale version
   color: MascotColor;
   isLocked?: boolean;
   isPro?: boolean; // True if mascot is exclusively for pro subscription
+  isCustom?: boolean; // True if mascot is user-created custom mascot
   isUnlocked?: boolean; // True if mascot is unlocked for the user
   isComingSoon?: boolean; // True if mascot is coming soon
   personality: string[];
@@ -440,9 +443,19 @@ export default function StoreScreen() {
   const [paywallProps, setPaywallProps] = useState<{ visible: boolean; feature?: string; mascotId?: string; mascotName?: string }>({ visible: false });
   const [sortBy, setSortBy] = useState<'default' | 'most-liked'>('default');
   const [showCreateMascotModal, setShowCreateMascotModal] = useState(false);
+  const [isOpeningPortal, setIsOpeningPortal] = useState(false);
+
+  const { user } = useAuth();
 
   // Fetch mascots from database with fallback to hardcoded
-  const { mascots: dbMascots, isLoading: isLoadingMascots, error: mascotsError } = useMascots();
+  const { mascots: dbMascots, isLoading: isLoadingMascots, error: mascotsError, refetch: refetchMascots } = useMascots();
+
+  // Refetch mascots when screen comes into focus (e.g. after creating new mascot)
+  useFocusEffect(
+    useCallback(() => {
+      refetchMascots();
+    }, [refetchMascots])
+  );
 
   // Convert database mascots to Mascot type with fallback to hardcoded
   const allMascots: Mascot[] = useMemo(() => {
@@ -456,6 +469,7 @@ export default function StoreScreen() {
         const mascotId = parseInt(m.id);
         // Use DB flags if available, fallback to ID logic, handle nulls
         const isFree = (m.is_free != null) ? m.is_free : (mascotId >= 1 && mascotId <= 10);
+        const isCustom = m.is_custom === true;
         const isPro = (m.is_pro != null) ? m.is_pro : (mascotId >= 11 && mascotId <= 20);
         const isComingSoon = m.is_active === false;
 
@@ -468,6 +482,7 @@ export default function StoreScreen() {
           id: m.id,
           name: m.name,
           subtitle: m.subtitle || '',
+          customBio: m.question_prompt || undefined,
           image: imageSource,
           grayscaleImage: grayscaleSource || undefined,
           color: (m.color || 'yellow') as MascotColor,
@@ -475,7 +490,8 @@ export default function StoreScreen() {
           models: hardcodedMascot?.models || [],
           skills: hardcodedMascot?.skills || [],
           isLocked: !isUnlocked, // Locked if not unlocked
-          isPro: isPro,
+          isPro: isCustom ? false : isPro,
+          isCustom: isCustom,
           isUnlocked: isUnlocked,
           isComingSoon: isComingSoon,
         };
@@ -485,9 +501,8 @@ export default function StoreScreen() {
       if (!isAdmin) {
         converted = converted.filter(m => {
           const dbMascot = dbMascots.find(db => db.id === m.id);
-          const isReady = (dbMascot as any)?.is_active !== false;
           const isVisible = (dbMascot as any)?.is_visible !== false;
-          return isReady && isVisible;
+          return isVisible;
         });
       }
 
@@ -518,6 +533,9 @@ export default function StoreScreen() {
   const { likeCounts } = useMascotLikeCounts(mascotIds);
 
   const isDesktop = width >= DESKTOP_BREAKPOINT;
+  const isCompactMobile = !isDesktop;
+  const mobileGridGap = 10;
+  const mobileCardSize = Math.max(156, Math.min(176, Math.floor((width - 32 - mobileGridGap) / 2)));
 
   // Get selected mascot from list
   const selectedMascot = selectedMascotId ? allMascots.find(m => m.id === selectedMascotId) : null;
@@ -586,6 +604,10 @@ export default function StoreScreen() {
     router.push(`/chat/${selectedMascot.id}`);
   };
 
+  const handleQuickStartChat = (mascotId: string) => {
+    router.push(`/chat/${mascotId}`);
+  };
+
   const handleUnlock = () => {
     if (!selectedMascot) return;
 
@@ -622,6 +644,39 @@ export default function StoreScreen() {
     if (!selectedMascotId) return;
     handleCloseModal();
     router.push(`/chat/${selectedMascotId}?skillId=${skill.id}`);
+  };
+
+  const handleDeleteMascot = async (mascotId: string) => {
+    if (Platform.OS === 'web') {
+      const confirmed = window.confirm('Are you sure you want to delete this mascot? This action cannot be undone.');
+      if (!confirmed) return;
+    } else {
+      // Create a promise to handle Alert async behavior on native
+      const confirmed = await new Promise<boolean>((resolve) => {
+        Alert.alert(
+          'Delete Mascot',
+          'Are you sure you want to delete this mascot? This action cannot be undone.',
+          [
+            { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+            { text: 'Delete', style: 'destructive', onPress: () => resolve(true) }
+          ]
+        );
+      });
+      if (!confirmed) return;
+    }
+
+    try {
+      await deleteMascot(mascotId);
+      handleCloseModal();
+      refetchMascots();
+    } catch (error) {
+      console.error('Failed to delete mascot:', error);
+      if (Platform.OS === 'web') {
+        window.alert('Failed to delete mascot. Please try again.');
+      } else {
+        Alert.alert('Error', 'Failed to delete mascot. Please try again.');
+      }
+    }
   };
 
   // Component to fetch and display mascot details with all data
@@ -671,6 +726,7 @@ export default function StoreScreen() {
       <MascotDetails
         name={mascot.name}
         subtitle={mascot.subtitle}
+        customBio={mascot.customBio}
         imageSource={mascot.image}
         personality={personality}
         models={models}
@@ -683,6 +739,13 @@ export default function StoreScreen() {
         onTryOut={onTryOut}
         onUnlock={onUnlock}
         onSkillPress={onSkillPress}
+        isCustom={dbMascot?.is_custom ?? false}
+        onDelete={
+          // Allow delete if user is owner of custom mascot
+          (user && dbMascot?.owner_id === user.id)
+            ? () => handleDeleteMascot(mascot.id)
+            : undefined
+        }
       />
     );
   });
@@ -776,7 +839,15 @@ export default function StoreScreen() {
               <Text style={[styles.loadingText, { color: colors.textMuted }]}>Loading mascots...</Text>
             </View>
           ) : (
-            <View style={styles.grid}>
+            <View
+              style={[
+                styles.grid,
+                isCompactMobile && {
+                  gap: mobileGridGap,
+                  justifyContent: 'space-between',
+                },
+              ]}
+            >
               {displayedMascots.map((mascot) => {
                 return (
                   <MascotCard
@@ -789,14 +860,27 @@ export default function StoreScreen() {
                     colorVariant={mascot.color}
                     isLocked={getMascotLockStatus(mascot)}
                     isPro={mascot.isPro || false}
+                    isCustom={mascot.isCustom || false}
                     isUnlocked={mascot.isUnlocked || false}
                     isComingSoon={mascot.isComingSoon}
+                    cardSize={isCompactMobile ? mobileCardSize : undefined}
                     onPress={() => handleMascotPress(mascot.id)}
                     onUnlock={() => handleMascotUnlock(mascot)}
+                    onHoverAction={
+                      !getMascotLockStatus(mascot) && !mascot.isComingSoon
+                        ? () => handleQuickStartChat(mascot.id)
+                        : undefined
+                    }
+                    hoverActionLabel={
+                      !getMascotLockStatus(mascot) && !mascot.isComingSoon
+                        ? 'Start chatting'
+                        : undefined
+                    }
                   />
                 );
               })}
               <CreateCustomCard
+                cardSize={isCompactMobile ? mobileCardSize : undefined}
                 onPress={() => {
                   if (!isSubscribed && !isAdmin) {
                     setPaywallProps({
@@ -814,22 +898,36 @@ export default function StoreScreen() {
         </View>
       </ScrollView>
 
-      {/* Floating CTA - floats above content on all platforms */}
-      <View style={[styles.floatingCta, { paddingBottom: Math.max(16, insets.bottom) }]}>
-        <View style={styles.floatingCtaInner}>
-          <BigPrimaryButton
-            label={isSubscribed ? "Manage Subscription" : t.home.subscribeCta}
-            onPress={() => {
-              if (isSubscribed) {
-                // Navigate to account or manage sub
-                console.log('Manage subscription');
-              } else {
-                setPaywallProps({ visible: true, feature: 'Pro Subscription' });
-              }
-            }}
-          />
+      {/* Floating CTA - hidden for admins */}
+      {!isAdmin && (
+        <View style={[styles.floatingCta, { paddingBottom: Math.max(16, insets.bottom) }]}>
+          <View style={styles.floatingCtaInner}>
+            <BigPrimaryButton
+              label={isSubscribed ? (isOpeningPortal ? 'Opening...' : 'Manage Subscription') : t.home.subscribeCta}
+              onPress={async () => {
+                if (isSubscribed) {
+                  if (isOpeningPortal) return;
+                  setIsOpeningPortal(true);
+                  try {
+                    await openBillingPortal();
+                  } catch (error: any) {
+                    const message = error?.message || 'Failed to open subscription settings.';
+                    if (Platform.OS === 'web') {
+                      window.alert(message);
+                    } else {
+                      Alert.alert('Subscription', message);
+                    }
+                  } finally {
+                    setIsOpeningPortal(false);
+                  }
+                } else {
+                  setPaywallProps({ visible: true, feature: 'Pro Subscription' });
+                }
+              }}
+            />
+          </View>
         </View>
-      </View>
+      )}
 
       {/* Mascot Details Modal */}
       <Modal
@@ -872,9 +970,9 @@ export default function StoreScreen() {
       <CreateMascotModal
         visible={showCreateMascotModal}
         onClose={() => setShowCreateMascotModal(false)}
-        onSuccess={() => {
-          // Refresh mascots list after creation
-          // The mascots hook should auto-refresh
+        onSuccess={(newMascotId: string) => {
+          // Navigate directly to chat with the newly created mascot
+          router.push(`/chat/${newMascotId}`);
         }}
       />
     </SafeAreaView>

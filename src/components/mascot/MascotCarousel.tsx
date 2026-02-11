@@ -12,6 +12,7 @@ export type MascotCarouselMascot = {
   image: any;
   color: MascotColorVariant;
   isPro?: boolean;
+  isCustom?: boolean;
   isComingSoon?: boolean;
 };
 
@@ -157,12 +158,12 @@ export function MascotCarousel({
                 ]}
                 onPress={isComingSoon ? undefined : () => onMascotPress(mascot, actualIndex, isSelected)}
               >
-                {/* Pro Badge */}
-                {mascot.isPro && !isComingSoon && (
+                {/* Access Badge */}
+                {(mascot.isCustom || mascot.isPro) && !isComingSoon && (
                   <View style={[
                     styles.proBadge,
                     {
-                      backgroundColor: colors.primary,
+                      backgroundColor: mascot.isCustom ? colors.teal : colors.primary,
                       top: isSelected ? 8 * scale : 4 * scale,
                       right: isSelected ? 8 * scale : 4 * scale,
                       paddingHorizontal: (isSelected ? 6 : 4) * scale,
@@ -176,7 +177,7 @@ export function MascotCarousel({
                         color: colors.buttonText,
                         fontSize: (isSelected ? 8 : 6) * scale,
                       }
-                    ]}>PRO</Text>
+                    ]}>{mascot.isCustom ? 'CUSTOM' : 'PRO'}</Text>
                   </View>
                 )}
 

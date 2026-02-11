@@ -176,10 +176,13 @@ export type Database = {
           id: string
           image_url: string
           is_active: boolean | null
+          is_custom: boolean | null
           is_free: boolean | null
           is_pro: boolean | null
           is_ready: boolean | null
+          is_visible: boolean | null
           name: string
+          owner_id: string | null
           question_prompt: string | null
           sort_order: number | null
           subtitle: string | null
@@ -191,10 +194,13 @@ export type Database = {
           id: string
           image_url: string
           is_active?: boolean | null
+          is_custom?: boolean | null
           is_free?: boolean | null
           is_pro?: boolean | null
           is_ready?: boolean | null
+          is_visible?: boolean | null
           name: string
+          owner_id?: string | null
           question_prompt?: string | null
           sort_order?: number | null
           subtitle?: string | null
@@ -205,11 +211,14 @@ export type Database = {
           created_at?: string | null
           id?: string
           image_url?: string
-          is_active: boolean | null
-          is_free: boolean | null
-          is_pro: boolean | null
-          is_ready: boolean | null
+          is_active?: boolean | null
+          is_custom?: boolean | null
+          is_free?: boolean | null
+          is_pro?: boolean | null
+          is_ready?: boolean | null
+          is_visible?: boolean | null
           name?: string
+          owner_id?: string | null
           question_prompt?: string | null
           sort_order?: number | null
           subtitle?: string | null

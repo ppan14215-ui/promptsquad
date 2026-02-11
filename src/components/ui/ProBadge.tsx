@@ -5,9 +5,10 @@ type ProBadgeProps = {
     size?: 'small' | 'medium';
     color?: string;
     style?: any;
+    label?: string;
 };
 
-export const ProBadge: React.FC<ProBadgeProps> = ({ size = 'small', color = '#8A2BE2', style }) => {
+export const ProBadge: React.FC<ProBadgeProps> = ({ size = 'small', color = '#8A2BE2', style, label = 'PRO' }) => {
     const isSmall = size === 'small';
 
     return (
@@ -16,7 +17,7 @@ export const ProBadge: React.FC<ProBadgeProps> = ({ size = 'small', color = '#8A
             { backgroundColor: color, borderRadius: 999, paddingVertical: isSmall ? 2 : 4, paddingHorizontal: isSmall ? 8 : 12 },
             style
         ]}>
-            <Text style={[styles.text, { fontSize: isSmall ? 10 : 12 }]}>PRO</Text>
+            <Text style={[styles.text, { fontSize: isSmall ? 10 : 12 }]}>{label}</Text>
         </View>
     );
 };

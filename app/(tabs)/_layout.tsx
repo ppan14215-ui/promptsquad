@@ -1,5 +1,5 @@
 import { Tabs } from 'expo-router';
-import { Platform } from 'react-native';
+import { Platform, useWindowDimensions } from 'react-native';
 import { Icon } from '@/components';
 import { useTheme, fontFamilies } from '@/design-system';
 import { useIsAdmin } from '@/services/admin';
@@ -9,6 +9,8 @@ export default function TabsLayout() {
   const { colors } = useTheme();
   const { isAdmin } = useIsAdmin();
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
+  const isCompactMobile = width <= 380;
 
   return (
     <Tabs
@@ -20,17 +22,23 @@ export default function TabsLayout() {
           backgroundColor: colors.background,
           borderTopColor: colors.outline,
           borderTopWidth: 1,
-          // Standard height + safe area (accounts for edge-to-edge on Android)
-          height: 60 + insets.bottom,
-          paddingTop: 10,
-          paddingBottom: insets.bottom,
+          // Keep compact on small screens to maximize content visibility.
+          minHeight: (isCompactMobile ? 56 : 60) + insets.bottom,
+          height: (isCompactMobile ? 56 : 60) + insets.bottom,
+          paddingTop: isCompactMobile ? 6 : 8,
+          paddingBottom: Math.max(insets.bottom, isCompactMobile ? 6 : 8),
         },
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.textMuted,
+        tabBarShowLabel: !isCompactMobile,
         tabBarLabelStyle: {
           fontFamily: fontFamilies.figtree.medium,
           fontSize: 10,
-          marginTop: 4,
+          lineHeight: 12,
+          marginTop: 1,
+        },
+        tabBarItemStyle: {
+          paddingVertical: isCompactMobile ? 4 : 2,
         },
       }}
     >

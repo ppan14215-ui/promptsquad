@@ -14,7 +14,7 @@ import {
 } from '@/config/mascots';
 
 export function useMergedMascots() {
-    const { mascots: dbMascots, isLoading: isLoadingMascots, error: mascotsError } = useMascots();
+    const { mascots: dbMascots, isLoading: isLoadingMascots, error: mascotsError, refetch: refetchMascots } = useMascots();
     const { unlockedMascotIds, isLoading: isLoadingUnlocked } = useUnlockedMascots();
     const { isAdmin } = useIsAdmin();
     const { isSubscribed } = useSubscription();
@@ -29,11 +29,12 @@ export function useMergedMascots() {
                     const imageSource = getMascotImageSource(m.image_url || null) || mascotImages.bear;
                     // Find matching hardcoded mascot for fallback questionPrompt
                     const hardcodedMascot = ALL_MASCOTS.find((hm) => hm.id === m.id);
+                    const isCustom = m.is_custom || false;
 
                     // Logic: Trust DB is_free/is_pro if present. Fallback to index logic.
                     // is_free is the source of truth in DB. is_pro is derived in useMascots.
                     const isFree = m.is_free !== undefined ? m.is_free : (parseInt(m.id) <= 4);
-                    const isPro = !isFree;
+                    const isPro = !isFree && !isCustom;
 
                     return {
                         id: m.id,
@@ -47,6 +48,8 @@ export function useMergedMascots() {
                         skills: hardcodedMascot?.skills || [], // Include hardcoded skills as fallback
                         isPro: isPro,
                         isFree: isFree,
+                        isCustom: isCustom,
+                        ownerId: m.owner_id || undefined,
                     } as OwnedMascot;
                 });
 
@@ -54,10 +57,9 @@ export function useMergedMascots() {
             if (!isAdmin) {
                 convertedMascots = convertedMascots.filter((m) => {
                     const dbMascot = dbMascots.find(db => db.id === m.id);
-                    // Default to true (visible) if is_ready/is_visible is null/undefined to avoid hiding everything before migration runs
-                    const isReady = dbMascot?.is_ready !== false;
+                    // Non-admin users should still see not-ready mascots as "Coming Soon".
                     const isVisible = dbMascot?.is_visible !== false;
-                    return isReady && isVisible;
+                    return isVisible;
                 });
             }
         } else {
@@ -78,9 +80,16 @@ export function useMergedMascots() {
             return [];
         }
 
-        // Pro Users: Show whatever they have unlocked/selected
+        // Pro Users: Show unlocked mascots + their own custom mascots
+        // (RLS ensures we only receive the user's own custom mascots from DB)
         if (isSubscribed) {
-            return convertedMascots.filter(m => unlockedMascotIds.includes(m.id));
+            return convertedMascots.filter(m => {
+                // Always include custom mascots — RLS already filters to owner only
+                const dbMascot = dbMascots.find(db => db.id === m.id);
+                if (dbMascot?.is_custom || dbMascot?.owner_id) return true;
+                // Include unlocked/selected mascots
+                return unlockedMascotIds.includes(m.id);
+            });
         }
 
         // Free Users: Strict enforcement - ONLY show mascots marked as Free
@@ -92,6 +101,7 @@ export function useMergedMascots() {
     return {
         availableMascots,
         isLoading: isLoadingMascots || isLoadingUnlocked,
-        error: mascotsError
+        error: mascotsError,
+        refetch: refetchMascots
     };
 }

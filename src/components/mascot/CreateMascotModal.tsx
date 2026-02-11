@@ -17,6 +17,7 @@ import { MascotCard, MascotColorVariant } from '@/components/mascot/MascotCard';
 import { getMascotImageSource, MASCOT_IMAGE_KEYS } from '@/services/admin/mascot-images';
 import { supabase } from '@/services/supabase/client';
 import { useAuth } from '@/services/auth';
+import { createSkill, upsertPersonality, useIsAdmin } from '@/services/admin';
 
 // Simple short ID generator (10 chars max for database constraint)
 function generateShortId(): string {
@@ -34,42 +35,69 @@ const COLORS: MascotColorVariant[] = [
     'brown', 'teal', 'orange', 'blue'
 ];
 
-type Step = 'details' | 'appearance' | 'review';
+type Step = 'create' | 'setup' | 'review';
+type AccessTier = 'free' | 'pro';
+type DraftSkill = {
+    id: string;
+    label: string;
+    prompt: string;
+};
 
 type CreateMascotModalProps = {
     visible: boolean;
     onClose: () => void;
-    onSuccess?: () => void;
+    onSuccess?: (mascotId: string) => void;
 };
 
 export function CreateMascotModal({ visible, onClose, onSuccess }: CreateMascotModalProps) {
     const { colors } = useTheme();
     const { user } = useAuth();
+    const { isAdmin } = useIsAdmin();
 
-    const [step, setStep] = useState<Step>('details');
+    const [step, setStep] = useState<Step>('create');
     const [name, setName] = useState('');
     const [subtitle, setSubtitle] = useState('');
     const [selectedColor, setSelectedColor] = useState<MascotColorVariant>('yellow');
     const [selectedImage, setSelectedImage] = useState<string>('bear');
+    const [accessTier, setAccessTier] = useState<AccessTier>('pro');
+    const [bio, setBio] = useState('');
+    const [personality, setPersonality] = useState('');
+    const [draftSkills, setDraftSkills] = useState<DraftSkill[]>([{ id: '1', label: '', prompt: '' }]);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
     // Reset state when modal opens
     useEffect(() => {
         if (visible) {
-            setStep('details');
+            setStep('create');
             setName('');
             setSubtitle('');
             setSelectedColor('yellow');
             setSelectedImage('bear');
+            setAccessTier('pro');
+            setBio('');
+            setPersonality('');
+            setDraftSkills([{ id: '1', label: '', prompt: '' }]);
             setIsSubmitting(false);
             setError(null);
         }
     }, [visible]);
 
+    const updateDraftSkill = (id: string, field: 'label' | 'prompt', value: string) => {
+        setDraftSkills((prev) => prev.map((skill) => (skill.id === id ? { ...skill, [field]: value } : skill)));
+    };
+
+    const addDraftSkill = () => {
+        setDraftSkills((prev) => [...prev, { id: `${Date.now()}-${prev.length}`, label: '', prompt: '' }]);
+    };
+
+    const removeDraftSkill = (id: string) => {
+        setDraftSkills((prev) => (prev.length > 1 ? prev.filter((skill) => skill.id !== id) : prev));
+    };
+
     const handleNext = () => {
         setError(null);
-        if (step === 'details') {
+        if (step === 'create') {
             if (!name.trim()) {
                 setError('Please enter a name for your mascot.');
                 return;
@@ -78,16 +106,27 @@ export function CreateMascotModal({ visible, onClose, onSuccess }: CreateMascotM
                 setError('Please enter a role or subtitle.');
                 return;
             }
-            setStep('appearance');
-        } else if (step === 'appearance') {
+            setStep('setup');
+            return;
+        }
+        if (step === 'setup') {
+            const hasIncompleteSkill = draftSkills.some((skill) => {
+                const hasLabel = !!skill.label.trim();
+                const hasPrompt = !!skill.prompt.trim();
+                return hasLabel !== hasPrompt;
+            });
+            if (hasIncompleteSkill) {
+                setError('Each skill must include both a label and a prompt, or be left empty.');
+                return;
+            }
             setStep('review');
         }
     };
 
     const handleBack = () => {
         setError(null);
-        if (step === 'appearance') setStep('details');
-        else if (step === 'review') setStep('appearance');
+        if (step === 'review') setStep('setup');
+        else if (step === 'setup') setStep('create');
         else onClose();
     };
 
@@ -104,6 +143,8 @@ export function CreateMascotModal({ visible, onClose, onSuccess }: CreateMascotM
             const newMascotId = generateShortId();
 
             // 1. Insert into mascots table (cast to any to handle missing TypeScript types)
+            const isGlobalMascot = isAdmin;
+            const isProMascot = isGlobalMascot ? accessTier === 'pro' : false;
             const { data: mascotData, error: mascotError } = await supabase
                 .from('mascots')
                 .insert({
@@ -112,33 +153,53 @@ export function CreateMascotModal({ visible, onClose, onSuccess }: CreateMascotM
                     subtitle: subtitle.trim(),
                     color: selectedColor,
                     image_url: selectedImage,
-                    owner_id: user.id,
-                    is_custom: true,
+                    question_prompt: !isGlobalMascot ? (bio.trim() || null) : null,
+                    owner_id: isGlobalMascot ? null : user.id,
+                    is_custom: !isGlobalMascot,
                     is_ready: true,
                     is_active: true,
-                    is_free: false,
-                    is_pro: true,
+                    is_free: !isProMascot,
+                    is_pro: isProMascot,
                 } as any)
                 .select()
                 .single();
 
             if (mascotError) throw mascotError;
 
-            // 2. Automatically link/unlock for the user in user_mascots
-            const { error: linkError } = await supabase
-                .from('user_mascots')
-                .insert({
-                    user_id: user.id,
-                    mascot_id: mascotData.id,
-                    purchase_type: 'created',
-                    unlocked_at: new Date().toISOString(),
-                });
+            // 2. For private custom mascots, link/unlock for the creator.
+            if (!isGlobalMascot) {
+                const { error: linkError } = await supabase
+                    .from('user_mascots')
+                    .insert({
+                        user_id: user.id,
+                        mascot_id: mascotData.id,
+                        purchase_type: 'created',
+                        unlocked_at: new Date().toISOString(),
+                    });
 
-            if (linkError) throw linkError;
+                if (linkError) throw linkError;
+            }
 
-            // Success!
-            onSuccess?.();
+            const personalityValue = personality.trim();
+            if (personalityValue) {
+                await upsertPersonality(mascotData.id, personalityValue);
+            }
+
+            const completedSkills = draftSkills
+                .map((skill, index) => ({
+                    label: skill.label.trim(),
+                    prompt: skill.prompt.trim(),
+                    sortOrder: index,
+                }))
+                .filter((skill) => skill.label && skill.prompt);
+
+            for (const skill of completedSkills) {
+                await createSkill(mascotData.id, skill.label, skill.prompt, skill.sortOrder);
+            }
+
+            // Success! Pass the new mascot ID so parent can navigate to chat
             onClose();
+            onSuccess?.(mascotData.id);
 
         } catch (err: any) {
             console.error('Create mascot error:', err);
@@ -148,9 +209,9 @@ export function CreateMascotModal({ visible, onClose, onSuccess }: CreateMascotM
         }
     };
 
-    const renderDetailsStep = () => (
-        <View style={styles.stepContainer}>
-            <Text style={[styles.label, { color: colors.text, fontFamily: fontFamilies.figtree.semiBold }]}>Mascot Name</Text>
+    const renderCreateStep = () => (
+        <ScrollView style={styles.stepScroll} contentContainerStyle={styles.stepScrollContent}>
+            <Text style={[styles.label, { color: colors.text, fontFamily: fontFamilies.figtree.semiBold, marginTop: 0 }]}>Mascot Name</Text>
             <TextInput
                 style={[styles.input, {
                     backgroundColor: colors.surface,
@@ -182,12 +243,46 @@ export function CreateMascotModal({ visible, onClose, onSuccess }: CreateMascotM
             <Text style={[styles.hint, { color: colors.textMuted, fontFamily: fontFamilies.figtree.regular }]}>
                 Give your mascot a specific role or personality description.
             </Text>
-        </View>
-    );
 
-    const renderAppearanceStep = () => (
-        <ScrollView style={styles.stepScroll} contentContainerStyle={styles.stepScrollContent}>
-            <Text style={[styles.sectionTitle, { color: colors.text, fontFamily: fontFamilies.figtree.semiBold }]}>Choose Color</Text>
+            {isAdmin && (
+                <>
+                    <Text style={[styles.sectionTitle, { color: colors.text, fontFamily: fontFamilies.figtree.semiBold, marginTop: 24 }]}>Access Tier</Text>
+                    <View style={styles.tierContainer}>
+                        <TouchableOpacity
+                            onPress={() => setAccessTier('free')}
+                            style={[
+                                styles.tierButton,
+                                { borderColor: colors.outline },
+                                accessTier === 'free' && { backgroundColor: colors.primary, borderColor: colors.primary },
+                            ]}
+                        >
+                            <Text style={[
+                                styles.tierButtonText,
+                                { color: accessTier === 'free' ? colors.buttonText : colors.text, fontFamily: fontFamilies.figtree.medium },
+                            ]}>
+                                Free
+                            </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            onPress={() => setAccessTier('pro')}
+                            style={[
+                                styles.tierButton,
+                                { borderColor: colors.outline },
+                                accessTier === 'pro' && { backgroundColor: colors.primary, borderColor: colors.primary },
+                            ]}
+                        >
+                            <Text style={[
+                                styles.tierButtonText,
+                                { color: accessTier === 'pro' ? colors.buttonText : colors.text, fontFamily: fontFamilies.figtree.medium },
+                            ]}>
+                                Pro
+                            </Text>
+                        </TouchableOpacity>
+                    </View>
+                </>
+            )}
+
+            <Text style={[styles.sectionTitle, { color: colors.text, fontFamily: fontFamilies.figtree.semiBold, marginTop: 24 }]}>Choose Color</Text>
             <View style={styles.colorGrid}>
                 {COLORS.map(c => (
                     <TouchableOpacity
@@ -209,13 +304,7 @@ export function CreateMascotModal({ visible, onClose, onSuccess }: CreateMascotM
                     <TouchableOpacity
                         key={imgKey}
                         onPress={() => setSelectedImage(imgKey)}
-                        style={[
-                            styles.imageOption,
-                            selectedImage === imgKey && {
-                                borderColor: colors.primary,
-                                backgroundColor: colors.primaryBg
-                            }
-                        ]}
+                        style={styles.imageOption}
                     >
                         <MascotCard
                             id={imgKey}
@@ -230,6 +319,126 @@ export function CreateMascotModal({ visible, onClose, onSuccess }: CreateMascotM
                     </TouchableOpacity>
                 ))}
             </View>
+
+        </ScrollView>
+    );
+
+    const renderSetupStep = () => (
+        <ScrollView style={styles.stepScroll} contentContainerStyle={styles.stepScrollContent}>
+            {!isAdmin && (
+                <>
+                    <Text style={[styles.sectionTitle, { color: colors.text, marginTop: 0, fontFamily: fontFamilies.figtree.semiBold }]}>
+                        Bio (optional)
+                    </Text>
+                    <TextInput
+                        style={[styles.textAreaInput, {
+                            backgroundColor: colors.surface,
+                            color: colors.text,
+                            borderColor: colors.outline,
+                            fontFamily: fontFamilies.figtree.regular,
+                            minHeight: 88,
+                        }]}
+                        placeholder="Short bio shown in mascot details..."
+                        placeholderTextColor={colors.textMuted}
+                        value={bio}
+                        onChangeText={setBio}
+                        multiline
+                        numberOfLines={3}
+                        maxLength={220}
+                        textAlignVertical="top"
+                    />
+                    <Text style={[styles.hint, { color: colors.textMuted, fontFamily: fontFamilies.figtree.regular, marginTop: 8, marginBottom: 4 }]}>
+                        For custom mascots, this manual bio appears in the details card.
+                    </Text>
+                </>
+            )}
+
+            <Text style={[styles.sectionTitle, { color: colors.text, marginTop: 24, fontFamily: fontFamilies.figtree.semiBold }]}>
+                Personality (optional)
+            </Text>
+            <TextInput
+                style={[styles.textAreaInput, {
+                    backgroundColor: colors.surface,
+                    color: colors.text,
+                    borderColor: colors.outline,
+                    fontFamily: fontFamilies.figtree.regular,
+                }]}
+                placeholder="Define how this mascot communicates and behaves..."
+                placeholderTextColor={colors.textMuted}
+                value={personality}
+                onChangeText={setPersonality}
+                multiline
+                numberOfLines={6}
+                textAlignVertical="top"
+            />
+
+            <View style={styles.skillsHeaderRow}>
+                <Text style={[styles.sectionTitle, { color: colors.text, fontFamily: fontFamilies.figtree.semiBold, marginTop: 24, marginBottom: 0 }]}>
+                    Skills (optional)
+                </Text>
+                <TouchableOpacity
+                    onPress={addDraftSkill}
+                    style={[styles.addSkillButton, { borderColor: colors.outline, backgroundColor: colors.surface }]}
+                >
+                    <Icon name="add" size={16} color={colors.primary} />
+                    <Text style={[styles.addSkillButtonText, { color: colors.primary, fontFamily: fontFamilies.figtree.medium }]}>
+                        Add skill
+                    </Text>
+                </TouchableOpacity>
+            </View>
+            <Text style={[styles.hint, { color: colors.textMuted, fontFamily: fontFamilies.figtree.regular, marginBottom: 12 }]}>
+                Optional at creation. You can add or edit more later from mascot tabs.
+            </Text>
+
+            {draftSkills.map((skill, index) => (
+                <View
+                    key={skill.id}
+                    style={[styles.skillDraftCard, { borderColor: colors.outline, backgroundColor: colors.surface }]}
+                >
+                    <View style={styles.skillDraftHeader}>
+                        <Text style={[styles.skillDraftTitle, { color: colors.text, fontFamily: fontFamilies.figtree.semiBold }]}>
+                            Skill {index + 1}
+                        </Text>
+                        {draftSkills.length > 1 && (
+                            <TouchableOpacity onPress={() => removeDraftSkill(skill.id)}>
+                                <Text style={[styles.removeSkillText, { color: colors.red, fontFamily: fontFamilies.figtree.medium }]}>
+                                    Remove
+                                </Text>
+                            </TouchableOpacity>
+                        )}
+                    </View>
+                    <TextInput
+                        style={[styles.input, {
+                            backgroundColor: colors.background,
+                            color: colors.text,
+                            borderColor: colors.outline,
+                            fontFamily: fontFamilies.figtree.regular,
+                            marginTop: 10,
+                        }]}
+                        placeholder="Skill label (e.g. Resume review)"
+                        placeholderTextColor={colors.textMuted}
+                        value={skill.label}
+                        onChangeText={(value) => updateDraftSkill(skill.id, 'label', value)}
+                        maxLength={40}
+                    />
+                    <TextInput
+                        style={[styles.textAreaInput, {
+                            backgroundColor: colors.background,
+                            color: colors.text,
+                            borderColor: colors.outline,
+                            fontFamily: fontFamilies.figtree.regular,
+                            marginTop: 10,
+                        }]}
+                        placeholder="Skill prompt"
+                        placeholderTextColor={colors.textMuted}
+                        value={skill.prompt}
+                        onChangeText={(value) => updateDraftSkill(skill.id, 'prompt', value)}
+                        multiline
+                        numberOfLines={4}
+                        textAlignVertical="top"
+                    />
+                </View>
+            ))}
         </ScrollView>
     );
 
@@ -257,8 +466,8 @@ export function CreateMascotModal({ visible, onClose, onSuccess }: CreateMascotM
 
     const getStepTitle = () => {
         switch (step) {
-            case 'details': return 'Create Mascot';
-            case 'appearance': return 'Customize Look';
+            case 'create': return 'Create Mascot';
+            case 'setup': return 'Setup';
             case 'review': return 'Review';
         }
     };
@@ -284,7 +493,7 @@ export function CreateMascotModal({ visible, onClose, onSuccess }: CreateMascotM
                                 {getStepTitle()}
                             </Text>
                             <Text style={[styles.modalSubtitle, { fontFamily: fontFamilies.figtree.regular, color: colors.textMuted }]}>
-                                Step {step === 'details' ? '1' : step === 'appearance' ? '2' : '3'} of 3
+                                Step {step === 'create' ? '1' : step === 'setup' ? '2' : '3'} of 3
                             </Text>
                         </View>
                         <Pressable onPress={onClose} style={styles.closeButton}>
@@ -294,8 +503,8 @@ export function CreateMascotModal({ visible, onClose, onSuccess }: CreateMascotM
 
                     {/* Content */}
                     <View style={styles.content}>
-                        {step === 'details' && renderDetailsStep()}
-                        {step === 'appearance' && renderAppearanceStep()}
+                        {step === 'create' && renderCreateStep()}
+                        {step === 'setup' && renderSetupStep()}
                         {step === 'review' && renderReviewStep()}
                     </View>
 
@@ -311,7 +520,7 @@ export function CreateMascotModal({ visible, onClose, onSuccess }: CreateMascotM
                     {/* Footer */}
                     <View style={[styles.footer, { borderTopColor: colors.outline }]}>
                         <BigSecondaryButton
-                            label={step === 'details' ? 'Cancel' : 'Back'}
+                            label={step === 'create' ? 'Cancel' : 'Back'}
                             onPress={handleBack}
                             disabled={isSubmitting}
                         />
@@ -413,6 +622,21 @@ const styles = StyleSheet.create({
         flexWrap: 'wrap',
         gap: 16,
     },
+    tierContainer: {
+        flexDirection: 'row',
+        gap: 8,
+    },
+    tierButton: {
+        flex: 1,
+        borderWidth: 1,
+        borderRadius: 10,
+        paddingVertical: 10,
+        alignItems: 'center',
+    },
+    tierButtonText: {
+        fontSize: 14,
+        lineHeight: 20,
+    },
     colorCircle: {
         width: 40,
         height: 40,
@@ -435,6 +659,53 @@ const styles = StyleSheet.create({
     },
     cardOverlay: {
         ...StyleSheet.absoluteFillObject,
+    },
+    textAreaInput: {
+        borderRadius: 12,
+        borderWidth: 1,
+        paddingHorizontal: 16,
+        paddingVertical: 12,
+        fontSize: 15,
+        minHeight: 120,
+    },
+    skillsHeaderRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 12,
+    },
+    addSkillButton: {
+        marginTop: 24,
+        borderWidth: 1,
+        borderRadius: 10,
+        paddingHorizontal: 10,
+        paddingVertical: 8,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+    },
+    addSkillButtonText: {
+        fontSize: 13,
+        lineHeight: 18,
+    },
+    skillDraftCard: {
+        marginTop: 12,
+        borderWidth: 1,
+        borderRadius: 12,
+        padding: 12,
+    },
+    skillDraftHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+    },
+    skillDraftTitle: {
+        fontSize: 14,
+        lineHeight: 20,
+    },
+    removeSkillText: {
+        fontSize: 13,
+        lineHeight: 18,
     },
     reviewContainer: {
         flex: 1,

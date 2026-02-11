@@ -15,6 +15,7 @@ import { PaywallModal } from './PaywallModal';
 import { ProBadge } from './ProBadge';
 import * as ImagePicker from 'expo-image-picker';
 import { LLM_OPTIONS, LLMPreference } from '@/services/preferences';
+import { resolveMascotColor, getContrastColor } from '@/lib/utils/mascot-colors';
 
 export type ChatInputBoxRef = {
   focus: () => void;
@@ -73,10 +74,23 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [showWebSearchTooltip, setShowWebSearchTooltip] = useState(false);
   const [showDeepThinkingTooltip, setShowDeepThinkingTooltip] = useState(false);
+  const [isAddHovered, setIsAddHovered] = useState(false);
+  const [isWebSearchHovered, setIsWebSearchHovered] = useState(false);
+  const [isDeepThinkingHovered, setIsDeepThinkingHovered] = useState(false);
+  const [isSendHovered, setIsSendHovered] = useState(false);
   const [inputHeight, setInputHeight] = useState(48); // Start with min height
   const [attachedImage, setAttachedImage] = useState<{ uri: string; base64?: string; mimeType?: string } | null>(null);
   const [showImagePreview, setShowImagePreview] = useState(false);
   const inputRef = useRef<TextInput>(null);
+  const sendButtonColor = resolveMascotColor(mascotColor);
+  const sendIconColor = getContrastColor(sendButtonColor);
+  const webIconTransitionStyle = Platform.select({
+    web: {
+      transition: 'all 160ms ease-out',
+      cursor: 'pointer',
+    } as unknown as object,
+    default: {},
+  });
 
   // Expose focus method to parent component
   useImperativeHandle(ref, () => ({
@@ -394,11 +408,21 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             {/* Add Image Button */}
             <Pressable
-              style={styles.iconButton}
+              style={[
+                styles.iconButton,
+                webIconTransitionStyle,
+                isAddHovered && { backgroundColor: colors.surface },
+              ]}
               onPress={handlePickImage}
               disabled={disabled || isLoading}
+              onHoverIn={() => setIsAddHovered(true)}
+              onHoverOut={() => setIsAddHovered(false)}
             >
-              <Icon name="add" size={20} color={mode === 'dark' ? '#FFFFFF' : colors.icon} />
+              <Icon
+                name="add"
+                size={20}
+                color={isAddHovered ? colors.text : (mode === 'dark' ? '#FFFFFF' : colors.icon)}
+              />
             </Pressable>
 
             {/* Buttons Container */}
@@ -416,19 +440,29 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
                   <Pressable
                     style={[
                       styles.iconButton,
+                      webIconTransitionStyle,
                       webSearchEnabled && { backgroundColor: colors.primaryBg },
+                      isWebSearchHovered && !webSearchEnabled && { backgroundColor: colors.surface },
                     ]}
                     onPress={onWebSearchToggle}
                     disabled={disabled || isLoading}
-                    {...(Platform.OS === 'web' && {
-                      onHoverIn: () => setShowWebSearchTooltip(true),
-                      onHoverOut: () => setShowWebSearchTooltip(false),
-                    })}
+                    onHoverIn={() => {
+                      setIsWebSearchHovered(true);
+                      if (Platform.OS === 'web') setShowWebSearchTooltip(true);
+                    }}
+                    onHoverOut={() => {
+                      setIsWebSearchHovered(false);
+                      if (Platform.OS === 'web') setShowWebSearchTooltip(false);
+                    }}
                   >
                     <Icon
                       name="globe"
                       size={18}
-                      color={webSearchEnabled ? (mode === 'dark' ? '#FFFFFF' : colors.primary) : colors.icon}
+                      color={
+                        webSearchEnabled
+                          ? (mode === 'dark' ? '#FFFFFF' : colors.primary)
+                          : (isWebSearchHovered ? colors.text : colors.icon)
+                      }
                     />
                   </Pressable>
                 </View>
@@ -447,19 +481,29 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
                   <Pressable
                     style={[
                       styles.iconButton,
+                      webIconTransitionStyle,
                       deepThinkingEnabled && { backgroundColor: colors.primaryBg },
+                      isDeepThinkingHovered && !deepThinkingEnabled && { backgroundColor: colors.surface },
                     ]}
                     onPress={onDeepThinkingToggle}
                     disabled={disabled || isLoading}
-                    {...(Platform.OS === 'web' && {
-                      onHoverIn: () => setShowDeepThinkingTooltip(true),
-                      onHoverOut: () => setShowDeepThinkingTooltip(false),
-                    })}
+                    onHoverIn={() => {
+                      setIsDeepThinkingHovered(true);
+                      if (Platform.OS === 'web') setShowDeepThinkingTooltip(true);
+                    }}
+                    onHoverOut={() => {
+                      setIsDeepThinkingHovered(false);
+                      if (Platform.OS === 'web') setShowDeepThinkingTooltip(false);
+                    }}
                   >
                     <Icon
                       name="idea"
                       size={18}
-                      color={deepThinkingEnabled ? (mode === 'dark' ? '#FFFFFF' : colors.primary) : colors.icon}
+                      color={
+                        deepThinkingEnabled
+                          ? (mode === 'dark' ? '#FFFFFF' : colors.primary)
+                          : (isDeepThinkingHovered ? colors.text : colors.icon)
+                      }
                     />
                   </Pressable>
                 </View>
@@ -469,18 +513,22 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
               <Pressable
                 style={[
                   styles.sendButton,
+                  webIconTransitionStyle,
                   {
-                    backgroundColor: mascotColor,
+                    backgroundColor: sendButtonColor,
                     opacity: isSendDisabled ? 0.4 : 1, // Lower opacity when disabled
                   },
+                  isSendHovered && !isSendDisabled && { transform: [{ scale: 1.04 }] },
                 ]}
                 onPress={handleSend}
                 disabled={isSendDisabled}
+                onHoverIn={() => setIsSendHovered(true)}
+                onHoverOut={() => setIsSendHovered(false)}
               >
                 <Icon
                   name="send"
                   size={16}
-                  color="#FFFFFF"
+                  color={sendIconColor}
                 />
               </Pressable>
             </View>

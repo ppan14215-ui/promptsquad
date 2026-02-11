@@ -45,7 +45,7 @@ export function ChatHeader({
   isTrial = false,
   trialCount = 0,
   trialLimit = 5,
-  mascotColor,
+  mascotColor: _mascotColor,
 }: ChatHeaderProps) {
   const { colors } = useTheme();
   const { width } = useWindowDimensions();
@@ -145,7 +145,6 @@ export function ChatHeader({
                 label={tab.label}
                 isActive={activeTab === tab.key}
                 onPress={() => onTabChange(tab.key)}
-                activeBgColor={activeTab === tab.key ? mascotColor : undefined}
               />
             ))}
           </View>
@@ -278,7 +277,6 @@ export function ChatHeader({
               label={tab.label}
               isActive={activeTab === tab.key}
               onPress={() => onTabChange(tab.key)}
-              activeBgColor={activeTab === tab.key ? mascotColor : undefined}
             />
           ))}
         </View>

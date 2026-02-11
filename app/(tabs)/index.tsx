@@ -1,4 +1,4 @@
-import { View, StyleSheet, Text, Pressable, Platform, Image, useWindowDimensions, Modal, ActivityIndicator, Keyboard, LayoutAnimation, KeyboardAvoidingView, ScrollView } from 'react-native';
+import { View, StyleSheet, Text, Pressable, Platform, Image, useWindowDimensions, Modal, ActivityIndicator, Keyboard, LayoutAnimation, KeyboardAvoidingView, ScrollView, Alert } from 'react-native';
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -6,7 +6,7 @@ import { Icon, Skill, ChatInputBox, MascotDetails, LinkPill, HomeHeader, MascotC
 import { useTheme, fontFamilies } from '@/design-system';
 import { useAuth } from '@/services/auth';
 import { useSubscription } from '@/services/subscription';
-import { useMascotSkills, MascotSkill, useIsAdmin, useMascots, MascotBasic } from '@/services/admin';
+import { useMascotSkills, MascotSkill, useIsAdmin, useMascots, MascotBasic, deleteMascot } from '@/services/admin';
 import { getMascotImageSource, getMascotGrayscaleImageSource } from '@/services/admin/mascot-images';
 import { useUnlockedMascots } from '@/services/mascot-access';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -55,7 +55,7 @@ export default function HomeScreen() {
   const isDesktop = width >= DESKTOP_BREAKPOINT;
 
   // Use the new hook for merged mascots
-  const { availableMascots, isLoading: isLoadingMascots } = useMergedMascots();
+  const { availableMascots, isLoading: isLoadingMascots, refetch: refetchMergedMascots } = useMergedMascots();
   // We still need this for specific checks if needed, but useMergedMascots handles the filtering
   const { unlockedMascotIds, isLoading: isLoadingUnlocked } = useUnlockedMascots();
 
@@ -194,6 +194,42 @@ export default function HomeScreen() {
     setMessage('');
   };
 
+  const handleDeleteMascot = async (mascotId: string) => {
+    if (Platform.OS === 'web') {
+      const confirmed = window.confirm('Are you sure you want to delete this mascot? This action cannot be undone.');
+      if (!confirmed) return;
+    } else {
+      // Create a promise to handle Alert async behavior on native
+      const confirmed = await new Promise<boolean>((resolve) => {
+        Alert.alert(
+          'Delete Mascot',
+          'Are you sure you want to delete this mascot? This action cannot be undone.',
+          [
+            { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+            { text: 'Delete', style: 'destructive', onPress: () => resolve(true) }
+          ]
+        );
+      });
+      if (!confirmed) return;
+    }
+
+    try {
+      await deleteMascot(mascotId);
+      setSelectedMascotDetails(null);
+      // Wait a moment for DB to update then refresh
+      if (refetchMergedMascots) {
+        setTimeout(() => refetchMergedMascots(), 500);
+      }
+    } catch (error) {
+      console.error('Failed to delete mascot:', error);
+      if (Platform.OS === 'web') {
+        window.alert('Failed to delete mascot. Please try again.');
+      } else {
+        Alert.alert('Error', 'Failed to delete mascot. Please try again.');
+      }
+    }
+  };
+
 
 
   const handleMascotCardPress = async (mascot: any, actualIndex: number, isSelected: boolean) => {
@@ -317,9 +353,8 @@ export default function HomeScreen() {
                 subtitle: m.subtitle,
                 image: m.image,
                 color: m.color as any,
-                // If locked, we show Pro badge (or lock icon if supported)
-                // isPro is passed from useMergedMascots which is equivalent to !isFree
-                isPro: m.isPro || isLocked,
+                isCustom: m.isCustom || false,
+                isPro: !m.isCustom && (m.isPro || isLocked),
               };
             })}
             selectedIndex={selectedIndex}
@@ -405,6 +440,13 @@ export default function HomeScreen() {
                 skills={selectedMascotDetails.id === selectedMascot?.id ? displaySkills : selectedMascotDetails.skills}
                 variant="available"
                 mascotId={selectedMascotDetails.id}
+                isCustom={selectedMascotDetails.isCustom}
+                onDelete={
+                  // Allow delete if user is owner of custom mascot
+                  (user && selectedMascotDetails.ownerId === user.id)
+                    ? () => handleDeleteMascot(selectedMascotDetails.id)
+                    : undefined
+                }
                 onClose={() => setSelectedMascotDetails(null)}
                 onStartChat={() => {
                   setSelectedMascotDetails(null);
