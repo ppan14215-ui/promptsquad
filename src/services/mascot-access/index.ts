@@ -4,6 +4,7 @@ import { useAuth } from '@/services/auth';
 import { logger } from '@/lib/utils/logger';
 import { useIsAdmin } from '@/services/admin';
 import { useOwnedMascots } from './useOwnedMascots';
+import { AppState } from 'react-native';
 
 export type UserMascot = {
   id: string;
@@ -199,20 +200,48 @@ export function useUnlockedMascots(): { unlockedMascotIds: string[]; isLoading: 
   const [isLoading, setIsLoading] = React.useState(true);
 
   React.useEffect(() => {
-    async function fetchUnlocked() {
-      if (!user) {
-        setUnlockedMascotIds([]);
-        setIsLoading(false);
-        return;
-      }
+    if (!user) {
+      setUnlockedMascotIds([]);
+      setIsLoading(false);
+      return;
+    }
 
+    async function fetchUnlocked() {
+      setIsLoading(true);
       const unlocked = await getUnlockedMascots();
       setUnlockedMascotIds(unlocked);
       setIsLoading(false);
     }
 
     fetchUnlocked();
-  }, [user]);
+
+    // Refresh when app comes back from Stripe/browser
+    const appStateSubscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        fetchUnlocked();
+      }
+    });
+
+    // Refresh when unlock/ownership rows change
+    const channel = supabase
+      .channel(`unlocked_mascots_${user.id}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'user_mascots', filter: `user_id=eq.${user.id}` },
+        fetchUnlocked
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'user_owned_mascots', filter: `user_id=eq.${user.id}` },
+        fetchUnlocked
+      )
+      .subscribe();
+
+    return () => {
+      appStateSubscription.remove();
+      supabase.removeChannel(channel);
+    };
+  }, [user?.id]);
 
   return { unlockedMascotIds, isLoading };
 }

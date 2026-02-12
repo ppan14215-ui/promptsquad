@@ -34,6 +34,7 @@ export type MascotBasic = {
   subtitle: string | null;
   image_url: string | null;
   color: string;
+  bio?: string | null;
   question_prompt?: string | null;
   sort_order?: number | null;
   is_free?: boolean | null;
@@ -55,6 +56,7 @@ export async function updateMascot(
     subtitle?: string | null;
     image_url?: string | null;
     color?: string;
+    bio?: string | null;
     question_prompt?: string | null;
     sort_order?: number;
     is_free?: boolean;
@@ -88,7 +90,7 @@ export async function updateMascot(
       updated_at: new Date().toISOString(),
     })
     .eq('id', mascotId)
-    .select('id, name, subtitle, image_url, color, question_prompt, sort_order, is_free, is_active, is_visible')
+    .select('id, name, subtitle, image_url, color, bio, question_prompt, sort_order, is_free, is_active, is_visible')
     .single();
 
   if (error) throw new Error(error.message);
@@ -171,7 +173,7 @@ export function useMascots() {
     try {
       const { data, error } = await supabase
         .from('mascots')
-        .select('id, name, subtitle, image_url, color, question_prompt, sort_order, is_free, is_active, is_visible, owner_id, is_custom')
+        .select('id, name, subtitle, image_url, color, bio, question_prompt, sort_order, is_free, is_active, is_visible, owner_id, is_custom')
         .order('sort_order', { ascending: true });
 
       if (error) {
@@ -218,30 +220,12 @@ export function useMascots() {
 }
 
 // Hook to get skills for a mascot
-export function useMascotSkills(mascotId: string | null, isMascotFree: boolean = false) {
-  const { user } = useAuth();
+export function useMascotSkills(mascotId: string | null, isMascotFree: boolean = false, isMascotOwner: boolean = false) {
   const { isSubscribed } = useSubscription();
-  const [isAdmin, setIsAdmin] = useState(false);
+  const { isAdmin } = useIsAdmin();
   const [skills, setSkills] = useState<MascotSkill[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  // Check admin status first
-  useEffect(() => {
-    async function checkRole() {
-      if (!user) {
-        setIsAdmin(false);
-        return;
-      }
-      try {
-        const { data } = await supabase.from('profiles').select('role').eq('id', user.id).single();
-        setIsAdmin(data?.role === 'admin');
-      } catch (e) {
-        setIsAdmin(false);
-      }
-    }
-    checkRole();
-  }, [user]);
 
   // Force refresh trigger
   const [refreshKey, setRefreshKey] = useState(0);
@@ -259,6 +243,7 @@ export function useMascotSkills(mascotId: string | null, isMascotFree: boolean =
       }
 
       if (isActive) {
+        setSkills([]);
         setIsLoading(true);
         setError(null);
       }
@@ -266,12 +251,14 @@ export function useMascotSkills(mascotId: string | null, isMascotFree: boolean =
       try {
         logger.debug('[useMascotSkills] Fetching skills for mascot:', mascotId);
 
-        // Security: Admins query raw table, Users query secure view (fallback since migration failed)
-        const tableName = isAdmin ? 'mascot_skills' : 'public_mascot_skills';
-        logger.debug(`[useMascotSkills] Querying table: ${tableName} (Admin: ${isAdmin})`);
-
+        // Always query the raw mascot_skills table. It has a permissive "Public Read
+        // Access" RLS policy that lets any authenticated (or anon) user SELECT active
+        // skills. The old approach of routing non-admins through the public_mascot_skills
+        // VIEW failed for some mascots because the view JOINs with the mascots table,
+        // and the RLS on mascots can block the JOIN for certain profiles.
+        // Prompt visibility is handled client-side via hasFullAccess below.
         const { data, error } = await supabase
-          .from(tableName as any)
+          .from('mascot_skills' as any)
           .select('*')
           .eq('mascot_id', mascotId)
           .eq('is_active', true)
@@ -280,28 +267,23 @@ export function useMascotSkills(mascotId: string | null, isMascotFree: boolean =
 
         if (error) {
           if (!isActive) return;
-
-          if (error.code === '42P01') {
-            logger.warn('Secure view not found, please run migration.');
-            setError('System update in progress. Please try again later.');
-          } else {
-            logger.error('[useMascotSkills] DB error:', error);
-            setError(error.message);
-          }
+          logger.error('[useMascotSkills] DB error:', error);
+          setError(error.message);
           setSkills([]);
         } else {
           if (!isActive) return;
 
           logger.debug('[useMascotSkills] Fetched skills:', data?.length || 0, 'skills');
 
-          // Full access: Admin, Pro users, OR free mascot (available to everyone)
-          const hasFullAccess = isAdmin || isSubscribed || isMascotFree;
+          // Full access: Admin, Pro users, free mascot, OR mascot owner (sees real prompts)
+          const hasFullAccess = isAdmin || isSubscribed || isMascotFree || isMascotOwner;
           const enrichedData = (data || []).map((skill: any) => ({
             ...skill,
-            skill_prompt: skill.skill_prompt || null,
+            // For users without full access, mask the full prompt (client-side)
+            skill_prompt: hasFullAccess ? (skill.skill_prompt || null) : null,
             skill_prompt_preview: skill.skill_prompt_preview
               || (skill.skill_prompt ? skill.skill_prompt.substring(0, Math.max(1, Math.floor(skill.skill_prompt.length / 4))) : ''),
-            is_full_access: hasFullAccess
+            is_full_access: hasFullAccess,
           }));
 
           setSkills(enrichedData as MascotSkill[]);
@@ -322,7 +304,7 @@ export function useMascotSkills(mascotId: string | null, isMascotFree: boolean =
     return () => {
       isActive = false;
     };
-  }, [mascotId, isAdmin, isSubscribed, isMascotFree, refreshKey]);
+  }, [mascotId, isAdmin, isSubscribed, isMascotFree, isMascotOwner, refreshKey]);
 
   // Refetch simply increments the key to re-trigger the effect
   const refetch = useCallback(async () => {

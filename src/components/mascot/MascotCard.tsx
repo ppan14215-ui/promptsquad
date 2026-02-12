@@ -110,18 +110,26 @@ export function MascotCard({
         },
         {
           backgroundColor: colors.background,
-          borderWidth: Platform.OS === 'web' ? 0 : 1,
+          borderWidth: Platform.OS === 'web' ? 0 : StyleSheet.hairlineWidth,
           borderColor: colors.outline,
           opacity: effectiveIsComingSoon ? 0.7 : 1, // Reduce opacity for coming soon
         },
         Platform.OS === 'web' && ({
-          boxShadow: isHovered
-            ? `inset 0 0 0 2px ${hoverBorderColor}, ${shadowToCSS('md')}`
-            : `inset 0 0 0 1px ${colors.outline}`,
+          boxShadow: isHovered ? shadowToCSS('md') : 'none',
         } as unknown as object),
         Platform.OS !== 'web' && isHovered && hoverShadowStyle,
       ]}
     >
+      <View
+        pointerEvents="none"
+        style={[
+          styles.cardOutline,
+          {
+            borderColor: isHovered ? hoverBorderColor : colors.outline,
+          },
+        ]}
+      />
+
       {/* Mascot image */}
       <View
         style={[
@@ -253,6 +261,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     overflow: 'hidden',
     position: 'relative',
+  },
+  cardOutline: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    zIndex: 9,
   },
   textContainer: {
     alignItems: 'center',

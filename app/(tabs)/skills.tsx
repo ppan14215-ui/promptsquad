@@ -119,12 +119,13 @@ export default function SkillsScreen() {
     refetchPersonality();
   };
 
-  const handleMascotSaved = async (name: string, subtitle: string, isPro: boolean, isFree: boolean, isReady: boolean, sortOrder: number, color: string, isVisible: boolean) => {
+  const handleMascotSaved = async (name: string, subtitle: string, bio: string, isPro: boolean, isFree: boolean, isReady: boolean, sortOrder: number, color: string, isVisible: boolean) => {
     if (!selectedMascotId) return;
     try {
       await updateMascot(selectedMascotId, {
         name,
         subtitle,
+        bio: bio || null,
         is_pro: isPro,
         is_free: isFree,
         is_ready: isReady,
@@ -565,6 +566,7 @@ export default function SkillsScreen() {
           mascotId={selectedMascot.id}
           currentName={selectedMascot.name}
           currentSubtitle={selectedMascot.subtitle}
+          currentBio={selectedMascot.bio || ''}
           currentIsPro={selectedMascot.is_pro || false}
           currentIsFree={selectedMascot.is_free || false}
           currentIsReady={selectedMascot.is_ready !== false} // Default to true if null/undefined for backward compat

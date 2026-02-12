@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, View, StyleSheet, Platform, Pressable, Text } from 'react-native';
-import { useRouter } from 'expo-router';
+import { Redirect, useRouter } from 'expo-router';
 import { supabase } from '@/services/supabase';
 import { useAuth } from '@/services/auth';
 import { useTheme } from '@/design-system';
@@ -28,105 +28,117 @@ function isRestorablePath(path: string | null | undefined) {
 export default function CallbackScreen() {
   const router = useRouter();
   const { colors } = useTheme();
+  const { user, isLoading } = useAuth();
+  const [manualCheck, setManualCheck] = useState(false);
 
-  const { user } = useAuth();
+  // If we're on native, don't render anything (we're redirecting above)
+  if (Platform.OS !== 'web') {
+    if (isLoading) {
+      return (
+        <View style={[styles.container, { backgroundColor: colors.background }]}>
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
+      );
+    }
+    return <Redirect href={user ? '/(tabs)' : '/(auth)/login'} />;
+  }
+
+  // ─── WEB ONLY below this point ───
 
   useEffect(() => {
-    // Flag to prevent multiple redirects
-    let isRedirecting = false;
-
     const handleOAuthCallback = async () => {
-      // Logic for Web Relay Pattern (Expo Go support)
-      if (Platform.OS === 'web') {
-        const currentPath = getCurrentWebPath();
-        if (isRestorablePath(currentPath)) {
-          await AsyncStorage.setItem(LAST_VISITED_PATH_KEY, currentPath);
-        }
-
-        const params = new URLSearchParams(window.location.search);
-        const redirectTo = params.get('redirect_to');
-        if (redirectTo) {
-          let destination = redirectTo;
-          const lastVisitedPath = await AsyncStorage.getItem(LAST_VISITED_PATH_KEY);
-          if (isRestorablePath(lastVisitedPath)) {
-            try {
-              const parsedRedirect = new URL(redirectTo, window.location.origin);
-              const isSameOriginRoot =
-                parsedRedirect.origin === window.location.origin &&
-                (parsedRedirect.pathname === '/' || parsedRedirect.pathname === '');
-              if (isSameOriginRoot) {
-                destination = `${window.location.origin}${lastVisitedPath}`;
-              }
-            } catch {
-              // If redirect URL can't be parsed, use redirectTo as-is.
-            }
+      // Parse tokens from URL hash (web OAuth redirect)
+      if (window.location.hash?.includes('access_token=')) {
+        try {
+          const hashParams = new URLSearchParams(window.location.hash.slice(1));
+          const accessToken = hashParams.get('access_token');
+          const refreshToken = hashParams.get('refresh_token');
+          if (accessToken && refreshToken) {
+            await supabase.auth.setSession({
+              access_token: accessToken,
+              refresh_token: refreshToken,
+            });
+            window.history.replaceState({}, document.title, window.location.pathname + window.location.search);
           }
-
-          // Relay the hash to the deep link
-          // Ensure we don't redirect to self to avoid loops
-          if (destination !== window.location.href) {
-            window.location.href = destination + window.location.hash;
-          }
-          return;
+        } catch {
+          // Continue with normal callback flow.
         }
       }
 
-      // Standard logic: Wait for AuthContext (which listens to Supabase) to detect the session
-      if (user) {
-        isRedirecting = true;
+      const currentPath = getCurrentWebPath();
+      if (isRestorablePath(currentPath)) {
+        await AsyncStorage.setItem(LAST_VISITED_PATH_KEY, currentPath);
+      }
 
-        // Check for saved redirect path
+      // Handle relay redirect (Vercel callback with redirect_to param)
+      const params = new URLSearchParams(window.location.search);
+      const redirectTo = params.get('redirect_to');
+      if (redirectTo) {
+        let destination = redirectTo;
+        const lastVisitedPath = await AsyncStorage.getItem(LAST_VISITED_PATH_KEY);
+        if (isRestorablePath(lastVisitedPath)) {
+          try {
+            const parsedRedirect = new URL(redirectTo, window.location.origin);
+            const isSameOriginRoot =
+              parsedRedirect.origin === window.location.origin &&
+              (parsedRedirect.pathname === '/' || parsedRedirect.pathname === '');
+            if (isSameOriginRoot) {
+              destination = `${window.location.origin}${lastVisitedPath}`;
+            }
+          } catch {
+            // use redirectTo as-is
+          }
+        }
+
+        try {
+          const parsedDestination = new URL(destination, window.location.origin);
+          const destinationPath = `${parsedDestination.pathname}${parsedDestination.search}`;
+          const currentPathQuery = `${window.location.pathname}${window.location.search}`;
+          if (!destinationPath.includes('/callback') && destinationPath !== currentPathQuery) {
+            window.location.href = parsedDestination.toString() + window.location.hash;
+          }
+        } catch {
+          if (destination !== window.location.href && !destination.includes('/callback')) {
+            window.location.href = destination + window.location.hash;
+          }
+        }
+        return;
+      }
+
+      // Standard: user detected by auth context → redirect to app
+      if (user) {
         const redirectPath = await AsyncStorage.getItem('redirect_after_login');
         if (isRestorablePath(redirectPath)) {
           await AsyncStorage.removeItem('redirect_after_login');
-          router.replace(redirectPath as string);
+          router.replace('/(tabs)');
           return;
         }
-
-        // Fallback to last route the user was on
-        const lastVisitedPath = await AsyncStorage.getItem(LAST_VISITED_PATH_KEY);
-        if (isRestorablePath(lastVisitedPath)) {
-          router.replace(lastVisitedPath as string);
-          return;
-        }
-
         router.replace('/(tabs)');
-      } else {
-        // If no user, wait a bit then show manual button if still nothing
-        // The timeout here matches the manual check timeout below
       }
     };
 
     handleOAuthCallback();
   }, [router, user]);
 
+  // Timeout: if no session after 3s, show manual button
   useEffect(() => {
-    if (user) return; // If user exists, we are handled above.
-
+    if (user) return;
     const timeoutId = setTimeout(async () => {
-      // Final check
-      const { data } = await supabase.auth.getSession();
-      if (data.session) {
-        // Should be picked up by useAuth soon
-        return;
+      try {
+        const { data } = await supabase.auth.getSession();
+        if (data.session) return;
+        setManualCheck(true);
+      } catch {
+        // Supabase lock acquisition can be aborted during parallel auth transitions.
+        // Do not crash the app; fall back to manual recovery UI.
+        setManualCheck(true);
       }
-
-      setManualCheck(true);
-    }, 4000);
-
+    }, 3000);
     return () => clearTimeout(timeoutId);
   }, [user]);
 
-  const [manualCheck, setManualCheck] = useState(false);
-
-  // Extract redirect_to for display
-  let redirectTo: string | null = null;
-  let fallbackDestination: string | null = null;
-  if (Platform.OS === 'web') {
-    const params = new URLSearchParams(window.location.search);
-    redirectTo = params.get('redirect_to');
-    fallbackDestination = `${window.location.origin}/(tabs)`;
-  }
+  const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+  const redirectTo = params?.get('redirect_to') ?? null;
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -149,7 +161,7 @@ export default function CallbackScreen() {
         </View>
       )}
 
-      {Platform.OS === 'web' && redirectTo && (
+      {redirectTo && (
         <View style={styles.webContainer}>
           <Text style={[styles.subtext, { color: colors.textMuted }]}>
             If you are not redirected automatically, please click below:
@@ -157,11 +169,7 @@ export default function CallbackScreen() {
           <Pressable
             style={[styles.button, { backgroundColor: colors.primary }]}
             onPress={() => {
-              if (redirectTo) {
-                window.location.href = redirectTo + window.location.hash;
-              } else if (fallbackDestination) {
-                window.location.href = fallbackDestination;
-              }
+              window.location.href = redirectTo + window.location.hash;
             }}
           >
             <Text style={[styles.buttonText, { color: '#FFFFFF' }]}>Return to App</Text>

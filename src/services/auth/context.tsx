@@ -145,7 +145,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       // Use the relay pattern for robust Expo Go support
       // 1. App deep link (exp://... or prompt-squad://...)
-      const deepLink = Linking.createURL('/callback');
+      // Use app root on native to avoid callback route loops in Expo Go.
+      const deepLink = Linking.createURL('/');
 
       // 2. Relay URL (hosted on Vercel) that will redirect back to deep link
       // This solves the issue of dynamic Expo Go URLs not being whitelisting-able in Supabase

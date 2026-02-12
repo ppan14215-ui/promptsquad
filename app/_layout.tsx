@@ -1,3 +1,4 @@
+import 'react-native-gesture-handler';
 import { Stack, useRouter, useSegments, useRootNavigationState, usePathname } from 'expo-router';
 import { ThemeProvider, useTheme } from '@/design-system';
 import { I18nProvider } from '@/i18n';
@@ -15,6 +16,7 @@ import { AbyssinicaSIL_400Regular } from '@expo-google-fonts/abyssinica-sil';
 import { View, ActivityIndicator, StyleSheet, LogBox, Platform, StatusBar as RNStatusBar } from 'react-native';
 import React, { useEffect, useState } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { StatusBar } from 'expo-status-bar';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ChangelogModal } from '@/components/ui/ChangelogModal';
@@ -23,6 +25,9 @@ import * as NavigationBar from 'expo-navigation-bar';
 const CURRENT_VERSION = '1.3.0';
 const CHANGELOG_VERSION_KEY = 'last_seen_changelog_version';
 const LAST_VISITED_PATH_KEY = 'last_visited_path';
+const ONBOARDING_CHECK_TIMEOUT_MS = 6000;
+// Keep onboarding screens in codebase, but disable gating for now.
+const ONBOARDING_SELECTION_ENABLED = false;
 
 function getCurrentAppPath(pathname: string) {
   if (Platform.OS === 'web' && typeof window !== 'undefined') {
@@ -39,6 +44,27 @@ function isRestorablePath(path: string | null | undefined) {
   if (path.includes('/callback')) return false;
   if (path.includes('/login')) return false;
   return true;
+}
+
+/** Normalize stored path to a valid Expo Router href to avoid "unmatched route". */
+function toValidHref(path: string | null | undefined): string {
+  if (!path || typeof path !== 'string') return '/(tabs)';
+  const pathname = path.replace(/#.*$/, '').replace(/\?.*$/, '').trim();
+  if (!pathname || pathname === '/') return '/(tabs)';
+  const withSlash = pathname.startsWith('/') ? pathname : `/${pathname}`;
+  if (withSlash.startsWith('/(tabs)') || withSlash.startsWith('/chat/')) {
+    return withSlash;
+  }
+  return '/(tabs)';
+}
+
+async function hasCompletedOnboardingWithTimeout(): Promise<boolean> {
+  return await Promise.race<boolean>([
+    hasCompletedOnboarding(),
+    new Promise<boolean>((resolve) => {
+      setTimeout(() => resolve(false), ONBOARDING_CHECK_TIMEOUT_MS);
+    }),
+  ]);
 }
 
 LogBox.ignoreLogs(['A props object containing a "key" prop is being spread into JSX']);
@@ -114,34 +140,61 @@ function AuthGate({ children }: { children: React.ReactNode }) {
 
     const first = segments[0];
     const inAuthGroup = first === '(auth)' || first === 'login' || first === 'callback';
+    const inCallbackRoute = pathname.includes('/callback') || segments.includes('callback');
     const inOnboardingGroup = first === '(onboarding)';
 
     const checkRedirect = async () => {
+      // 0. Callback route: native callback screen handles its own single redirect.
+      // Keep AuthGate callback handling web-only to prevent redirect thrash.
+      if (inCallbackRoute) {
+        if (Platform.OS !== 'web') return;
+        if (!user) {
+          router.replace('/(auth)/login');
+          return;
+        }
+        const redirectPath = await AsyncStorage.getItem('redirect_after_login');
+        if (isRestorablePath(redirectPath)) {
+          await AsyncStorage.removeItem('redirect_after_login');
+          router.replace(toValidHref(redirectPath));
+          return;
+        }
+        const lastPath = await AsyncStorage.getItem(LAST_VISITED_PATH_KEY);
+        if (isRestorablePath(lastPath)) {
+          router.replace(toValidHref(lastPath));
+          return;
+        }
+        router.replace('/(tabs)');
+        return;
+      }
+
       // 1. Not logged in -> Redirect to Login
       if (!user && !inAuthGroup) {
         const currentPath = getCurrentAppPath(pathname);
-        // Save current location before redirecting to login
-        // Only save if it's a meaningful path (not root/auth)
         if (isRestorablePath(currentPath)) {
           await AsyncStorage.setItem('redirect_after_login', currentPath);
           await AsyncStorage.setItem(LAST_VISITED_PATH_KEY, currentPath);
         }
         router.replace('/(auth)/login');
       }
-      // 2. Logged in, but on Auth pages (Login/Callback) -> Redirect to App
-      // EXEMPTION: Do not auto-redirect if on 'callback'. Let callback page handle it.
-      else if (user && inAuthGroup && first !== 'callback') {
+      // 2. Logged in, but on Auth pages (Login only; callback handled above) -> Redirect to App
+      else if (user && inAuthGroup) {
         // Check if we have a saved redirect
         const redirectPath = await AsyncStorage.getItem('redirect_after_login');
         if (isRestorablePath(redirectPath)) {
           await AsyncStorage.removeItem('redirect_after_login');
-          router.replace(redirectPath as string);
+          router.replace(toValidHref(redirectPath));
           return;
         }
 
         const lastVisitedPath = await AsyncStorage.getItem(LAST_VISITED_PATH_KEY);
         if (isRestorablePath(lastVisitedPath)) {
-          router.replace(lastVisitedPath as string);
+          router.replace(toValidHref(lastVisitedPath));
+          return;
+        }
+
+        if (!ONBOARDING_SELECTION_ENABLED) {
+          setOnboardingChecked(true);
+          router.replace('/(tabs)');
           return;
         }
 
@@ -149,7 +202,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
         if (!isCheckingOnboarding) {
           setIsCheckingOnboarding(true);
           try {
-            const completed = await hasCompletedOnboarding();
+            const completed = await hasCompletedOnboardingWithTimeout();
             setOnboardingChecked(true);
             setIsCheckingOnboarding(false);
             if (completed) router.replace('/(tabs)');
@@ -162,6 +215,10 @@ function AuthGate({ children }: { children: React.ReactNode }) {
       }
       // 3. Logged in, on Onboarding -> Just mark checked
       else if (user && inOnboardingGroup) {
+        if (!ONBOARDING_SELECTION_ENABLED) {
+          router.replace('/(tabs)');
+          return;
+        }
         setOnboardingChecked(true);
       }
       // 4. Logged in, inside App -> Verify Onboarding
@@ -170,15 +227,28 @@ function AuthGate({ children }: { children: React.ReactNode }) {
         if (currentPath === '/' || currentPath.startsWith('/?') || currentPath.startsWith('/#')) {
           const lastVisitedPath = await AsyncStorage.getItem(LAST_VISITED_PATH_KEY);
           if (isRestorablePath(lastVisitedPath)) {
-            router.replace(lastVisitedPath as string);
+            router.replace(toValidHref(lastVisitedPath));
             return;
           }
+        }
+
+        if (!ONBOARDING_SELECTION_ENABLED) {
+          setOnboardingChecked(true);
+          if (currentPath === '/' || currentPath.startsWith('/?') || currentPath.startsWith('/#')) {
+            const lastVisitedPath = await AsyncStorage.getItem(LAST_VISITED_PATH_KEY);
+            if (isRestorablePath(lastVisitedPath)) {
+              router.replace(toValidHref(lastVisitedPath));
+            } else {
+              router.replace('/(tabs)');
+            }
+          }
+          return;
         }
 
         if (!isCheckingOnboarding) {
           setIsCheckingOnboarding(true);
           try {
-            const completed = await hasCompletedOnboarding();
+            const completed = await hasCompletedOnboardingWithTimeout();
             setOnboardingChecked(true);
             setIsCheckingOnboarding(false);
 
@@ -187,7 +257,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
             } else if (currentPath === '/' || currentPath.startsWith('/?') || currentPath.startsWith('/#')) {
               const lastVisitedPath = await AsyncStorage.getItem(LAST_VISITED_PATH_KEY);
               if (isRestorablePath(lastVisitedPath)) {
-                router.replace(lastVisitedPath as string);
+                router.replace(toValidHref(lastVisitedPath));
               } else {
                 router.replace('/(tabs)');
               }
@@ -255,21 +325,23 @@ export default function RootLayout() {
   }
 
   return (
-    <SafeAreaProvider>
-      <AuthProvider>
-        <PreferencesProvider>
-          <ThemeProvider>
-            <I18nProvider>
-              <ChatPreferencesProvider>
-                <AuthGate>
-                  <ThemedStack />
-                </AuthGate>
-              </ChatPreferencesProvider>
-            </I18nProvider>
-          </ThemeProvider>
-        </PreferencesProvider>
-      </AuthProvider>
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <AuthProvider>
+          <PreferencesProvider>
+            <ThemeProvider>
+              <I18nProvider>
+                <ChatPreferencesProvider>
+                  <AuthGate>
+                    <ThemedStack />
+                  </AuthGate>
+                </ChatPreferencesProvider>
+              </I18nProvider>
+            </ThemeProvider>
+          </PreferencesProvider>
+        </AuthProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
 

@@ -2,7 +2,7 @@ import { View, StyleSheet, Text, Pressable, Platform, Image, useWindowDimensions
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Icon, Skill, ChatInputBox, MascotDetails, LinkPill, HomeHeader, MascotCarousel, PaywallModal, FormattedText } from '@/components';
+import { Icon, Skill, ChatInputBox, MascotDetails, LinkPill, HomeHeader, MascotCarousel, PaywallModal, FormattedText, MascotCardDeck } from '@/components';
 import { useTheme, fontFamilies } from '@/design-system';
 import { useAuth } from '@/services/auth';
 import { useSubscription } from '@/services/subscription';
@@ -106,6 +106,7 @@ export default function HomeScreen() {
   }, []);
 
   const selectedMascot = availableMascots[selectedIndex] || availableMascots[0];
+  const isSelectedMascotLocked = !!selectedMascot && !selectedMascot.isFree && !isSubscribed && !isAdmin;
 
   // Fetch skills from database for the selected mascot (only if mascot exists)
   const { skills: dbSkills, isLoading: skillsLoading } = useMascotSkills(selectedMascot?.id || '', selectedMascot?.isFree ?? false);
@@ -131,29 +132,44 @@ export default function HomeScreen() {
     user?.email?.split('@')[0] ||
     'Julian';
 
-  const handlePrevMascot = async () => {
+  const handlePrevMascot = () => {
     const newIndex = selectedIndex > 0 ? selectedIndex - 1 : availableMascots.length - 1;
     setSelectedIndex(newIndex);
-    // Save to storage
-    try {
-      await AsyncStorage.setItem(LAST_MASCOT_KEY, availableMascots[newIndex].id);
-    } catch (error) {
+    // Persist selection in background to avoid blocking UI interactions.
+    void AsyncStorage.setItem(LAST_MASCOT_KEY, availableMascots[newIndex].id).catch((error) => {
       console.error('Error saving last mascot:', error);
-    }
+    });
   };
 
-  const handleNextMascot = async () => {
+  const handleNextMascot = () => {
     const newIndex = selectedIndex < availableMascots.length - 1 ? selectedIndex + 1 : 0;
     setSelectedIndex(newIndex);
-    // Save to storage
-    try {
-      await AsyncStorage.setItem(LAST_MASCOT_KEY, availableMascots[newIndex].id);
-    } catch (error) {
+    // Persist selection in background to avoid blocking UI interactions.
+    void AsyncStorage.setItem(LAST_MASCOT_KEY, availableMascots[newIndex].id).catch((error) => {
       console.error('Error saving last mascot:', error);
-    }
+    });
+  };
+
+  const handleDeckIndexChange = (newIndex: number) => {
+    setSelectedIndex(newIndex);
+    // Persist selection in background to avoid blocking swipe animation.
+    void AsyncStorage.setItem(LAST_MASCOT_KEY, availableMascots[newIndex].id).catch((error) => {
+      console.error('Error saving last mascot:', error);
+    });
   };
 
   const handleSkillPress = (skill: Skill) => {
+    if (!selectedMascot) return;
+    if (isSelectedMascotLocked) {
+      setPaywallProps({
+        visible: true,
+        feature: 'Premium Mascot',
+        mascotId: selectedMascot.id,
+        mascotName: selectedMascot.name,
+      });
+      return;
+    }
+
     // Check if this is a database skill (has UUID-like ID)
     const isDbSkill = skill.id && skill.id.includes('-') && skill.id.length > 10;
 
@@ -174,6 +190,15 @@ export default function HomeScreen() {
   const handleSendMessage = (text?: string, attachment?: { uri: string; base64?: string; mimeType?: string }) => {
     const textToSend = typeof text === 'string' ? text : message;
     if (!textToSend.trim() && !attachment) return;
+    if (isSelectedMascotLocked) {
+      setPaywallProps({
+        visible: true,
+        feature: 'Premium Mascot',
+        mascotId: selectedMascot.id,
+        mascotName: selectedMascot.name,
+      });
+      return;
+    }
 
     // Navigate to chat with params
     router.push({
@@ -232,7 +257,7 @@ export default function HomeScreen() {
 
 
 
-  const handleMascotCardPress = async (mascot: any, actualIndex: number, isSelected: boolean) => {
+  const handleMascotCardPress = (mascot: any, actualIndex: number, isSelected: boolean) => {
     // Find the full OwnedMascot from availableMascots
     const fullMascot = availableMascots.find(m => m.id === mascot.id);
     if (!fullMascot) return;
@@ -242,12 +267,10 @@ export default function HomeScreen() {
     } else {
       // If not selected, select this mascot
       setSelectedIndex(actualIndex);
-      // Save to storage
-      try {
-        await AsyncStorage.setItem(LAST_MASCOT_KEY, fullMascot.id);
-      } catch (error) {
+      // Persist selection in background to avoid blocking UI interactions.
+      void AsyncStorage.setItem(LAST_MASCOT_KEY, fullMascot.id).catch((error) => {
         console.error('Error saving last mascot:', error);
-      }
+      });
     }
   };
 
@@ -272,6 +295,58 @@ export default function HomeScreen() {
     }
   };
 
+  const mobileDeckMascots = useMemo(() => {
+    return availableMascots.map((m, index) => {
+      const isFreeMascot = m.isFree !== undefined ? m.isFree : (index < 4);
+      const hasOwnedAccess = unlockedMascotIds.includes(m.id);
+      const isLocked = !isFreeMascot && !isSubscribed && !isAdmin && !hasOwnedAccess;
+      return {
+        id: m.id,
+        name: m.name,
+        subtitle: m.subtitle,
+        image: m.image,
+        color: m.color,
+        questionPrompt: m.questionPrompt,
+        skills: m.skills || [],
+        models: m.models || [],
+        bio: m.bio,
+        isCustom: m.isCustom || false,
+        isPro: !m.isCustom && (m.isPro || isLocked),
+        isLocked,
+        isComingSoon: !!m.isComingSoon,
+      };
+    });
+  }, [availableMascots, isAdmin, isSubscribed, unlockedMascotIds]);
+
+  const launchFromDeck = (mascotId: string, questionPrompt: string, initialMessage?: string, skillId?: string) => {
+    const selected = availableMascots.find((m) => m.id === mascotId);
+    if (!selected) return;
+    if (selected.isComingSoon) return;
+    const hasOwnedAccess = unlockedMascotIds.includes(selected.id);
+    const isLocked = !!selected && !selected.isFree && !isSubscribed && !isAdmin && !hasOwnedAccess;
+    if (isLocked) {
+      setPaywallProps({
+        visible: true,
+        feature: 'Premium Mascot',
+        mascotId: selected.id,
+        mascotName: selected.name,
+      });
+      return;
+    }
+
+    router.push({
+      pathname: `/chat/${mascotId}`,
+      params: {
+        questionPrompt,
+        ...(initialMessage ? { initialMessage } : {}),
+        ...(skillId ? { skillId } : {}),
+        webSearch: webSearchEnabled ? 'true' : 'false',
+        deepThinking: deepThinkingEnabled ? 'true' : 'false',
+        llm: chatLLM,
+      },
+    });
+  };
+
   // Wrapper component - use KeyboardAvoidingView on both platforms
   // iOS: 'padding' behavior works best
   // Android: 'height' behavior works with adjustResize manifest setting
@@ -293,9 +368,61 @@ export default function HomeScreen() {
       <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
         <View style={styles.loadingContainer}>
           <Text style={[styles.emptyText, { color: colors.textMuted }]}>
-            No mascots available. Please complete onboarding.
+            No mascots available right now.
           </Text>
         </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (!isDesktop) {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
+        <View style={styles.mobileDeckContainer}>
+          <View style={styles.mobileDeckHeader}>
+            <Text
+              style={[
+                styles.mobileDeckTitle,
+                { color: colors.text, fontFamily: fontFamilies.figtree.semiBold },
+              ]}
+            >
+              My agent deck
+            </Text>
+            <Text
+              style={[
+                styles.mobileDeckSubtitle,
+                { color: colors.textMuted, fontFamily: fontFamilies.figtree.regular },
+              ]}
+            >
+              Swipe to explore, push to chat
+            </Text>
+          </View>
+          <MascotCardDeck
+            mascots={mobileDeckMascots}
+            selectedIndex={selectedIndex}
+            onIndexChange={handleDeckIndexChange}
+            onActivateMascot={(mascot) => {
+              launchFromDeck(mascot.id, mascot.questionPrompt);
+            }}
+            onActivateSkill={(mascot, skill) => {
+              const isDbSkill = skill.id && skill.id.includes('-') && skill.id.length > 10;
+              launchFromDeck(
+                mascot.id,
+                mascot.questionPrompt,
+                skill.label,
+                isDbSkill ? skill.id : undefined
+              );
+            }}
+          />
+        </View>
+
+        <PaywallModal
+          visible={paywallProps.visible}
+          onClose={() => setPaywallProps({ ...paywallProps, visible: false })}
+          feature={paywallProps.feature}
+          mascotId={paywallProps.mascotId}
+          mascotName={paywallProps.mascotName}
+        />
       </SafeAreaView>
     );
   }
@@ -345,7 +472,8 @@ export default function HomeScreen() {
               // Unless user is Pro or Admin
               // Fallback to index logic if isFree is undefined (should fail safe to locked)
               const isFreeMascot = m.isFree !== undefined ? m.isFree : (index < 4);
-              const isLocked = !isFreeMascot && !isSubscribed && !isAdmin;
+              const hasOwnedAccess = unlockedMascotIds.includes(m.id);
+              const isLocked = !isFreeMascot && !isSubscribed && !isAdmin && !hasOwnedAccess;
 
               return {
                 id: m.id,
@@ -359,24 +487,7 @@ export default function HomeScreen() {
             })}
             selectedIndex={selectedIndex}
             onMascotPress={(mascot, actualIndex, isSelected) => {
-              // Find the full mascot object (since handler arg is incomplete)
-              // But we can check availableMascots[actualIndex]
-              const fullMascot = availableMascots[actualIndex];
-              const isFreeMascot = fullMascot?.isFree !== undefined ? fullMascot.isFree : (actualIndex < 4);
-              const isLocked = !isFreeMascot && !isSubscribed && !isAdmin;
-
-              if (isLocked) {
-                // Show upgrade alert
-                // Show paywall
-                setPaywallProps({
-                  visible: true,
-                  feature: 'Premium Mascot',
-                  mascotId: fullMascot.id,
-                  mascotName: fullMascot.name
-                });
-                return;
-              }
-
+              // Always allow browsing/selecting every mascot in the carousel.
               handleMascotCardPress(mascot, actualIndex, isSelected);
             }}
             onPrev={handlePrevMascot}
@@ -438,7 +549,7 @@ export default function HomeScreen() {
                 // Use displaySkills if this is the currently selected mascot (which has dynamic skills loaded)
                 // Otherwise use the mascot's own skills (fallback/static)
                 skills={selectedMascotDetails.id === selectedMascot?.id ? displaySkills : selectedMascotDetails.skills}
-                variant="available"
+                variant={(!selectedMascotDetails.isFree && !isSubscribed && !isAdmin) ? "locked" : "available"}
                 mascotId={selectedMascotDetails.id}
                 isCustom={selectedMascotDetails.isCustom}
                 onDelete={
@@ -466,14 +577,24 @@ export default function HomeScreen() {
                     },
                   });
                 }}
-                onUnlock={() => console.log('Unlock pressed')}
+                onUnlock={() => {
+                  setSelectedMascotDetails(null);
+                  setPaywallProps({
+                    visible: true,
+                    feature: 'Premium Mascot',
+                    mascotId: selectedMascotDetails.id,
+                    mascotName: selectedMascotDetails.name,
+                  });
+                }}
                 onSkillPress={(skill) => {
                   setSelectedMascotDetails(null);
+                  const isDbSkill = skill.id && String(skill.id).length > 10;
                   router.push({
                     pathname: `/chat/${selectedMascotDetails.id}`,
                     params: {
                       questionPrompt: selectedMascotDetails.questionPrompt,
                       initialMessage: skill.label,
+                      ...(isDbSkill ? { skillId: skill.id } : {}),
                     },
                   });
                 }}
@@ -498,6 +619,27 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  mobileDeckContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mobileDeckHeader: {
+    alignItems: 'center',
+    marginBottom: 16,
+    paddingHorizontal: 24,
+  },
+  mobileDeckTitle: {
+    fontSize: 26,
+    lineHeight: 34,
+    marginBottom: 6,
+    textAlign: 'center',
+  },
+  mobileDeckSubtitle: {
+    fontSize: 16,
+    lineHeight: 16,
+    textAlign: 'center',
   },
   loadingContainer: {
     flex: 1,

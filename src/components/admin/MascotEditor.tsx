@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
-  TextInput,
   StyleSheet,
   Modal,
   Pressable,
@@ -11,8 +10,10 @@ import {
   KeyboardAvoidingView,
   Switch,
   Alert,
+  Dimensions,
 } from 'react-native';
-import { useTheme, fontFamilies, shadowToCSS } from '@/design-system';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTheme, fontFamilies } from '@/design-system';
 import { Icon } from '../ui/Icon';
 import { BigPrimaryButton } from '../ui/BigPrimaryButton';
 import { BigSecondaryButton } from '../ui/BigSecondaryButton';
@@ -25,6 +26,7 @@ type MascotEditorProps = {
   mascotId: string;
   currentName: string;
   currentSubtitle: string | null;
+  currentBio?: string | null;
   currentIsPro?: boolean;
   currentIsFree?: boolean;
   currentIsReady?: boolean;
@@ -32,7 +34,7 @@ type MascotEditorProps = {
   currentSortOrder?: number;
   currentColor?: string;
   onClose: () => void;
-  onSave: (name: string, subtitle: string, isPro: boolean, isFree: boolean, isReady: boolean, sortOrder: number, color: string, isVisible: boolean) => Promise<void>;
+  onSave: (name: string, subtitle: string, bio: string, isPro: boolean, isFree: boolean, isReady: boolean, sortOrder: number, color: string, isVisible: boolean) => Promise<void>;
   onDelete?: () => Promise<void>;
 };
 
@@ -46,6 +48,7 @@ export function MascotEditor({
   mascotId,
   currentName,
   currentSubtitle,
+  currentBio = '',
   currentIsPro = false,
   currentIsFree = false,
   currentIsReady = false,
@@ -57,8 +60,12 @@ export function MascotEditor({
   onDelete,
 }: MascotEditorProps) {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
+  const windowHeight = Dimensions.get('window').height;
+  const isNative = Platform.OS === 'ios' || Platform.OS === 'android';
   const [name, setName] = useState(currentName);
   const [subtitle, setSubtitle] = useState(currentSubtitle || '');
+  const [bio, setBio] = useState(currentBio || '');
   const [accessTier, setAccessTier] = useState<AccessTier>(getAccessTier(currentIsPro, currentIsFree));
   const [isReady, setIsReady] = useState(currentIsReady);
   const [isVisible, setIsVisible] = useState(currentIsVisible);
@@ -72,6 +79,7 @@ export function MascotEditor({
     if (visible) {
       setName(currentName);
       setSubtitle(currentSubtitle || '');
+      setBio(currentBio || '');
       setAccessTier(getAccessTier(currentIsPro, currentIsFree));
       setIsReady(currentIsReady);
       setIsVisible(currentIsVisible);
@@ -80,7 +88,7 @@ export function MascotEditor({
       setError(null);
       setIsSaving(false);
     }
-  }, [visible, currentName, currentSubtitle, currentIsPro, currentIsFree, currentIsReady, currentIsVisible, currentSortOrder, currentColor]);
+  }, [visible, currentName, currentSubtitle, currentBio, currentIsPro, currentIsFree, currentIsReady, currentIsVisible, currentSortOrder, currentColor]);
 
   const handleSave = async () => {
     if (!name.trim()) {
@@ -95,7 +103,7 @@ export function MascotEditor({
     const isFree = accessTier === 'free';
 
     try {
-      await onSave(name.trim(), subtitle.trim(), isPro, isFree, isReady, parseInt(sortOrder, 10) || 0, color, isVisible);
+      await onSave(name.trim(), subtitle.trim(), bio.trim(), isPro, isFree, isReady, parseInt(sortOrder, 10) || 0, color, isVisible);
       onClose();
     } catch (err: any) {
       console.error('MascotEditor save error:', err);
@@ -110,18 +118,29 @@ export function MascotEditor({
     { key: 'pro', label: 'Pro', description: 'Requires subscription' },
   ];
 
+  const modalContentHeight = isNative ? Math.min(windowHeight * 0.9, windowHeight - insets.top - insets.bottom - 24) : undefined;
+
   return (
     <Modal
       visible={visible}
       animationType="slide"
       onRequestClose={onClose}
       transparent={true}
+      statusBarTranslucent
+      supportedOrientations={['portrait', 'landscape']}
     >
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.centeredView}
       >
-        <View style={[styles.modalView, { backgroundColor: colors.background, borderColor: colors.outline }]}>
+        <View
+          style={[
+            styles.modalView,
+            { backgroundColor: colors.background, borderColor: colors.outline },
+            isNative && modalContentHeight != null && { height: modalContentHeight, maxHeight: modalContentHeight },
+            isNative && { paddingTop: insets.top, paddingBottom: insets.bottom, paddingLeft: Math.max(insets.left, 12), paddingRight: Math.max(insets.right, 12) },
+          ]}
+        >
           {/* Header */}
           <View style={[styles.header, { borderBottomColor: colors.outline }]}>
             <View style={[styles.headerIcon, { backgroundColor: colors.primary }]}>
@@ -140,9 +159,15 @@ export function MascotEditor({
             </Pressable>
           </View>
 
-          {/* Content */}
-          <ScrollView style={styles.content}>
-            <View style={styles.form}>
+          {/* Content - wrapped so ScrollView gets bounded height on native */}
+          <View style={styles.contentWrapper}>
+            <ScrollView
+              style={styles.content}
+              contentContainerStyle={styles.contentContainer}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={true}
+            >
+              <View style={styles.form}>
               <InputField
                 label="Name"
                 value={name}
@@ -163,6 +188,18 @@ export function MascotEditor({
                 placeholder="Enter mascot subtitle"
                 multiline
                 numberOfLines={2}
+              />
+
+              <InputField
+                label="Bio"
+                value={bio}
+                onChangeText={(text) => {
+                  setBio(text);
+                  setError(null);
+                }}
+                placeholder="Short summary for mascot details"
+                multiline
+                numberOfLines={3}
               />
 
               <View style={styles.spacer} />
@@ -336,25 +373,26 @@ export function MascotEditor({
                 </Text>
               </Pressable>
             )}
-          </ScrollView>
 
-          {/* Error Display */}
-          {error && (
-            <View style={[styles.errorContainer, { backgroundColor: colors.red + '20', borderColor: colors.red }]}>
-              <Text style={[styles.errorText, { color: colors.red, fontFamily: fontFamilies.figtree.medium }]}>
-                {error}
-              </Text>
-            </View>
-          )}
+              {/* Error Display - inside scroll so it's visible when keyboard is open */}
+              {error && (
+                <View style={[styles.errorContainer, { backgroundColor: colors.red + '20', borderColor: colors.red }]}>
+                  <Text style={[styles.errorText, { color: colors.red, fontFamily: fontFamilies.figtree.medium }]}>
+                    {error}
+                  </Text>
+                </View>
+              )}
 
-          {/* Footer */}
-          <View style={[styles.footer, { borderTopColor: colors.outline }]}>
-            <BigSecondaryButton label="Cancel" onPress={onClose} disabled={isSaving} />
-            <BigPrimaryButton
-              label={isSaving ? "Saving..." : "Save Details"}
-              onPress={handleSave}
-              disabled={isSaving}
-            />
+              {/* Footer - inside scroll on mobile so Save/Cancel are reachable above keyboard */}
+              <View style={[styles.footer, { borderTopColor: colors.outline, marginTop: 8 }]}>
+                <BigSecondaryButton label="Cancel" onPress={onClose} disabled={isSaving} />
+                <BigPrimaryButton
+                  label={isSaving ? "Saving..." : "Save Details"}
+                  onPress={handleSave}
+                  disabled={isSaving}
+                />
+              </View>
+            </ScrollView>
           </View>
         </View >
       </KeyboardAvoidingView >
@@ -406,9 +444,16 @@ const styles = StyleSheet.create({
   closeButton: {
     padding: 4,
   },
+  contentWrapper: {
+    flex: 1,
+    minHeight: 0,
+  },
   content: {
+    flex: 1,
+  },
+  contentContainer: {
     padding: 20,
-    flexGrow: 1,
+    paddingBottom: 32,
   },
   form: {
     gap: 16,

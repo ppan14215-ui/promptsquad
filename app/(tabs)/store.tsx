@@ -8,7 +8,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useIsAdmin, useMascots, MascotBasic, useMascotSkills, MascotSkill, deleteMascot } from '@/services/admin';
 import { useAuth } from '@/services/auth';
 import { getMascotImageSource, getMascotGrayscaleImageSource } from '@/services/admin/mascot-images';
-import { useSubscription, openBillingPortal } from '@/services/subscription';
+import { useSubscription } from '@/services/subscription';
 import { useMascotLikeCounts } from '@/services/mascot-likes';
 import { useUnlockedMascots } from '@/services/mascot-access';
 import React, { useCallback } from 'react';
@@ -443,7 +443,6 @@ export default function StoreScreen() {
   const [paywallProps, setPaywallProps] = useState<{ visible: boolean; feature?: string; mascotId?: string; mascotName?: string }>({ visible: false });
   const [sortBy, setSortBy] = useState<'default' | 'most-liked'>('default');
   const [showCreateMascotModal, setShowCreateMascotModal] = useState(false);
-  const [isOpeningPortal, setIsOpeningPortal] = useState(false);
 
   const { user } = useAuth();
 
@@ -474,15 +473,15 @@ export default function StoreScreen() {
         const isComingSoon = m.is_active === false;
 
         // Determine unlock status:
-        // - For free mascots: Always unlocked (since chooser is hidden/deprecated for free)
-        // - For pro mascots: Unlocked if subscribed or admin
-        const isUnlocked = isFree || (isSubscribed || isAdmin);
+        // - For free mascots: always unlocked
+        // - For paid mascots: unlocked if subscribed/admin OR individually purchased/unlocked
+        const isUnlocked = isFree || (isSubscribed || isAdmin) || unlockedMascotIds.includes(m.id);
 
         return {
           id: m.id,
           name: m.name,
           subtitle: m.subtitle || '',
-          customBio: m.question_prompt || undefined,
+          customBio: m.bio || undefined,
           image: imageSource,
           grayscaleImage: grayscaleSource || undefined,
           color: (m.color || 'yellow') as MascotColor,
@@ -515,9 +514,9 @@ export default function StoreScreen() {
       const isFree = mascotId >= 1 && mascotId <= 10;
 
       // Determine unlock status:
-      // - For free mascots: Always unlocked
-      // - For pro mascots: Unlocked if subscribed or admin
-      const isUnlocked = isFree || (isSubscribed || isAdmin);
+      // - For free mascots: always unlocked
+      // - For paid mascots: unlocked if subscribed/admin OR individually purchased/unlocked
+      const isUnlocked = isFree || (isSubscribed || isAdmin) || unlockedMascotIds.includes(m.id);
 
       return {
         ...m,
@@ -534,8 +533,13 @@ export default function StoreScreen() {
 
   const isDesktop = width >= DESKTOP_BREAKPOINT;
   const isCompactMobile = !isDesktop;
-  const mobileGridGap = 10;
-  const mobileCardSize = Math.max(156, Math.min(176, Math.floor((width - 32 - mobileGridGap) / 2)));
+  // Default grid: fixed middle gap (12) and symmetric padding (16) so layout is consistent on Pixel 10 and all mobile
+  const mobilePadding = 16;
+  const mobileColumnGap = 12;
+  const mobileRowGap = 12;
+  const mobileCardSize = isCompactMobile
+    ? Math.floor((width - mobilePadding * 2 - mobileColumnGap) / 2)
+    : undefined;
 
   // Get selected mascot from list
   const selectedMascot = selectedMascotId ? allMascots.find(m => m.id === selectedMascotId) : null;
@@ -843,8 +847,9 @@ export default function StoreScreen() {
               style={[
                 styles.grid,
                 isCompactMobile && {
-                  gap: mobileGridGap,
-                  justifyContent: 'space-between',
+                  paddingHorizontal: mobilePadding,
+                  columnGap: mobileColumnGap,
+                  rowGap: mobileRowGap,
                 },
               ]}
             >
@@ -898,31 +903,14 @@ export default function StoreScreen() {
         </View>
       </ScrollView>
 
-      {/* Floating CTA - hidden for admins */}
-      {!isAdmin && (
+      {/* Floating CTA - hidden for admins and subscribed users */}
+      {!isAdmin && !isSubscribed && (
         <View style={[styles.floatingCta, { paddingBottom: Math.max(16, insets.bottom) }]}>
           <View style={styles.floatingCtaInner}>
             <BigPrimaryButton
-              label={isSubscribed ? (isOpeningPortal ? 'Opening...' : 'Manage Subscription') : t.home.subscribeCta}
+              label={t.home.subscribeCta}
               onPress={async () => {
-                if (isSubscribed) {
-                  if (isOpeningPortal) return;
-                  setIsOpeningPortal(true);
-                  try {
-                    await openBillingPortal();
-                  } catch (error: any) {
-                    const message = error?.message || 'Failed to open subscription settings.';
-                    if (Platform.OS === 'web') {
-                      window.alert(message);
-                    } else {
-                      Alert.alert('Subscription', message);
-                    }
-                  } finally {
-                    setIsOpeningPortal(false);
-                  }
-                } else {
-                  setPaywallProps({ visible: true, feature: 'Pro Subscription' });
-                }
+                setPaywallProps({ visible: true, feature: 'Pro Subscription' });
               }}
             />
           </View>
@@ -996,7 +984,7 @@ const styles = StyleSheet.create({
   },
   header: {
     paddingHorizontal: 16,
-    marginBottom: 24,
+    marginBottom: 18,
   },
   headerMobile: {
     // Centered text on mobile
@@ -1028,10 +1016,11 @@ const styles = StyleSheet.create({
     lineHeight: 16,
   },
   grid: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 12,
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 14,
+    columnGap: 10,
+    rowGap: 10,
     marginBottom: 24,
     justifyContent: 'center',
   },

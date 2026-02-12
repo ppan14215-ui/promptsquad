@@ -171,6 +171,7 @@ export type Database = {
       }
       mascots: {
         Row: {
+          bio: string | null
           color: string
           created_at: string | null
           id: string
@@ -189,6 +190,7 @@ export type Database = {
           updated_at: string | null
         }
         Insert: {
+          bio?: string | null
           color: string
           created_at?: string | null
           id: string
@@ -207,6 +209,7 @@ export type Database = {
           updated_at?: string | null
         }
         Update: {
+          bio?: string | null
           color?: string
           created_at?: string | null
           id?: string

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Platform, ImageSourcePropType, ActivityIndicator } from 'react-native';
 import { Image } from 'expo-image';
 import { useTheme, textStyles, fontFamilies, shadowToCSS, shadowToNative } from '@/design-system';
@@ -10,10 +10,7 @@ import { MiniButton } from '@/components/ui/MiniButton';
 import { LinkPill } from '@/components/ui/LinkPill';
 import { ColoredTab } from '@/components/ui/ColoredTab';
 import { useMascotLike } from '@/services/mascot-likes';
-import { secureChat } from '@/services/ai/secure-chat';
 // import { useMascotSkills } from '@/services/admin';
-
-const skillBioCache = new Map<string, string>();
 
 export type MascotDetailsVariant = 'available' | 'locked';
 
@@ -41,6 +38,10 @@ export type MascotDetailsProps = {
   onSkillPress?: (skill: Skill) => void;
   isCustom?: boolean;
   onDelete?: () => void;
+  /** Disable like count/query for lightweight rendering contexts (e.g. background deck cards). */
+  enableLikes?: boolean;
+  /** When set, the card fills this height exactly and the content section stretches. */
+  fixedHeight?: number;
 };
 
 export function MascotDetails({
@@ -60,6 +61,8 @@ export function MascotDetails({
   onSkillPress,
   isCustom,
   onDelete,
+  enableLikes = true,
+  fixedHeight,
 }: MascotDetailsProps) {
   const { colors } = useTheme();
   const { t } = useI18n();
@@ -67,13 +70,11 @@ export function MascotDetails({
   const [hoveredSkill, setHoveredSkill] = useState<string | null>(null);
 
   // Use shared like system if mascotId is provided
-  const { isLiked, likeCount, toggleLike, isToggling } = useMascotLike(mascotId || null);
+  const { isLiked, likeCount, toggleLike, isToggling } = useMascotLike(enableLikes ? mascotId || null : null);
 
   // Use passed skills directly
   const displaySkills = skills;
   const isLoadingSkills = false;
-  const [aiSkillBio, setAiSkillBio] = useState<string | null>(null);
-  const [isGeneratingBio, setIsGeneratingBio] = useState(false);
 
   const fallbackSkillBio = useMemo(() => {
     if (!displaySkills.length) {
@@ -101,11 +102,6 @@ export function MascotDetails({
 
     return `${name} helps with ${listText.toLowerCase()}${suffix}, so you can move from ideas to clear outcomes faster.`;
   }, [displaySkills, name]);
-
-  const skillFingerprint = useMemo(
-    () => displaySkills.map((skill) => `${skill.label}::${skill.prompt || ''}`).join('||'),
-    [displaySkills]
-  );
 
   const bestModels = useMemo(() => {
     const text = `${name} ${subtitle} ${displaySkills.map((skill) => `${skill.label} ${skill.prompt || ''}`).join(' ')}`.toLowerCase();
@@ -162,85 +158,120 @@ export function MascotDetails({
     return ['Gemini 3', 'OpenAI GPT-5.2'];
   }, [displaySkills, models, name, subtitle]);
 
-  useEffect(() => {
-    let isActive = true;
-
-    async function generateBioFromSkills() {
-      const cacheKey = `${mascotId || name}::${skillFingerprint}`;
-      const manualCustomBio = customBio?.trim();
-
-      if (isCustom && manualCustomBio) {
-        setAiSkillBio(null);
-        return;
-      }
-
-      if (skillBioCache.has(cacheKey)) {
-        setAiSkillBio(skillBioCache.get(cacheKey) || null);
-        return;
-      }
-
-      if (!mascotId || !displaySkills.length) {
-        setAiSkillBio(null);
-        return;
-      }
-
-      try {
-        setIsGeneratingBio(true);
-        const skillContext = displaySkills
-          .map((skill, index) => {
-            const detail = skill.prompt?.trim() || `Intent: ${skill.label}`;
-            return `${index + 1}. ${skill.label}: ${detail}`;
-          })
-          .join('\n');
-
-        const summaryResponse = await secureChat(
-          mascotId,
-          [
-            {
-              role: 'user',
-              content: `Read all skills and their intent details. Write one concise summary sentence (max 28 words) that synthesizes the overall intent. Do not copy phrases verbatim from any single prompt. No bullets, no markdown.\n\nMascot: ${name}\nRole: ${subtitle}\nSkills:\n${skillContext}`,
-            },
-          ],
-          undefined,
-          undefined,
-          'claude'
-        );
-
-        const cleanSummary = summaryResponse.content
-          ?.replace(/\s+/g, ' ')
-          .replace(/[*_`#>-]/g, '')
-          .trim();
-
-        if (isActive && cleanSummary) {
-          skillBioCache.set(cacheKey, cleanSummary);
-          setAiSkillBio(cleanSummary);
-        }
-      } catch {
-        if (isActive) {
-          setAiSkillBio(null);
-        }
-      } finally {
-        if (isActive) {
-          setIsGeneratingBio(false);
-        }
-      }
-    }
-
-    generateBioFromSkills();
-
-    return () => {
-      isActive = false;
-    };
-  }, [customBio, displaySkills, isCustom, mascotId, name, skillFingerprint, subtitle]);
-
   // Shadow for header
   const headerShadowStyle = Platform.select({
     web: { boxShadow: shadowToCSS('xs') } as unknown as object,
     default: shadowToNative('xs'),
   });
 
+  // ── Shared content sections (used by both fixed and scrollable layouts) ──
+
+  const bioSection = (
+    <View style={styles.section}>
+      <Text
+        style={[
+          styles.sectionTitle,
+          { fontFamily: fontFamilies.figtree.semiBold, color: colors.text },
+        ]}
+      >
+        Bio
+      </Text>
+      <Text
+        style={[
+          styles.bioText,
+          { color: colors.textMuted, fontFamily: fontFamilies.figtree.regular },
+        ]}
+        numberOfLines={4}
+      >
+        {customBio?.trim() || fallbackSkillBio}
+      </Text>
+    </View>
+  );
+
+  const modelsSection = (
+    <View style={styles.section}>
+      <Text
+        style={[
+          styles.sectionTitle,
+          { fontFamily: fontFamilies.figtree.semiBold, color: colors.text },
+        ]}
+      >
+        Best models
+      </Text>
+      <View style={styles.tagsRow}>
+        {bestModels.map((model, index) => (
+          <ColoredTab key={index} label={model} forceState="default" />
+        ))}
+      </View>
+    </View>
+  );
+
+  const skillsSection = (
+    <View style={styles.section}>
+      <Text
+        style={[
+          styles.sectionTitle,
+          { fontFamily: fontFamilies.figtree.semiBold, color: colors.text },
+        ]}
+      >
+        {t.mascot.skills}
+      </Text>
+      <View style={styles.skillsRow}>
+        {isLoadingSkills && displaySkills.length === 0 ? (
+          <ActivityIndicator size="small" color={colors.primary} />
+        ) : (
+          displaySkills.map((skill) => {
+            const isActive = hoveredSkill === skill.id;
+            const showTooltip = isActive && !!skill.prompt;
+            return (
+              <View key={skill.id} style={{ position: 'relative', alignItems: 'center', zIndex: isActive ? 100 : 1 }}>
+                {showTooltip && (
+                  <View style={[styles.tooltipContainer, { backgroundColor: '#1A1A1A' }]}>
+                    <Text style={styles.tooltipText} numberOfLines={4}>{skill.prompt}</Text>
+                    <View style={[styles.tooltipArrow, { borderTopColor: '#1A1A1A' }]} />
+                  </View>
+                )}
+                <LinkPill
+                  label={skill.label}
+                  onPress={() => {
+                    if (Platform.OS !== 'web') {
+                      if (isActive) { onSkillPress?.(skill); } else { setHoveredSkill(skill.id); }
+                    } else {
+                      onSkillPress?.(skill);
+                    }
+                  }}
+                  onHoverIn={() => setHoveredSkill(skill.id)}
+                  onHoverOut={() => setHoveredSkill(null)}
+                  forceState={isActive ? 'hover' : undefined}
+                />
+              </View>
+            );
+          })
+        )}
+        {!isLoadingSkills && displaySkills.length === 0 && (
+          <Text style={{ color: colors.textMuted, fontSize: 13 }}>No skills available</Text>
+        )}
+      </View>
+    </View>
+  );
+
+  const ctaSection = (
+    <View style={styles.ctaContainer}>
+      {isLocked ? (
+        <TextButton label={t.mascot.tryOut} onPress={onTryOut} />
+      ) : (
+        <MediumDarkButton label={t.mascot.startChatting} onPress={onStartChat} fullWidth />
+      )}
+      {onDelete && (
+        <View style={{ marginTop: 16 }}>
+          <TextButton label="Delete Mascot" onPress={onDelete} color="#FF3B30" />
+        </View>
+      )}
+    </View>
+  );
+
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <View style={[styles.container, { backgroundColor: colors.background }, fixedHeight ? { height: fixedHeight, width: '100%' } : undefined]}>
       {/* Header Section */}
       <View
         style={[
@@ -255,30 +286,36 @@ export function MascotDetails({
         {/* Top Row with Icon Buttons */}
         <View style={styles.topRow}>
           <View style={styles.favoriteContainer}>
-            <IconButton
-              iconName="favourite"
-              isSelected={isLiked}
-              onPress={toggleLike}
-              disabled={isToggling}
-            />
-            {likeCount > 0 && (
-              <Text
-                style={[
-                  styles.likeCount,
-                  {
-                    fontFamily: fontFamilies.figtree.medium,
-                    color: colors.textMuted,
-                  },
-                ]}
-              >
-                {likeCount}
-              </Text>
-            )}
+            {enableLikes ? (
+              <>
+                <IconButton
+                  iconName="favourite"
+                  isSelected={isLiked}
+                  onPress={toggleLike}
+                  disabled={isToggling}
+                />
+                {likeCount > 0 && (
+                  <Text
+                    style={[
+                      styles.likeCount,
+                      {
+                        fontFamily: fontFamilies.figtree.medium,
+                        color: colors.textMuted,
+                      },
+                    ]}
+                  >
+                    {likeCount}
+                  </Text>
+                )}
+              </>
+            ) : null}
           </View>
-          <IconButton
-            iconName="close"
-            onPress={onClose}
-          />
+          {onClose ? (
+            <IconButton
+              iconName="close"
+              onPress={onClose}
+            />
+          ) : null}
         </View>
 
         {/* Title and Subtitle */}
@@ -333,6 +370,8 @@ export function MascotDetails({
         <View style={styles.imageContainer}>
           <Image
             source={imageSource}
+            recyclingKey={`${mascotId || name}-image`}
+            cachePolicy="memory-disk"
             style={[
               styles.mascotImage,
               isLocked && styles.mascotImageLocked,
@@ -341,12 +380,12 @@ export function MascotDetails({
               isLocked && Platform.OS !== 'web' && { opacity: 0.6 },
             ]}
             contentFit="cover"
-            transition={200}
+            transition={0}
           />
         </View>
 
         {/* Unlock Button for Locked State */}
-        {isLocked && (
+        {isLocked && !fixedHeight && (
           <View style={styles.unlockButtonContainer}>
             <MiniButton
               label={isPro ? t.mascot.unlockFor : t.mascot.unlockForFree}
@@ -356,172 +395,47 @@ export function MascotDetails({
         )}
       </View>
 
-      {/* Content Section */}
-      <ScrollView
-        style={[
-          styles.content,
-          {
-            backgroundColor: colors.background,
-            borderColor: colors.outline,
-          },
-        ]}
-        contentContainerStyle={styles.contentInner}
-        showsVerticalScrollIndicator={Platform.OS === 'web'}
-      >
-        {/* Bio Section */}
-        <View style={styles.section}>
-          <Text
-            style={[
-              styles.sectionTitle,
-              {
-                fontFamily: fontFamilies.figtree.semiBold,
-                color: colors.text,
-              },
-            ]}
-          >
-            Bio
-          </Text>
-          <Text
-            style={[
-              styles.bioText,
-              {
-                color: colors.textMuted,
-                fontFamily: fontFamilies.figtree.regular,
-              },
-            ]}
-            numberOfLines={4}
-          >
-            {(isCustom && customBio?.trim()) || aiSkillBio || fallbackSkillBio}
-          </Text>
-          {isGeneratingBio && !aiSkillBio && (
-            <Text
-              style={[
-                styles.bioHelperText,
-                { color: colors.textMuted, fontFamily: fontFamilies.figtree.regular },
-              ]}
-            >
-              Updating summary...
-            </Text>
-          )}
-        </View>
-
-        {/* Best Models Section */}
-        <View style={styles.section}>
-          <Text
-            style={[
-              styles.sectionTitle,
-              {
-                fontFamily: fontFamilies.figtree.semiBold,
-                color: colors.text,
-              },
-            ]}
-          >
-            Best models
-          </Text>
-          <View style={styles.tagsRow}>
-            {bestModels.map((model, index) => (
-              <ColoredTab
-                key={index}
-                label={model}
-                forceState="default"
-              />
-            ))}
+      {/* Content Section – plain View when fixedHeight (button always visible), ScrollView otherwise */}
+      {fixedHeight ? (
+        <View
+          style={[
+            styles.contentFixed,
+            {
+              backgroundColor: colors.background,
+              borderColor: colors.outline,
+            },
+          ]}
+        >
+          {/* Info group takes remaining space, clips overflow */}
+          <View style={styles.infoGroupFixed}>
+            {bioSection}
+            {modelsSection}
+            {skillsSection}
           </View>
+
+          {/* CTA anchored at bottom */}
+          {ctaSection}
         </View>
-
-        {/* Skills Section */}
-        <View style={styles.section}>
-          <Text
-            style={[
-              styles.sectionTitle,
-              {
-                fontFamily: fontFamilies.figtree.semiBold,
-                color: colors.text,
-              },
-            ]}
-          >
-            {t.mascot.skills}
-          </Text>
-          <View style={styles.skillsRow}>
-            {isLoadingSkills && displaySkills.length === 0 ? (
-              <ActivityIndicator size="small" color={colors.primary} />
-            ) : (
-              displaySkills.map((skill) => {
-                const isActive = hoveredSkill === skill.id;
-                const showTooltip = isActive && !!skill.prompt;
-
-                return (
-                  <View key={skill.id} style={{ position: 'relative', alignItems: 'center', zIndex: isActive ? 100 : 1 }}>
-                    {/* Tooltip Bubble */}
-                    {showTooltip && (
-                      <View style={[styles.tooltipContainer, { backgroundColor: '#1A1A1A' }]}>
-                        <Text style={styles.tooltipText} numberOfLines={4}>
-                          {skill.prompt}
-                        </Text>
-                        {/* Arrow */}
-                        <View style={[styles.tooltipArrow, { borderTopColor: '#1A1A1A' }]} />
-                      </View>
-                    )}
-
-                    <LinkPill
-                      label={skill.label}
-                      onPress={() => {
-                        if (Platform.OS !== 'web') {
-                          // Mobile: First tap shows tooltip, second tap executes
-                          if (isActive) {
-                            onSkillPress?.(skill);
-                          } else {
-                            setHoveredSkill(skill.id);
-                          }
-                        } else {
-                          // Web: click always executes
-                          onSkillPress?.(skill);
-                        }
-                      }}
-                      onHoverIn={() => setHoveredSkill(skill.id)}
-                      onHoverOut={() => setHoveredSkill(null)}
-                      forceState={isActive ? 'hover' : undefined}
-                    />
-                  </View>
-                );
-              })
-            )}
-            {/* Show message if no skills found */}
-            {!isLoadingSkills && displaySkills.length === 0 && (
-              <Text style={{ color: colors.textMuted, fontSize: 13 }}>
-                No skills available
-              </Text>
-            )}
+      ) : (
+        <ScrollView
+          style={[
+            styles.content,
+            {
+              backgroundColor: colors.background,
+              borderColor: colors.outline,
+            },
+          ]}
+          contentContainerStyle={styles.contentInner}
+          showsVerticalScrollIndicator={Platform.OS === 'web'}
+        >
+          <View style={styles.infoGroup}>
+            {bioSection}
+            {modelsSection}
+            {skillsSection}
           </View>
-        </View>
-
-        {/* CTA Section */}
-        <View style={styles.ctaContainer}>
-          {isLocked ? (
-            <TextButton
-              label={t.mascot.tryOut}
-              onPress={onTryOut}
-            />
-          ) : (
-            <MediumDarkButton
-              label={t.mascot.startChatting}
-              onPress={onStartChat}
-              fullWidth
-            />
-          )}
-
-          {/* Delete Button (if allowed) */}
-          {onDelete && (
-            <View style={{ marginTop: 16 }}>
-              <TextButton
-                label="Delete Mascot"
-                onPress={onDelete}
-                color={'#FF3B30'} // Red color for delete
-              />
-            </View>
-          )}
-        </View>
-      </ScrollView>
+          {ctaSection}
+        </ScrollView>
+      )}
     </View>
   );
 }
@@ -533,20 +447,20 @@ const IMAGE_SIZE = 160;
 const styles = StyleSheet.create({
   container: {
     width: CARD_WIDTH,
-    borderRadius: 16,
-    overflow: 'visible', // Allow image to be visible on mobile
+    borderRadius: 18,
+    overflow: 'hidden',
   },
   header: {
     height: HEADER_HEIGHT,
     paddingTop: 24,
     paddingHorizontal: 24,
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    borderWidth: Platform.OS === 'web' ? 1 : 0, // No border on mobile
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    borderWidth: StyleSheet.hairlineWidth,
     borderBottomWidth: 0,
     alignItems: 'center',
-    overflow: 'visible', // Allow image to be visible
-    position: 'relative', // Ensure proper positioning context
+    overflow: 'hidden',
+    position: 'relative',
   },
   topRow: {
     flexDirection: 'row',
@@ -586,22 +500,41 @@ const styles = StyleSheet.create({
     bottom: 24,
   },
   content: {
-    borderWidth: Platform.OS === 'web' ? 1 : 0, // No border on mobile
+    borderWidth: StyleSheet.hairlineWidth,
     borderTopWidth: 0,
-    borderBottomLeftRadius: 16,
-    borderBottomRightRadius: 16,
-    maxHeight: Platform.OS === 'web' ? 500 : undefined, // Max height on web to ensure modal fits
+    borderBottomLeftRadius: 18,
+    borderBottomRightRadius: 18,
+    maxHeight: Platform.OS === 'web' ? 500 : undefined,
   },
   contentInner: {
     paddingTop: 24,
-    paddingBottom: 24, // Increased padding to ensure button is visible
+    paddingBottom: 24,
     paddingHorizontal: 24,
     gap: 24,
-    flexGrow: 1, // Ensure content can grow
+    flexGrow: 1,
+  },
+  /* Fixed-height variant: plain View, no scroll, button always at bottom */
+  contentFixed: {
+    flex: 1,
+    borderBottomLeftRadius: 18,
+    borderBottomRightRadius: 18,
+    paddingTop: 22,
+    paddingBottom: 16,
+    paddingHorizontal: 16,
+    justifyContent: 'space-between',
+  },
+  infoGroupFixed: {
+    flex: 1,
+    gap: 22,
+    marginBottom: 16,
+  },
+  infoGroup: {
+    gap: 24,
   },
   section: {
     alignItems: 'center',
-    gap: 4,
+    gap: 6,
+    minHeight: 44,
   },
   sectionTitle: {
     fontSize: 14,
@@ -621,21 +554,16 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     maxWidth: 280,
   },
-  bioHelperText: {
-    fontSize: 11,
-    lineHeight: 16,
-    marginTop: 4,
-    textAlign: 'center',
-  },
   skillsRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'center',
-    gap: 8,
+    columnGap: 8,
+    rowGap: 6,
   },
   ctaContainer: {
     alignItems: 'center',
-    marginTop: 8,
+    minHeight: 48,
   },
   favoriteContainer: {
     flexDirection: 'row',

@@ -25,6 +25,26 @@ const STORAGE_KEYS = {
   rememberMe: 'remember_me',
 };
 
+function extractRateLimitSeconds(message: string): number | null {
+  const lower = message.toLowerCase();
+  if (!lower) return null;
+
+  // Common Supabase/Auth provider variants:
+  // - "For security purposes, you can only request this after 47 seconds."
+  // - "Too many requests. Please try again in 30 seconds."
+  const secondMatch = lower.match(/(\d+)\s*second/);
+  if (secondMatch?.[1]) return parseInt(secondMatch[1], 10);
+
+  const minuteMatch = lower.match(/(\d+)\s*minute/);
+  if (minuteMatch?.[1]) return parseInt(minuteMatch[1], 10) * 60;
+
+  if (lower.includes('too many') || lower.includes('rate limit') || lower.includes('429')) {
+    return 60;
+  }
+
+  return null;
+}
+
 export default function LoginScreen() {
   const { colors } = useTheme();
   const { t } = useI18n();
@@ -37,6 +57,7 @@ export default function LoginScreen() {
   const [rememberMe, setRememberMe] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [rateLimitSeconds, setRateLimitSeconds] = useState(0);
 
   // Load saved email on mount - run immediately
   useEffect(() => {
@@ -60,6 +81,14 @@ export default function LoginScreen() {
     // Run immediately, don't wait
     loadSavedEmail();
   }, []);
+
+  useEffect(() => {
+    if (rateLimitSeconds <= 0) return;
+    const timer = setInterval(() => {
+      setRateLimitSeconds((prev) => Math.max(prev - 1, 0));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [rateLimitSeconds]);
 
   const isLogin = mode === 'login';
 
@@ -89,6 +118,11 @@ export default function LoginScreen() {
   };
 
   const handleSubmit = async () => {
+    if (rateLimitSeconds > 0) {
+      setError(`Too many attempts. Please wait ${rateLimitSeconds}s and try again.`);
+      return;
+    }
+
     if (!validateForm()) return;
 
     setIsLoading(true);
@@ -101,8 +135,10 @@ export default function LoginScreen() {
 
       if (authError) {
         const message = authError.message || '';
-        if (message.toLowerCase().includes('rate limit')) {
-          setError(t.auth.errors.rateLimit);
+        const waitSeconds = extractRateLimitSeconds(message);
+        if (waitSeconds !== null) {
+          setRateLimitSeconds(waitSeconds);
+          setError(`Too many attempts. Please wait ${waitSeconds}s and try again.`);
         } else {
           setError(message || t.auth.errors.generic);
         }
@@ -139,6 +175,11 @@ export default function LoginScreen() {
   };
 
   const handleGoogleSignIn = async () => {
+    if (rateLimitSeconds > 0) {
+      setError(`Too many attempts. Please wait ${rateLimitSeconds}s and try again.`);
+      return;
+    }
+
     setIsLoading(true);
     setError(null);
 
@@ -146,8 +187,10 @@ export default function LoginScreen() {
       const { error: authError } = await signInWithGoogle();
       if (authError) {
         const message = authError.message || '';
-        if (message.toLowerCase().includes('rate limit')) {
-          setError(t.auth.errors.rateLimit);
+        const waitSeconds = extractRateLimitSeconds(message);
+        if (waitSeconds !== null) {
+          setRateLimitSeconds(waitSeconds);
+          setError(`Too many attempts. Please wait ${waitSeconds}s and try again.`);
         } else {
           setError(message || t.auth.errors.generic);
         }
@@ -325,9 +368,13 @@ export default function LoginScreen() {
       {/* Submit Button */}
       <View style={styles.submitContainer}>
         <BigPrimaryButton
-          label={isLogin ? t.auth.signIn : t.auth.signUp}
+          label={
+            rateLimitSeconds > 0
+              ? `Try again in ${rateLimitSeconds}s`
+              : (isLogin ? t.auth.signIn : t.auth.signUp)
+          }
           onPress={handleSubmit}
-          disabled={isLoading}
+          disabled={isLoading || rateLimitSeconds > 0}
         />
         {isLoading && (
           <ActivityIndicator
@@ -342,7 +389,7 @@ export default function LoginScreen() {
         <BigSecondaryButton
           label={isLogin ? t.auth.signInWithGoogle : t.auth.signUpWithGoogle}
           onPress={handleGoogleSignIn}
-          disabled={isLoading}
+          disabled={isLoading || rateLimitSeconds > 0}
           icon={
             <Image
               source={require('@/assets/images/google-logo.png')}

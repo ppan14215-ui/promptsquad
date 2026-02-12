@@ -497,22 +497,32 @@ export default function ChatScreen() {
   const contentHeightRef = useRef(0);
   const scrollViewHeightRef = useRef(0);
 
-  const staticMascot = MASCOT_DATA[mascotId || '1'] || MASCOT_DATA['1'];
+  const resolvedMascotId = Array.isArray(mascotId) ? mascotId[0] : mascotId;
+  const staticMascot = (resolvedMascotId ? MASCOT_DATA[resolvedMascotId] : undefined) || {
+    name: '',
+    image: 'bear',
+    color: colors.primary,
+    greeting: 'How can I help you today?',
+    subtitle: '',
+    skills: [],
+    systemPrompt: 'You are a helpful AI assistant.',
+    taskCategory: 'analysis' as const,
+  };
   const [dbMascot, setDbMascot] = useState<MascotBasic | null>(null);
 
   // Fetch real-time mascot details from DB
   useEffect(() => {
     async function fetchMascot() {
-      if (!mascotId) return;
+      if (!resolvedMascotId) return;
       const { data } = await supabase
         .from('mascots')
         .select('*')
-        .eq('id', mascotId)
+        .eq('id', resolvedMascotId)
         .single();
       if (data) setDbMascot(data);
     }
     fetchMascot();
-  }, [mascotId]);
+  }, [resolvedMascotId]);
 
   // Merge DB data with static data
   const mascot = useMemo(() => ({
@@ -544,18 +554,18 @@ export default function ChatScreen() {
 
   // Edit access in mascot tabs:
   // - Admins can always edit
-  // - Custom mascot owners can edit only on Pro plans
-  const canEdit = isAdmin || (isOwner && isSubscribed);
+  // - Pro (subscribed) users can edit personality and add skills for any mascot
+  const canEdit = isAdmin || isSubscribed;
 
   // Fetch skills and personality from database
-  const { skills: dbSkills, isLoading: skillsLoading, refetch: refetchSkills } = useMascotSkills(mascotId || '1', dbMascot?.is_free ?? false);
-  const { personality: dbPersonality, isLoading: personalityLoading, refetch: refetchPersonality } = useMascotPersonality(mascotId || '1');
+  const { skills: dbSkills, isLoading: skillsLoading, error: skillsError, refetch: refetchSkills } = useMascotSkills(resolvedMascotId || null, dbMascot?.is_free ?? false, isOwner);
+  const { personality: dbPersonality, isLoading: personalityLoading, refetch: refetchPersonality } = useMascotPersonality(resolvedMascotId || null);
 
   // Fetch like data for mascot
-  const { isLiked, likeCount, toggleLike, isToggling } = useMascotLike(mascotId || '1');
+  const { isLiked, likeCount, toggleLike, isToggling } = useMascotLike(resolvedMascotId || null);
 
   // Check mascot access (unlocked, trial, or locked)
-  const { canUse, reason, trialCount, trialLimit, isLoading: isLoadingAccess, refresh: refreshAccess } = useMascotAccess(mascotId || null);
+  const { canUse, reason, trialCount, trialLimit, isLoading: isLoadingAccess, refresh: refreshAccess } = useMascotAccess(resolvedMascotId || null);
   const isTrial = reason === 'trial';
   const isTrialExhausted = reason === 'trial_exhausted';
 
@@ -569,7 +579,19 @@ export default function ChatScreen() {
 
   // Active skill for enhanced prompting
   const [activeSkillId, setActiveSkillId] = useState<string | null>(skillId || null);
-  const activeSkill = dbSkills.find((s) => s.id === activeSkillId);
+  // Only show skills for the current mascot (avoids stale/wrong skills when switching profiles)
+  const skillsForMascot = useMemo(
+    () => (resolvedMascotId ? dbSkills.filter((s) => s.mascot_id === resolvedMascotId) : dbSkills),
+    [dbSkills, resolvedMascotId]
+  );
+  const activeSkill = skillsForMascot.find((s) => s.id === activeSkillId);
+
+  // Clear active skill when it doesn't belong to the current mascot's skills (e.g. after switching profile)
+  useEffect(() => {
+    if (!activeSkillId || skillsForMascot.length === 0) return;
+    const belongsToCurrentMascot = skillsForMascot.some((s) => s.id === activeSkillId);
+    if (!belongsToCurrentMascot) setActiveSkillId(null);
+  }, [activeSkillId, skillsForMascot]);
 
   // Skill editing state
   const [isSkillEditorVisible, setIsSkillEditorVisible] = useState(false);
@@ -2018,6 +2040,32 @@ export default function ChatScreen() {
         >
           {skillsLoading ? (
             <ActivityIndicator size="large" color={colors.primary} />
+          ) : skillsError ? (
+            <View style={{ padding: 20, gap: 12, alignItems: 'center' }}>
+              <Text
+                style={[
+                  styles.sourcesMessage,
+                  {
+                    fontFamily: textStyles.body.fontFamily,
+                    color: colors.textMuted,
+                    textAlign: 'center',
+                  },
+                ]}
+              >
+                {skillsError}
+              </Text>
+              <Pressable
+                onPress={() => refetchSkills()}
+                style={[
+                  styles.retryButton,
+                  { backgroundColor: colors.primary },
+                ]}
+              >
+                <Text style={{ fontFamily: fontFamilies.figtree.medium, color: colors.buttonText, fontSize: 15 }}>
+                  Try again
+                </Text>
+              </Pressable>
+            </View>
           ) : (
             <>
               {/* Add Skill Button (for owners/admins) */}
@@ -2060,10 +2108,10 @@ export default function ChatScreen() {
                       marginBottom: 16,
                     }}
                   >
-                    <Icon name="add" size={20} color={mascot.color} />
+                    <Icon name="add" size={20} color={colors.primary} />
                     <Text style={{
                       fontFamily: fontFamilies.figtree.medium,
-                      color: mascot.color,
+                      color: colors.primary,
                       fontSize: 15
                     }}>
                       Add New Skill
@@ -2072,7 +2120,7 @@ export default function ChatScreen() {
                 )
               )}
 
-              {dbSkills.length === 0 ? (
+              {skillsForMascot.length === 0 ? (
                 <Text
                   style={[
                     styles.sourcesMessage,
@@ -2085,7 +2133,7 @@ export default function ChatScreen() {
                   No skills configured for this mascot yet.
                 </Text>
               ) : (
-                dbSkills.map((skill) => {
+                skillsForMascot.map((skill) => {
                   // Check if skill is locked (user doesn't have full access)
                   const isSkillLocked = !skill.is_full_access;
 
@@ -2101,7 +2149,6 @@ export default function ChatScreen() {
                       disabled={isSkillLocked && !skill.is_full_access}
                       style={[
                         styles.skillPreviewCard,
-                        activeSkillId === skill.id && { borderColor: mascot.color, borderWidth: 2 },
                         isSkillLocked && !skill.is_full_access && { opacity: 0.6 },
                       ]}
                     >
@@ -2112,11 +2159,6 @@ export default function ChatScreen() {
                         fullPrompt={skill.skill_prompt}
                         mascotColor={mascot.color}
                       />
-                      {activeSkillId === skill.id && (
-                        <View style={[styles.activeSkillBadge, { backgroundColor: mascot.color }]}>
-                          <Text style={styles.activeSkillBadgeText}>Active</Text>
-                        </View>
-                      )}
                     </Pressable>
                   );
                 })
@@ -2394,8 +2436,8 @@ export default function ChatScreen() {
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.skillsContent}
             >
-              {dbSkills.length > 0
-                ? dbSkills.map((skill) => (
+              {skillsForMascot.length > 0
+                ? skillsForMascot.map((skill) => (
                   <LinkPill
                     key={skill.id}
                     label={skill.skill_label}
@@ -2668,6 +2710,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
   },
+  retryButton: {
+    alignSelf: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+  },
   sourceCard: {
     borderWidth: 1,
     borderRadius: 12,
@@ -2851,19 +2899,6 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     overflow: 'hidden',
     position: 'relative',
-  },
-  activeSkillBadge: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  activeSkillBadgeText: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '600',
   },
   inputContainer: {
     paddingHorizontal: 16,

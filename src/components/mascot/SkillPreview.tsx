@@ -1,8 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, Platform } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useTheme, fontFamilies, textStyles } from '@/design-system';
-import { resolveMascotColor } from '@/lib/utils/mascot-colors';
+import { useTheme, textStyles } from '@/design-system';
 import { Icon } from '../ui/Icon';
 import { FormattedText } from '../ui/FormattedText';
 
@@ -30,8 +29,15 @@ export function SkillPreview({
 }: SkillPreviewProps) {
   const { colors } = useTheme();
 
-  // Display full prompt for admins, preview for regular users
-  const displayText = isFullAccess && fullPrompt ? fullPrompt : skillPromptPreview;
+  const fallbackPreview = `Use ${skillLabel.toLowerCase()} to get a guided response with clear, practical next steps.`;
+  const normalizedFullPrompt = fullPrompt?.trim() || '';
+  const normalizedPreview = skillPromptPreview?.trim() || '';
+  // Display full prompt for owners/admins; otherwise preview text.
+  // Some skills can have empty preview fields depending on access/table sync,
+  // so always provide a fallback to avoid blank cards.
+  const displayText = isFullAccess
+    ? (normalizedFullPrompt || normalizedPreview || fallbackPreview)
+    : (normalizedPreview || fallbackPreview);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.surface, borderColor: colors.outline }]}>
@@ -43,7 +49,7 @@ export function SkillPreview({
             {
               fontFamily: textStyles.h3.fontFamily,
               fontSize: textStyles.h3.fontSize,
-              color: resolveMascotColor(mascotColor),
+              color: colors.text,
             },
           ]}
         >
@@ -56,8 +62,8 @@ export function SkillPreview({
         )}
       </View>
 
-      {/* Prompt content with fade effect for non-admins */}
-      <View style={styles.contentContainer}>
+      {/* Prompt content – capped height with fade so cards stay compact */}
+      <View style={[styles.contentContainer, isFullAccess && styles.contentContainerFull]}>
         <FormattedText
           style={{
             fontFamily: textStyles.body.fontFamily,
@@ -66,19 +72,16 @@ export function SkillPreview({
           }}
           baseColor={colors.text}
         >
-          {isFullAccess ? (displayText || '') : (displayText || '').split('\n').slice(0, 8).join('\n')}
+          {isFullAccess
+            ? (displayText || '').split('\n').slice(0, 12).join('\n')
+            : (displayText || '').split('\n').slice(0, 8).join('\n')}
         </FormattedText>
 
-        {/* Fade overlay for non-admins */}
-        {!isFullAccess && (
-          <LinearGradient
-            colors={[
-              'transparent',
-              colors.surface,
-            ]}
-            style={[styles.fadeOverlay, { pointerEvents: 'none' }]}
-          />
-        )}
+        {/* Fade overlay – always shown to indicate there's more content */}
+        <LinearGradient
+          colors={['transparent', colors.surface]}
+          style={[styles.fadeOverlay, { pointerEvents: 'none' }]}
+        />
       </View>
 
       {/* Lock message for non-admins */}
@@ -132,7 +135,12 @@ const styles = StyleSheet.create({
     position: 'relative',
     paddingHorizontal: 16,
     paddingBottom: 16,
-    minHeight: 100,
+    minHeight: 60,
+    maxHeight: 160,
+    overflow: 'hidden',
+  },
+  contentContainerFull: {
+    maxHeight: 220,
   },
   promptText: {
     fontSize: 13,

@@ -35,6 +35,8 @@ export type OwnedMascot = {
     isFree?: boolean;
     isCustom?: boolean;
     ownerId?: string;
+    bio?: string | null;
+    isComingSoon?: boolean;
 };
 
 export const FREE_MASCOTS: OwnedMascot[] = [

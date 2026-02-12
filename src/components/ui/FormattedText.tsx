@@ -146,19 +146,46 @@ export function FormattedText({ children, style, baseColor }: FormattedTextProps
             );
         }
 
-        // Regular line
+        // Heading lines (### or ##)
+        const headingMatch = line.match(/^#{1,3}\s+(.+)$/);
+        if (headingMatch) {
+            const headingSegments = parseInlineFormatting(headingMatch[1]);
+            return (
+                <Text
+                    key={index}
+                    style={[
+                        style,
+                        {
+                            color: textColor,
+                            fontFamily: fontFamilies.figtree.semiBold,
+                            fontWeight: '600',
+                            marginTop: index > 0 ? 8 : 0,
+                        },
+                    ]}
+                >
+                    {renderSegments(headingSegments)}
+                </Text>
+            );
+        }
+
+        // Regular line - empty lines become small spacers
+        if (!line.trim()) {
+            return <View key={index} style={{ height: 6 }} />;
+        }
+
         return (
             <Text key={index} style={[style, { color: textColor }]}>
                 {renderSegments(segments)}
-                {!isLast && '\n'}
             </Text>
         );
     };
 
+    // Use View as outer container so we can safely mix Text and View children
+    // (nesting View inside Text breaks layout on React Native mobile)
     return (
-        <Text style={[styles.container, style, { color: textColor }]}>
+        <View style={styles.container}>
             {lines.map((line, index) => renderLine(line, index, index === lines.length - 1))}
-        </Text>
+        </View>
     );
 }
 

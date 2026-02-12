@@ -118,7 +118,7 @@ export default function CreateMascotScreen() {
                     subtitle: subtitle.trim(),
                     color: selectedColor,
                     image_url: selectedImage, // We store the key, relying on frontend helper to map
-                    question_prompt: !isGlobalMascot ? (bio.trim() || null) : null,
+                    bio: !isGlobalMascot ? (bio.trim() || null) : null,
                     owner_id: isGlobalMascot ? null : user.id,
                     is_custom: !isGlobalMascot,
                     is_ready: true,

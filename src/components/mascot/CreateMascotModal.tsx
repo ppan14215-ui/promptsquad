@@ -153,7 +153,7 @@ export function CreateMascotModal({ visible, onClose, onSuccess }: CreateMascotM
                     subtitle: subtitle.trim(),
                     color: selectedColor,
                     image_url: selectedImage,
-                    question_prompt: !isGlobalMascot ? (bio.trim() || null) : null,
+                    bio: !isGlobalMascot ? (bio.trim() || null) : null,
                     owner_id: isGlobalMascot ? null : user.id,
                     is_custom: !isGlobalMascot,
                     is_ready: true,
