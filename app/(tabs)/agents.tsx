@@ -194,8 +194,8 @@ export default function AgentsScreen() {
         >
           <View style={styles.sectionHeader}>
             <View style={styles.sectionTitleRow}>
-              <View style={styles.sectionArrowIcon}>
-                <Icon name="arrow-right" size={12} color={colors.textMuted} strokeWidth={1.6} />
+              <View style={styles.sectionHeaderIcon}>
+                <Icon name="globe" size={14} color={colors.textMuted} strokeWidth={1.6} />
               </View>
               <Text
                 style={[
@@ -353,8 +353,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
   },
-  sectionArrowIcon: {
-    transform: [{ rotate: '45deg' }],
+  sectionHeaderIcon: {
     alignItems: 'center',
     justifyContent: 'center',
   },
