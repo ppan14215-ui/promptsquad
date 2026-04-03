@@ -173,6 +173,8 @@ export function CircularMascotCarousel({
 
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [hoveredArrow, setHoveredArrow] = useState<'left' | 'right' | null>(null);
+  /** Same skill hover + tooltip as MascotDetails (preview on hover / tap). */
+  const [hoveredSkillId, setHoveredSkillId] = useState<string | null>(null);
 
   const descAnimatedStyle = useAnimatedStyle(() => ({
     opacity: descOpacitySv.value,
@@ -185,6 +187,7 @@ export function CircularMascotCarousel({
 
   useEffect(() => {
     setHoveredIndex(null);
+    setHoveredSkillId(null);
     hoveredIndexSv.value = -1;
     descOpacitySv.value = 0;
     descOpacitySv.value = withTiming(1, {
@@ -427,17 +430,51 @@ export function CircularMascotCarousel({
 
         <View style={styles.bioToSkills}>
           <View style={styles.skillsPillsRow}>
-            {skillTabs.map((skill) => (
-              <LinkPill
-                key={skill.id}
-                label={skill.label}
-                color={activeMascot.color}
-                onPress={() => {
-                  if (activeMascot.isComingSoon) return;
-                  onSkillTabPress?.(skill);
-                }}
-              />
-            ))}
+            {skillTabs.map((skill) => {
+              const isActive = hoveredSkillId === skill.id;
+              const tooltipPreview =
+                skill.summary?.trim() ||
+                skill.promptPreview?.trim() ||
+                skill.prompt?.trim() ||
+                '';
+              const showTooltip = isActive && !!tooltipPreview;
+              return (
+                <View
+                  key={skill.id}
+                  style={{
+                    position: 'relative',
+                    alignItems: 'center',
+                    zIndex: isActive ? 100 : 1,
+                  }}
+                >
+                  {showTooltip && (
+                    <View style={[styles.skillTooltipContainer, { backgroundColor: '#1A1A1A' }]}>
+                      <Text style={styles.skillTooltipText} numberOfLines={4}>
+                        {tooltipPreview}
+                      </Text>
+                      <View style={[styles.skillTooltipArrow, { borderTopColor: '#1A1A1A' }]} />
+                    </View>
+                  )}
+                  <LinkPill
+                    label={skill.label}
+                    forceState={isActive ? 'hover' : undefined}
+                    onHoverIn={() => {
+                      if (!activeMascot.isComingSoon) setHoveredSkillId(skill.id);
+                    }}
+                    onHoverOut={() => setHoveredSkillId(null)}
+                    onPress={() => {
+                      if (activeMascot.isComingSoon) return;
+                      if (Platform.OS !== 'web') {
+                        if (isActive) onSkillTabPress?.(skill);
+                        else setHoveredSkillId(skill.id);
+                      } else {
+                        onSkillTabPress?.(skill);
+                      }
+                    }}
+                  />
+                </View>
+              );
+            })}
           </View>
         </View>
         </View>
@@ -845,10 +882,44 @@ const styles = StyleSheet.create({
     maxWidth: 524,
     columnGap: 8,
     rowGap: 6,
+    ...(Platform.OS === 'web' ? ({ overflow: 'visible' } as any) : null),
   },
   bioToSkills: {
     width: '100%',
     marginTop: 36,
+    ...(Platform.OS === 'web' ? ({ overflow: 'visible' } as any) : null),
+  },
+  skillTooltipContainer: {
+    position: 'absolute',
+    bottom: '100%',
+    marginBottom: 8,
+    width: 220,
+    borderRadius: 8,
+    padding: 12,
+    zIndex: 1000,
+    ...Platform.select({
+      web: { boxShadow: '0px 4px 12px rgba(0,0,0,0.15)' } as any,
+      default: { elevation: 5 },
+    }),
+  },
+  skillTooltipText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    lineHeight: 16,
+    textAlign: 'center',
+  },
+  skillTooltipArrow: {
+    position: 'absolute',
+    bottom: -6,
+    left: '50%',
+    marginLeft: -6,
+    width: 0,
+    height: 0,
+    borderLeftWidth: 6,
+    borderRightWidth: 6,
+    borderTopWidth: 6,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
   },
   empty: {
     height: 420,
