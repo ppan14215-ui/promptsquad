@@ -14,7 +14,8 @@ import {
 import { useRouter } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, fontFamilies } from '@/design-system';
-import { useMascots, MascotBasic } from '@/services/admin';
+import { MascotBasic } from '@/services/admin';
+import { useMascotsData } from '@/context/MascotsDataContext';
 import { unlockMascots } from '@/services/mascot-access';
 import { getMascotImageSource, getMascotGrayscaleImageSource } from '@/services/admin/mascot-images';
 import { MascotCard, BigPrimaryButton, TextButton, Icon } from '@/components';
@@ -30,7 +31,7 @@ export default function SelectMascotsScreen() {
   const router = useRouter();
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const { mascots, isLoading } = useMascots();
+  const { mascots, isLoading } = useMascotsData();
   const [selectedMascots, setSelectedMascots] = useState<string[]>([]);
   const [isUnlocking, setIsUnlocking] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
@@ -38,10 +39,11 @@ export default function SelectMascotsScreen() {
   const { isSubscribed } = useSubscription();
   const { isAdmin } = useIsAdmin();
 
-  // Show all mascots: first 10 are free (selectable), 11-20 are pro (visible but not selectable)
+  // Show all mascots except coming-soon ones: free are selectable, pro are visible but not selectable
   const allMascots = useMemo(() => {
     if (mascots.length === 0) return [];
-    return mascots;
+    // Filter out coming-soon (is_active === false) mascots — users can't use them yet
+    return mascots.filter(m => m.is_active !== false);
   }, [mascots]);
 
   // Only free mascots are selectable

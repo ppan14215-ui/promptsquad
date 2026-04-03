@@ -236,16 +236,26 @@ export async function secureChatStream(
   let actualProvider: 'openai' | 'gemini' | 'perplexity' | 'grok' | 'claude' | undefined = undefined;
   let citations: string[] | undefined = undefined;
 
+  // Buffer incomplete SSE events - chunks can be split across network packets
+  let sseBuffer = '';
+
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
 
     const chunk = decoder.decode(value, { stream: true });
-    const lines = chunk.split('\n').filter((line) => line.startsWith('data: '));
+    sseBuffer += chunk;
 
-    for (const line of lines) {
+    // SSE events are delimited by double newline; process only complete events
+    const events = sseBuffer.split('\n\n');
+    sseBuffer = events.pop() || '';
+
+    for (const event of events) {
+      const line = event.split('\n').find((l) => l.startsWith('data: '));
+      if (!line) continue;
+
       try {
-        const data = JSON.parse(line.slice(6));
+        const data = JSON.parse(line.slice(6).trim());
 
         if (data.error) {
           throw new Error(data.error);
@@ -258,7 +268,6 @@ export async function secureChatStream(
           fullContent += data.content;
           onChunk(data.content);
         } else if (data.thinking) {
-          // Show thinking status in UI (transient indicator)
           if (onThinking) {
             onThinking(data.thinking);
           }
@@ -268,6 +277,28 @@ export async function secureChatStream(
       } catch (e) {
         if (e instanceof SyntaxError) continue;
         throw e;
+      }
+    }
+  }
+
+  // Process any remaining buffer
+  if (sseBuffer.trim()) {
+    const line = sseBuffer.split('\n').find((l) => l.startsWith('data: '));
+    if (line) {
+      try {
+        const data = JSON.parse(line.slice(6).trim());
+        if (data.error) throw new Error(data.error);
+        if (data.done) {
+          model = data.model || 'unknown';
+          actualProvider = data.provider || undefined;
+        } else if (data.content) {
+          fullContent += data.content;
+          onChunk(data.content);
+        } else if (data.citations) {
+          citations = data.citations;
+        }
+      } catch {
+        // Skip invalid trailing data
       }
     }
   }

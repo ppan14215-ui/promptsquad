@@ -2,20 +2,67 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/services/supabase';
 import { useAuth } from '@/services/auth';
+import {
+  LLM_AUTO_SUBTITLE,
+  LLM_OPTION_DESCRIPTIONS,
+  LLM_PICKER_LABEL,
+  LLM_VENDOR,
+} from '@/constants/ai-models';
 
 type ThemeMode = 'light' | 'dark';
 type Language = 'en' | 'de' | 'es';
 export type LLMProvider = 'gemini' | 'openai' | 'perplexity' | 'grok' | 'claude';
 export type LLMPreference = 'auto' | LLMProvider;
 
-export const LLM_OPTIONS: { code: LLMPreference; name: string; description: string }[] = [
-  { code: 'auto', name: 'Auto', description: 'Best model for the task' },
-  { code: 'gemini', name: 'Google Gemini 3', description: 'Google Frontier' },
-  { code: 'openai', name: 'OpenAI GPT-5.2', description: 'The most intelligent model' },
-  { code: 'perplexity', name: 'Perplexity Sonar', description: 'Deep web research' },
-  { code: 'grok', name: 'xAI Grok 4.1', description: 'xAI Flagship' },
-  { code: 'claude', name: 'Anthropic Claude 3.5', description: 'Most articulate & creative' },
+export type LLMOption = {
+  code: LLMPreference;
+  /** Short model name (primary line in picker). */
+  name: string;
+  /** Brand / company (subtitle under `name` for providers). Auto uses `LLM_AUTO_SUBTITLE` via `llmOptionSubtitle`. */
+  vendor: string;
+  description: string;
+};
+
+export const LLM_OPTIONS: LLMOption[] = [
+  { code: 'auto', name: 'Auto', vendor: '', description: LLM_AUTO_SUBTITLE },
+  {
+    code: 'gemini',
+    name: LLM_PICKER_LABEL.gemini,
+    vendor: LLM_VENDOR.gemini,
+    description: LLM_OPTION_DESCRIPTIONS.gemini,
+  },
+  {
+    code: 'openai',
+    name: LLM_PICKER_LABEL.openai,
+    vendor: LLM_VENDOR.openai,
+    description: LLM_OPTION_DESCRIPTIONS.openai,
+  },
+  {
+    code: 'perplexity',
+    name: LLM_PICKER_LABEL.perplexity,
+    vendor: LLM_VENDOR.perplexity,
+    description: LLM_OPTION_DESCRIPTIONS.perplexity,
+  },
+  {
+    code: 'grok',
+    name: LLM_PICKER_LABEL.grok,
+    vendor: LLM_VENDOR.grok,
+    description: LLM_OPTION_DESCRIPTIONS.grok,
+  },
+  {
+    code: 'claude',
+    name: LLM_PICKER_LABEL.claude,
+    vendor: LLM_VENDOR.claude,
+    description: LLM_OPTION_DESCRIPTIONS.claude,
+  },
 ];
+
+/** Second line under the model name: company for providers, task hint for Auto. */
+export function llmOptionSubtitle(option: LLMOption | undefined): string {
+  if (!option) return '';
+  if (option.code === 'auto') return LLM_AUTO_SUBTITLE;
+  return option.vendor ?? '';
+}
 
 // Task categories that help determine which AI is best
 export type TaskCategory =
@@ -49,7 +96,7 @@ export function selectBestProvider(
     case 'conversation':
     case 'quick':
     default:
-      // Gemini 3 is fantastic for research, dialogue, and general tasks
+      // Gemini 3.1 is strong for research, dialogue, and general tasks
       return 'gemini';
   }
 }

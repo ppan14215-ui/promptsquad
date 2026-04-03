@@ -58,6 +58,8 @@ export function ChatHeader({
     // Row 1: [Back] [Mascot Image] [Name + Subtitle] [Favourite]
     // Row 2: [Tabs ..............................] [Trial]
     const mascotSize = 48;
+    /** Back control + gaps + avatar so tabs line up with the title text. */
+    const mobileIconColumnWidth = 32 + 10 + mascotSize + 10;
 
     return (
       <View
@@ -137,7 +139,7 @@ export function ChatHeader({
         </View>
 
         {/* Row 2: Tabs + Optional trial bar */}
-        <View style={styles.mobileTabsRow}>
+        <View style={[styles.mobileTabsRow, { paddingLeft: mobileIconColumnWidth }]}>
           <View style={styles.tabsLeft}>
             {tabs.map((tab) => (
               <ColoredTab
@@ -181,10 +183,12 @@ export function ChatHeader({
     );
   }
 
-  // ── Desktop layout (unchanged) ──
+  // ── Desktop layout ──
   const backContainerWidth = 143;
+  const headerRowGap = 15;
+  /** Align tab row with the start of the name (same inset as headerTextContainer). */
+  const tabsPaddingLeft = backContainerWidth + headerRowGap;
   const mascotSize = 100;
-  const tabsPaddingLeft = 150;
 
   return (
     <View

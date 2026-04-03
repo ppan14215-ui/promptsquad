@@ -5,7 +5,8 @@ import { MascotCard, TextButton, BigPrimaryButton, CreateCustomCard, MascotDetai
 import { useTheme, textStyles, fontFamilies } from '@/design-system';
 import { useI18n } from '@/i18n';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useIsAdmin, useMascots, MascotBasic, useMascotSkills, MascotSkill, deleteMascot } from '@/services/admin';
+import { useIsAdmin, MascotBasic, useMascotSkills, MascotSkill, deleteMascot } from '@/services/admin';
+import { useMascotsData } from '@/context/MascotsDataContext';
 import { useAuth } from '@/services/auth';
 import { getMascotImageSource, getMascotGrayscaleImageSource } from '@/services/admin/mascot-images';
 import { useSubscription } from '@/services/subscription';
@@ -119,7 +120,7 @@ const SAMPLE_MASCOTS: Mascot[] = [
     grayscaleImage: getGrayscaleImage('bear'), // Use grayscale version if available
     color: 'yellow',  // Keep original
     personality: ['Analytical', 'Thorough', 'Patient'],
-    models: ['GPT-5.2', 'Gemini 3', 'Grok 4.1', 'Claude 4'],
+    models: ['GPT-5.4', 'Gemini 3.1', 'Grok 4.1', 'Claude 4.5'],
     skills: [
       { id: '1-1', label: 'Stock analysis' },
       { id: '1-2', label: 'Competitive analysis' },
@@ -133,7 +134,7 @@ const SAMPLE_MASCOTS: Mascot[] = [
     image: mascotImages.fox,
     color: 'orange',  // Changed: fox suits orange
     personality: ['Creative', 'Eloquent', 'Witty'],
-    models: ['GPT-5.2', 'Gemini 3', 'Grok 4.1', 'Claude 4'],
+    models: ['GPT-5.4', 'Gemini 3.1', 'Grok 4.1', 'Claude 4.5'],
     skills: [
       { id: '2-1', label: 'Blog posts' },
       { id: '2-2', label: 'Email drafts' },
@@ -147,7 +148,7 @@ const SAMPLE_MASCOTS: Mascot[] = [
     image: mascotImages.panda,
     color: 'green',  // Keep original
     personality: ['Empathetic', 'Detail-oriented', 'User-focused'],
-    models: ['GPT-5.2', 'Gemini 3', 'Grok 4.1'],
+    models: ['GPT-5.4', 'Gemini 3.1', 'Grok 4.1'],
     skills: [
       { id: '3-1', label: 'User research' },
       { id: '3-2', label: 'Wireframing' },
@@ -161,7 +162,7 @@ const SAMPLE_MASCOTS: Mascot[] = [
     image: mascotImages.zebra,
     color: 'pink',  // Keep original
     personality: ['Supportive', 'Wise', 'Balanced'],
-    models: ['Claude 4', 'Gemini 3', 'Grok 4.1'],
+    models: ['Claude 4.5', 'Gemini 3.1', 'Grok 4.1'],
     skills: [
       { id: '4-1', label: 'Life coaching' },
       { id: '4-2', label: 'Decision making' },
@@ -179,7 +180,7 @@ const SAMPLE_MASCOTS: Mascot[] = [
     color: 'purple',  // Changed: wise owl suits purple
     isLocked: true,
     personality: ['Patient', 'Knowledgeable', 'Encouraging'],
-    models: ['GPT-5.2', 'Gemini 3', 'Grok 4.1', 'Claude 4'],
+    models: ['GPT-5.4', 'Gemini 3.1', 'Grok 4.1', 'Claude 4.5'],
     skills: [
       { id: '5-1', label: 'Lesson planning' },
       { id: '5-2', label: 'Homework help' },
@@ -195,7 +196,7 @@ const SAMPLE_MASCOTS: Mascot[] = [
     color: 'teal',  // Changed: turtle suits teal
     isLocked: true,
     personality: ['Methodical', 'Precise', 'Helpful'],
-    models: ['GPT-5.2', 'Claude 4', 'Gemini 3', 'Grok 4.1'],
+    models: ['GPT-5.4', 'Claude 4.5', 'Gemini 3.1', 'Grok 4.1'],
     skills: [
       { id: '6-1', label: 'Prompt engineering' },
       { id: '6-2', label: 'AI optimization' },
@@ -211,7 +212,7 @@ const SAMPLE_MASCOTS: Mascot[] = [
     color: 'brown',  // Changed: badger suits brown
     isLocked: true,
     personality: ['Analytical', 'Persistent', 'Detail-oriented'],
-    models: ['GPT-5.2', 'Gemini 3', 'Grok 4.1', 'Claude 4'],
+    models: ['GPT-5.4', 'Gemini 3.1', 'Grok 4.1', 'Claude 4.5'],
     skills: [
       { id: '7-1', label: 'Data visualization' },
       { id: '7-2', label: 'Statistical analysis' },
@@ -227,7 +228,7 @@ const SAMPLE_MASCOTS: Mascot[] = [
     color: 'blue',  // Changed: quick mouse suits blue
     isLocked: true,
     personality: ['Quick', 'Resourceful', 'Efficient'],
-    models: ['GPT-5.2', 'Grok 4.1'],
+    models: ['GPT-5.4', 'Grok 4.1'],
     skills: [
       { id: '8-1', label: 'Quick fixes' },
       { id: '8-2', label: 'Troubleshooting' },
@@ -243,7 +244,7 @@ const SAMPLE_MASCOTS: Mascot[] = [
     color: 'pink',  // Changed: playful pig suits pink
     isLocked: true,
     personality: ['Creative', 'Playful', 'Innovative'],
-    models: ['Claude 4', 'Gemini 3', 'Grok 4.1'],
+    models: ['Claude 4.5', 'Gemini 3.1', 'Grok 4.1'],
     skills: [
       { id: '9-1', label: 'Brainstorming' },
       { id: '9-2', label: 'Ideation' },
@@ -258,7 +259,7 @@ const SAMPLE_MASCOTS: Mascot[] = [
     color: 'darkPurple',  // Changed: code cat suits dark purple
     isLocked: true,
     personality: ['Logical', 'Precise', 'Patient'],
-    models: ['GPT-5.2', 'Gemini 3', 'Grok 4.1', 'Claude 4'],
+    models: ['GPT-5.4', 'Gemini 3.1', 'Grok 4.1', 'Claude 4.5'],
     skills: [
       { id: '10-1', label: 'Code review' },
       { id: '10-2', label: 'Debugging' },
@@ -276,7 +277,7 @@ const SAMPLE_MASCOTS: Mascot[] = [
     color: 'brown',  // Changed: desert camel suits brown
     isLocked: true,
     personality: ['Strategic', 'Visionary', 'Organized'],
-    models: ['GPT-5.2', 'Gemini 3', 'Grok 4.1', 'Claude 4'],
+    models: ['GPT-5.4', 'Gemini 3.1', 'Grok 4.1', 'Claude 4.5'],
     skills: [
       { id: '11-1', label: 'Business strategy' },
       { id: '11-2', label: 'Goal setting' },
@@ -292,7 +293,7 @@ const SAMPLE_MASCOTS: Mascot[] = [
     color: 'teal',  // Changed: frog suits teal
     isLocked: true,
     personality: ['Persuasive', 'Creative', 'Data-driven'],
-    models: ['GPT-5.2', 'Grok 4.1', 'Gemini 3'],
+    models: ['GPT-5.4', 'Grok 4.1', 'Gemini 3.1'],
     skills: [
       { id: '12-1', label: 'Campaign planning' },
       { id: '12-2', label: 'Copywriting' },
@@ -308,7 +309,7 @@ const SAMPLE_MASCOTS: Mascot[] = [
     color: 'yellow',  // Giraffe with yellow spots
     isLocked: true,
     personality: ['User-focused', 'Organized', 'Collaborative'],
-    models: ['GPT-5.2', 'Gemini 3', 'Grok 4.1', 'Claude 4'],
+    models: ['GPT-5.4', 'Gemini 3.1', 'Grok 4.1', 'Claude 4.5'],
     skills: [
       { id: '13-1', label: 'PRD writing' },
       { id: '13-2', label: 'Feature prioritization' },
@@ -324,7 +325,7 @@ const SAMPLE_MASCOTS: Mascot[] = [
     color: 'orange',  // Changed: lion suits orange
     isLocked: true,
     personality: ['Empathetic', 'Patient', 'Solution-oriented'],
-    models: ['Claude 4', 'GPT-5.2', 'Gemini 3'],
+    models: ['Claude 4.5', 'GPT-5.4', 'Gemini 3.1'],
     skills: [
       { id: '14-1', label: 'Customer support' },
       { id: '14-2', label: 'FAQ creation' },
@@ -340,7 +341,7 @@ const SAMPLE_MASCOTS: Mascot[] = [
     color: 'blue',  // Changed: seahorse suits blue
     isLocked: true,
     personality: ['Wise', 'Encouraging', 'Experienced'],
-    models: ['Claude 4', 'GPT-5.2', 'Gemini 3'],
+    models: ['Claude 4.5', 'GPT-5.4', 'Gemini 3.1'],
     skills: [
       { id: '15-1', label: 'Career coaching' },
       { id: '15-2', label: 'Resume review' },
@@ -356,7 +357,7 @@ const SAMPLE_MASCOTS: Mascot[] = [
     color: 'orange',  // Changed: endurance/project suits orange
     isLocked: true,
     personality: ['Methodical', 'Reliable', 'Organized'],
-    models: ['GPT-5.2', 'Gemini 3', 'Grok 4.1', 'Claude 4'],
+    models: ['GPT-5.4', 'Gemini 3.1', 'Grok 4.1', 'Claude 4.5'],
     skills: [
       { id: '16-1', label: 'Project planning' },
       { id: '16-2', label: 'Risk management' },
@@ -372,7 +373,7 @@ const SAMPLE_MASCOTS: Mascot[] = [
     color: 'green',  // Changed: research frog suits green
     isLocked: true,
     personality: ['Curious', 'Thorough', 'Analytical'],
-    models: ['GPT-5.2', 'Grok 4.1', 'Gemini 3'],
+    models: ['GPT-5.4', 'Grok 4.1', 'Gemini 3.1'],
     skills: [
       { id: '17-1', label: 'Market analysis' },
       { id: '17-2', label: 'Trend research' },
@@ -388,7 +389,7 @@ const SAMPLE_MASCOTS: Mascot[] = [
     color: 'purple',  // Changed: agile suits purple
     isLocked: true,
     personality: ['Agile', 'Collaborative', 'Adaptive'],
-    models: ['GPT-5.2', 'Gemini 3', 'Grok 4.1'],
+    models: ['GPT-5.4', 'Gemini 3.1', 'Grok 4.1'],
     skills: [
       { id: '18-1', label: 'Sprint planning' },
       { id: '18-2', label: 'Retrospectives' },
@@ -404,7 +405,7 @@ const SAMPLE_MASCOTS: Mascot[] = [
     color: 'red',  // Changed: bold brand lion suits red
     isLocked: true,
     personality: ['Creative', 'Strategic', 'Visionary'],
-    models: ['Claude 4', 'GPT-5.2', 'Grok 4.1'],
+    models: ['Claude 4.5', 'GPT-5.4', 'Grok 4.1'],
     skills: [
       { id: '19-1', label: 'Brand positioning' },
       { id: '19-2', label: 'Voice & tone' },
@@ -420,7 +421,7 @@ const SAMPLE_MASCOTS: Mascot[] = [
     color: 'darkPurple',  // Changed: dev suits dark purple
     isLocked: true,
     personality: ['Technical', 'Problem-solver', 'Curious'],
-    models: ['GPT-5.2', 'Gemini 3', 'Grok 4.1', 'Claude 4'],
+    models: ['GPT-5.4', 'Gemini 3.1', 'Grok 4.1', 'Claude 4.5'],
     skills: [
       { id: '20-1', label: 'Full-stack development' },
       { id: '20-2', label: 'API design' },
@@ -447,7 +448,7 @@ export default function StoreScreen() {
   const { user } = useAuth();
 
   // Fetch mascots from database with fallback to hardcoded
-  const { mascots: dbMascots, isLoading: isLoadingMascots, error: mascotsError, refetch: refetchMascots } = useMascots();
+  const { mascots: dbMascots, isLoading: isLoadingMascots, error: mascotsError, refetch: refetchMascots } = useMascotsData();
 
   // Refetch mascots when screen comes into focus (e.g. after creating new mascot)
   useFocusEffect(
@@ -470,7 +471,7 @@ export default function StoreScreen() {
         const isFree = (m.is_free != null) ? m.is_free : (mascotId >= 1 && mascotId <= 10);
         const isCustom = m.is_custom === true;
         const isPro = (m.is_pro != null) ? m.is_pro : (mascotId >= 11 && mascotId <= 20);
-        const isComingSoon = m.is_active === false;
+        const isComingSoon = m.is_ready === false;
 
         // Determine unlock status:
         // - For free mascots: always unlocked
@@ -496,7 +497,7 @@ export default function StoreScreen() {
         };
       });
 
-      // Hide non-active or non-visible mascots for non-admin users
+      // Hide non-visible mascots for non-admin users (keep coming soon - show as greyed out in store)
       if (!isAdmin) {
         converted = converted.filter(m => {
           const dbMascot = dbMascots.find(db => db.id === m.id);
@@ -712,6 +713,8 @@ export default function StoreScreen() {
           id: skill.id,
           label: skill.skill_label,
           prompt: skill.skill_prompt || undefined,
+          summary: skill.skill_summary?.trim() || undefined,
+          promptPreview: skill.skill_prompt_preview?.trim() || undefined,
         }));
       }
       // Fallback to hardcoded skills
@@ -724,7 +727,7 @@ export default function StoreScreen() {
       : ['Helpful', 'Friendly', 'Knowledgeable'];
     const models = mascot.models && mascot.models.length > 0
       ? mascot.models
-      : ['Gemini 3', 'GPT-5.2', 'Grok 4.1'];
+      : ['Gemini 3.1', 'GPT-5.4', 'Grok 4.1'];
 
     return (
       <MascotDetails

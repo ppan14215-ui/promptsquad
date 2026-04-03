@@ -9,6 +9,7 @@ import { MediumDarkButton } from '@/components/ui/MediumDarkButton';
 import { MiniButton } from '@/components/ui/MiniButton';
 import { LinkPill } from '@/components/ui/LinkPill';
 import { ColoredTab } from '@/components/ui/ColoredTab';
+import { AI_MODEL_DISPLAY } from '@/constants/ai-models';
 import { useMascotLike } from '@/services/mascot-likes';
 // import { useMascotSkills } from '@/services/admin';
 
@@ -18,6 +19,10 @@ export type Skill = {
   id: string;
   label: string;
   prompt?: string;
+  /** Admin-set short line for cards (maps to `skill_summary` in DB). */
+  summary?: string;
+  /** DB preview snippet when full prompt is unavailable (e.g. masked). */
+  promptPreview?: string;
 };
 
 export type MascotDetailsProps = {
@@ -72,8 +77,8 @@ export function MascotDetails({
   // Use shared like system if mascotId is provided
   const { isLiked, likeCount, toggleLike, isToggling } = useMascotLike(enableLikes ? mascotId || null : null);
 
-  // Use passed skills directly
-  const displaySkills = skills;
+  // Cap at 4 skills to avoid overflow on the card
+  const displaySkills = skills.slice(0, 4);
   const isLoadingSkills = false;
 
   const fallbackSkillBio = useMemo(() => {
@@ -116,7 +121,7 @@ export function MascotDetails({
       text.includes('translate') ||
       text.includes('editor')
     ) {
-      return ['Claude 4.5', 'Gemini 3'];
+      return [AI_MODEL_DISPLAY.chipClaude, AI_MODEL_DISPLAY.chipGemini];
     }
 
     if (
@@ -127,7 +132,7 @@ export function MascotDetails({
       text.includes('architecture') ||
       text.includes('program')
     ) {
-      return ['OpenAI GPT-5.2', 'Claude 4.5'];
+      return [AI_MODEL_DISPLAY.chipOpenai, AI_MODEL_DISPLAY.chipClaude];
     }
 
     if (
@@ -138,7 +143,7 @@ export function MascotDetails({
       text.includes('strategy') ||
       text.includes('report')
     ) {
-      return ['OpenAI GPT-5.2', 'Perplexity Sonar'];
+      return [AI_MODEL_DISPLAY.chipOpenai, AI_MODEL_DISPLAY.chipPerplexity];
     }
 
     if (
@@ -148,14 +153,14 @@ export function MascotDetails({
       text.includes('advice') ||
       text.includes('interview')
     ) {
-      return ['Gemini 3', 'Claude 4.5'];
+      return [AI_MODEL_DISPLAY.chipGemini, AI_MODEL_DISPLAY.chipClaude];
     }
 
     if (models?.length) {
       return models.slice(0, 2);
     }
 
-    return ['Gemini 3', 'OpenAI GPT-5.2'];
+    return [AI_MODEL_DISPLAY.chipGemini, AI_MODEL_DISPLAY.chipOpenai];
   }, [displaySkills, models, name, subtitle]);
 
   // Shadow for header
@@ -174,7 +179,7 @@ export function MascotDetails({
           { fontFamily: fontFamilies.figtree.semiBold, color: colors.text },
         ]}
       >
-        Bio
+        Short bio
       </Text>
       <Text
         style={[
@@ -222,12 +227,17 @@ export function MascotDetails({
         ) : (
           displaySkills.map((skill) => {
             const isActive = hoveredSkill === skill.id;
-            const showTooltip = isActive && !!skill.prompt;
+            const tooltipPreview =
+              skill.summary?.trim() ||
+              skill.promptPreview?.trim() ||
+              skill.prompt?.trim() ||
+              '';
+            const showTooltip = isActive && !!tooltipPreview;
             return (
               <View key={skill.id} style={{ position: 'relative', alignItems: 'center', zIndex: isActive ? 100 : 1 }}>
                 {showTooltip && (
                   <View style={[styles.tooltipContainer, { backgroundColor: '#1A1A1A' }]}>
-                    <Text style={styles.tooltipText} numberOfLines={4}>{skill.prompt}</Text>
+                    <Text style={styles.tooltipText} numberOfLines={4}>{tooltipPreview}</Text>
                     <View style={[styles.tooltipArrow, { borderTopColor: '#1A1A1A' }]} />
                   </View>
                 )}

@@ -27,6 +27,7 @@ type MascotEditorProps = {
   currentName: string;
   currentSubtitle: string | null;
   currentBio?: string | null;
+  currentLongBio?: string | null;
   currentIsPro?: boolean;
   currentIsFree?: boolean;
   currentIsReady?: boolean;
@@ -34,7 +35,18 @@ type MascotEditorProps = {
   currentSortOrder?: number;
   currentColor?: string;
   onClose: () => void;
-  onSave: (name: string, subtitle: string, bio: string, isPro: boolean, isFree: boolean, isReady: boolean, sortOrder: number, color: string, isVisible: boolean) => Promise<void>;
+  onSave: (
+    name: string,
+    subtitle: string,
+    shortBio: string,
+    longBio: string,
+    isPro: boolean,
+    isFree: boolean,
+    isReady: boolean,
+    sortOrder: number,
+    color: string,
+    isVisible: boolean
+  ) => Promise<void>;
   onDelete?: () => Promise<void>;
 };
 
@@ -49,6 +61,7 @@ export function MascotEditor({
   currentName,
   currentSubtitle,
   currentBio = '',
+  currentLongBio = '',
   currentIsPro = false,
   currentIsFree = false,
   currentIsReady = false,
@@ -66,6 +79,7 @@ export function MascotEditor({
   const [name, setName] = useState(currentName);
   const [subtitle, setSubtitle] = useState(currentSubtitle || '');
   const [bio, setBio] = useState(currentBio || '');
+  const [longBio, setLongBio] = useState(currentLongBio || '');
   const [accessTier, setAccessTier] = useState<AccessTier>(getAccessTier(currentIsPro, currentIsFree));
   const [isReady, setIsReady] = useState(currentIsReady);
   const [isVisible, setIsVisible] = useState(currentIsVisible);
@@ -80,6 +94,7 @@ export function MascotEditor({
       setName(currentName);
       setSubtitle(currentSubtitle || '');
       setBio(currentBio || '');
+      setLongBio(currentLongBio || '');
       setAccessTier(getAccessTier(currentIsPro, currentIsFree));
       setIsReady(currentIsReady);
       setIsVisible(currentIsVisible);
@@ -88,7 +103,7 @@ export function MascotEditor({
       setError(null);
       setIsSaving(false);
     }
-  }, [visible, currentName, currentSubtitle, currentBio, currentIsPro, currentIsFree, currentIsReady, currentIsVisible, currentSortOrder, currentColor]);
+  }, [visible, currentName, currentSubtitle, currentBio, currentLongBio, currentIsPro, currentIsFree, currentIsReady, currentIsVisible, currentSortOrder, currentColor]);
 
   const handleSave = async () => {
     if (!name.trim()) {
@@ -103,7 +118,18 @@ export function MascotEditor({
     const isFree = accessTier === 'free';
 
     try {
-      await onSave(name.trim(), subtitle.trim(), bio.trim(), isPro, isFree, isReady, parseInt(sortOrder, 10) || 0, color, isVisible);
+      await onSave(
+        name.trim(),
+        subtitle.trim(),
+        bio.trim(),
+        longBio.trim(),
+        isPro,
+        isFree,
+        isReady,
+        parseInt(sortOrder, 10) || 0,
+        color,
+        isVisible
+      );
       onClose();
     } catch (err: any) {
       console.error('MascotEditor save error:', err);
@@ -191,15 +217,27 @@ export function MascotEditor({
               />
 
               <InputField
-                label="Bio"
+                label="Short bio"
                 value={bio}
                 onChangeText={(text) => {
                   setBio(text);
                   setError(null);
                 }}
-                placeholder="Short summary for mascot details"
+                placeholder="Short summary shown in mascot details card"
                 multiline
                 numberOfLines={3}
+              />
+
+              <InputField
+                label="Long bio"
+                value={longBio}
+                onChangeText={(text) => {
+                  setLongBio(text);
+                  setError(null);
+                }}
+                placeholder="Long text shown on the Agents page"
+                multiline
+                numberOfLines={6}
               />
 
               <View style={styles.spacer} />

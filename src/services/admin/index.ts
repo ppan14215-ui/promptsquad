@@ -10,6 +10,7 @@ export type MascotSkill = {
   mascot_id: string;
   skill_label: string;
   skill_prompt: string | null; // Full prompt (only for admins)
+  skill_summary: string | null; // Optional concise summary for UI cards
   skill_prompt_preview: string | null; // 25% preview (for everyone)
   is_full_access: boolean | null;
   sort_order: number | null;
@@ -32,6 +33,7 @@ export type MascotBasic = {
   id: string;
   name: string;
   subtitle: string | null;
+  description?: string | null; // Long bio used on Agents page
   image_url: string | null;
   color: string;
   bio?: string | null;
@@ -46,7 +48,25 @@ export type MascotBasic = {
   is_custom?: boolean | null;
 };
 
-// ... existing code ...
+const LONG_BIO_COLUMN_HELP =
+  "Add column public.mascots.description (see supabase/migrations/040_add_mascots_description.sql), deploy with supabase db push or paste the SQL in the Supabase SQL Editor. If the column already exists but the app still errors, run in SQL Editor: NOTIFY pgrst, 'reload schema';";
+
+/** True when the error is about `mascots.description` missing from the table or PostgREST schema cache. */
+function isMascotsDescriptionColumnError(error: {
+  code?: string;
+  message?: string;
+  details?: string;
+  hint?: string;
+} | null | undefined): boolean {
+  if (!error) return false;
+  const blob = [error.message, error.details, error.hint].filter(Boolean).join(' ');
+  if (!blob || !/\bdescription\b/i.test(blob)) return false;
+  if (/schema cache/i.test(blob)) return true;
+  if (/column/i.test(blob) && /does not exist/i.test(blob)) return true;
+  if (error.code === '42703') return true;
+  if (error.code === 'PGRST204') return true;
+  return false;
+}
 
 // Update mascot details
 export async function updateMascot(
@@ -54,6 +74,7 @@ export async function updateMascot(
   updates: {
     name?: string;
     subtitle?: string | null;
+    description?: string | null;
     image_url?: string | null;
     color?: string;
     bio?: string | null;
@@ -83,15 +104,34 @@ export async function updateMascot(
   delete safeUpdates.is_pro;
   delete safeUpdates.is_ready;
 
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from('mascots')
     .update({
       ...safeUpdates,
       updated_at: new Date().toISOString(),
     })
     .eq('id', mascotId)
-    .select('id, name, subtitle, image_url, color, bio, question_prompt, sort_order, is_free, is_active, is_visible')
+    .select('id, name, subtitle, description, image_url, color, bio, question_prompt, sort_order, is_free, is_active, is_visible')
     .single();
+
+  // If `description` is missing from DB or PostgREST cache, never silently drop a long bio save.
+  if (error && isMascotsDescriptionColumnError(error)) {
+    if (Object.prototype.hasOwnProperty.call(updates, 'description')) {
+      throw new Error(`Long bio could not be saved. ${LONG_BIO_COLUMN_HELP}`);
+    }
+    const { description: _omit, ...safeUpdatesWithoutDescription } = safeUpdates;
+    const { data: retryData, error: retryError } = await supabase
+      .from('mascots')
+      .update({
+        ...safeUpdatesWithoutDescription,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', mascotId)
+      .select('id, name, subtitle, image_url, color, bio, question_prompt, sort_order, is_free, is_active, is_visible')
+      .single();
+    data = retryData as any;
+    error = retryError as any;
+  }
 
   if (error) throw new Error(error.message);
   return data as unknown as MascotBasic;
@@ -171,10 +211,21 @@ export function useMascots() {
 
   const fetchMascots = useCallback(async () => {
     try {
-      const { data, error } = await supabase
+      let { data, error } = await supabase
         .from('mascots')
-        .select('id, name, subtitle, image_url, color, bio, question_prompt, sort_order, is_free, is_active, is_visible, owner_id, is_custom')
+        .select('id, name, subtitle, description, image_url, color, bio, question_prompt, sort_order, is_free, is_active, is_ready, is_visible, owner_id, is_custom')
         .order('sort_order', { ascending: true });
+
+      // Older DBs or stale PostgREST schema: fetch without `description`.
+      if (error && isMascotsDescriptionColumnError(error)) {
+        logger.warn('mascots.description not available from API; fetching without long bio column.', error.message);
+        const retry = await supabase
+          .from('mascots')
+          .select('id, name, subtitle, image_url, color, bio, question_prompt, sort_order, is_free, is_active, is_ready, is_visible, owner_id, is_custom')
+          .order('sort_order', { ascending: true });
+        data = retry.data as any;
+        error = retry.error as any;
+      }
 
       if (error) {
         // Self-healing: If unauthorized, force sign out
@@ -190,7 +241,8 @@ export function useMascots() {
         const normalized = (data || []).map((m: any) => ({
           ...m,
           is_pro: m.is_pro !== undefined ? m.is_pro : !m.is_free,
-          is_ready: m.is_active, // Map ready status from active status
+          // Unified "ready for users": false if either DB flag is explicitly false
+          is_ready: !(m.is_active === false || m.is_ready === false),
           is_visible: m.is_visible !== undefined ? m.is_visible : true, // Default to visible
         })) as MascotBasic[];
 
@@ -372,7 +424,8 @@ export async function createSkill(
   skillLabel: string,
   skillPrompt: string,
   sortOrder: number = 0,
-  preferredProvider?: string | null
+  preferredProvider?: string | null,
+  skillSummary?: string | null
 ): Promise<MascotSkill> {
   if (!mascotId) {
     throw new Error('Invalid mascot ID');
@@ -380,12 +433,17 @@ export async function createSkill(
 
   logger.debug('[Admin] Creating skill for mascot:', mascotId, 'label:', skillLabel);
 
+  const summaryValue = skillSummary?.trim() ? skillSummary.trim() : null;
+
   let { data, error } = await supabase
     .from('mascot_skills')
     .insert({
       mascot_id: mascotId,
       skill_label: skillLabel,
       skill_prompt: skillPrompt,
+      skill_summary: summaryValue,
+      // Keep preview column aligned so older APIs / views always see card copy
+      skill_prompt_preview: summaryValue,
       sort_order: sortOrder,
       preferred_provider: preferredProvider, // Optional
       is_active: true, // Ensure new skills are active by default
@@ -393,15 +451,24 @@ export async function createSkill(
     .select()
     .single();
 
-  // Retry logic if 'preferred_provider' column is missing (migration not applied)
-  if (error && (error.code === '42703' || error.message.includes('preferred_provider') || error.message.includes('schema cache'))) {
-    logger.warn('[Admin] preferred_provider column missing or schema issue, retrying without it');
+  // Retry logic if optional columns are missing (migration not applied)
+  if (
+    error &&
+    (error.code === '42703' ||
+      error.code === 'PGRST204' ||
+      error.message.includes('preferred_provider') ||
+      error.message.includes('skill_summary') ||
+      error.message.includes('skill_prompt_preview') ||
+      error.message.includes('schema cache'))
+  ) {
+    logger.warn('[Admin] Optional skill columns missing or schema issue, retrying without them');
     const { data: retryData, error: retryError } = await supabase
       .from('mascot_skills')
       .insert({
         mascot_id: mascotId,
         skill_label: skillLabel,
         skill_prompt: skillPrompt,
+        skill_prompt_preview: summaryValue,
         sort_order: sortOrder,
         is_active: true,
       })
@@ -423,30 +490,56 @@ export async function createSkill(
 
 export async function updateSkill(
   skillId: string,
-  updates: { skill_label?: string; skill_prompt?: string; sort_order?: number; is_active?: boolean; preferred_provider?: string | null }
+  updates: {
+    skill_label?: string;
+    skill_prompt?: string;
+    skill_summary?: string | null;
+    sort_order?: number;
+    is_active?: boolean;
+    preferred_provider?: string | null;
+  }
 ): Promise<MascotSkill> {
   logger.debug('[Admin] Updating skill:', skillId, 'with updates:', updates);
 
+  const summaryTrimmed =
+    typeof updates.skill_summary === 'string' ? updates.skill_summary.trim() || null : updates.skill_summary;
+
+  const payload: Record<string, unknown> = {
+    ...updates,
+    ...(typeof updates.skill_summary !== 'undefined'
+      ? { skill_summary: summaryTrimmed, skill_prompt_preview: summaryTrimmed }
+      : {}),
+    updated_at: new Date().toISOString(),
+  };
+
   let { data, error } = await supabase
     .from('mascot_skills')
-    .update({
-      ...updates,
-      updated_at: new Date().toISOString(), // Ensure updated_at is set
-    })
+    .update(payload)
     .eq('id', skillId)
     .select()
     .single();
 
   // Retry logic if 'preferred_provider' column is missing or schema error
-  if (error && (error.code === '42703' || error.message.includes('preferred_provider') || error.message.includes('schema cache'))) {
+  if (
+    error &&
+    (error.code === '42703' ||
+      error.code === 'PGRST204' ||
+      error.message.includes('preferred_provider') ||
+      error.message.includes('skill_summary') ||
+      error.message.includes('skill_prompt_preview') ||
+      error.message.includes('schema cache'))
+  ) {
     logger.warn('[Admin] preferred_provider column missing or schema issue, retrying without it');
-    // Remove preferred_provider from updates
-    const { preferred_provider, ...safeUpdates } = updates;
+    const { preferred_provider, skill_summary, ...safeUpdates } = updates;
+    const fallbackUpdates =
+      skill_summary !== undefined
+        ? { ...safeUpdates, skill_prompt_preview: summaryTrimmed ?? null }
+        : safeUpdates;
 
     const { data: retryData, error: retryError } = await supabase
       .from('mascot_skills')
       .update({
-        ...safeUpdates,
+        ...fallbackUpdates,
         updated_at: new Date().toISOString(),
       })
       .eq('id', skillId)

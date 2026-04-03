@@ -18,6 +18,8 @@
     ".expo",
     ".expo-shared",
     "dist",
+    "my-video",
+    "supabase/functions",
     "**/providers/openai.ts",
     "**/providers/gemini.ts"
   ]

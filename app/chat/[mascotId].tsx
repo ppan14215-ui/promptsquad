@@ -18,6 +18,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { AI_MODEL_DISPLAY } from '@/constants/ai-models';
 import Markdown from 'react-native-markdown-display';
 
 // Speech recognition is only available on web - disabled on native to avoid errors
@@ -41,6 +42,7 @@ import { useMascotLike } from '@/services/mascot-likes';
 import { createConversation, saveMessage, generateConversationTitle, useConversationMessages, deleteConversation, getConversation } from '@/services/chat-history';
 import { useMascotAccess, incrementTrialUsage } from '@/services/mascot-access';
 import { ChainOfThought } from '@/components/chat/ChainOfThought';
+import { StreamingCursor } from '@/components/chat/StreamingCursor';
 
 // Message types
 type MessageRole = 'user' | 'assistant';
@@ -97,11 +99,19 @@ const mascotImages: Record<string, ImageSourcePropType> = {
  * This ensures users see the 2026 flagship names even if the backend IDs vary.
  */
 const mapTechnicalToPremiumModel = (modelId?: string, provider?: string): string => {
-  if (!modelId) return provider ? (provider === 'openai' ? 'GPT-5.2' : provider === 'grok' ? 'Grok 4.1' : provider === 'perplexity' ? 'Sonar Reasoning' : provider === 'claude' ? 'Claude 3.5' : 'Gemini 3') : 'AI Model';
+  if (!modelId) {
+    if (!provider) return 'AI Model';
+    if (provider === 'openai') return AI_MODEL_DISPLAY.openai;
+    if (provider === 'grok') return AI_MODEL_DISPLAY.grok;
+    if (provider === 'perplexity') return AI_MODEL_DISPLAY.perplexity;
+    if (provider === 'claude') return AI_MODEL_DISPLAY.claude;
+    return AI_MODEL_DISPLAY.gemini;
+  }
 
   const id = modelId.toLowerCase();
 
   // OpenAI 2026 Stack
+  if (id.includes('gpt-5.4')) return 'OpenAI GPT-5.4';
   if (id.includes('gpt-5.2')) return 'OpenAI GPT-5.2';
   if (id.includes('gpt-5-mini')) return 'OpenAI GPT-5-mini';
   if (id.includes('gpt-5')) return 'OpenAI GPT-5';
@@ -113,6 +123,7 @@ const mapTechnicalToPremiumModel = (modelId?: string, provider?: string): string
   if (id.includes('grok-3')) return 'xAI Grok 3';
 
   // Google 2026 Stack
+  if (id.includes('gemini-3.1')) return 'Google Gemini 3.1 Pro';
   if (id.includes('gemini-3-pro')) return 'Google Gemini 3 Pro';
   if (id.includes('gemini-3-flash')) return 'Google Gemini 3 Flash';
   if (id.includes('gemini-3')) return 'Google Gemini 3';
@@ -131,8 +142,8 @@ const mapTechnicalToPremiumModel = (modelId?: string, provider?: string): string
   if (id.includes('claude-3-5-sonnet')) return 'Anthropic Claude 3.5 Sonnet';
 
   // Fallbacks for older models seen in legacy/uncached instances
-  if (id.includes('gpt-4o-mini')) return 'OpenAI GPT-5.2 (Fallback)';
-  if (id.includes('gpt-4o')) return 'OpenAI GPT-5.2 (Legacy)';
+  if (id.includes('gpt-4o-mini')) return 'OpenAI GPT-5.4 (Fallback)';
+  if (id.includes('gpt-4o')) return 'OpenAI GPT-5.4 (Legacy)';
 
   return modelId;
 };
@@ -453,9 +464,51 @@ Be technical and precise. Use code blocks and markdown formatting. Provide clear
 // Helper to clean message content (remove thought chains, etc.)
 const cleanMessageContent = (content: string) => {
   if (!content) return '';
-  // Remove Perplexity "||| thought |||" blocks
-  return content.replace(/\|\|\| thought \|\|\|[\s\S]*?\|\|\|/gi, '').trim();
+  let cleaned = content;
+  // Remove Perplexity Sonar Reasoning <think> blocks (keeps final answer)
+  cleaned = cleaned.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+  // Remove legacy "||| thought |||" blocks if present
+  cleaned = cleaned.replace(/\|\|\| thought \|\|\|[\s\S]*?\|\|\|/gi, '').trim();
+  return cleaned;
 };
+
+// Wrapper that fades in the streaming block for a natural transition from thinking
+function StreamingMessageBlock({ children }: { children: React.ReactNode }) {
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(8)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 320,
+        useNativeDriver: true,
+        easing: Easing.out(Easing.cubic),
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 320,
+        useNativeDriver: true,
+        easing: Easing.out(Easing.cubic),
+      }),
+    ]).start();
+  }, [fadeAnim, slideAnim]);
+
+  return (
+    <Animated.View
+      style={[
+        styles.messageWrapper,
+        styles.assistantMessageWrapper,
+        {
+          opacity: fadeAnim,
+          transform: [{ translateY: slideAnim }],
+        },
+      ]}
+    >
+      {children}
+    </Animated.View>
+  );
+}
 
 export default function ChatScreen() {
   const {
@@ -584,13 +637,18 @@ export default function ChatScreen() {
     () => (resolvedMascotId ? dbSkills.filter((s) => s.mascot_id === resolvedMascotId) : dbSkills),
     [dbSkills, resolvedMascotId]
   );
-  const activeSkill = skillsForMascot.find((s) => s.id === activeSkillId);
+  const activeSkill = skillsForMascot.find((s) => s.id === activeSkillId)
+    ?? (activeSkillId ? skillsForMascot.find((s) => s.skill_label === activeSkillId) : undefined);
 
   // Clear active skill when it doesn't belong to the current mascot's skills (e.g. after switching profile)
   useEffect(() => {
     if (!activeSkillId || skillsForMascot.length === 0) return;
     const belongsToCurrentMascot = skillsForMascot.some((s) => s.id === activeSkillId);
-    if (!belongsToCurrentMascot) setActiveSkillId(null);
+    if (!belongsToCurrentMascot) {
+      const matchByLabel = skillsForMascot.find((s) => s.skill_label === activeSkillId);
+      if (matchByLabel) setActiveSkillId(matchByLabel.id);
+      else setActiveSkillId(null);
+    }
   }, [activeSkillId, skillsForMascot]);
 
   // Skill editing state
@@ -1302,6 +1360,7 @@ export default function ChatScreen() {
         errorMessage.toLowerCase().includes('network') ||
         errorMessage.toLowerCase().includes('fetch') ||
         errorMessage.toLowerCase().includes('timeout')) && !isCorsError;
+      const isProLimitReached = errorMessage.includes('429') || errorMessage.toLowerCase().includes('monthly pro limit reached');
 
       // Provide specific error messages
       let userFriendlyMessage = '';
@@ -1311,6 +1370,8 @@ export default function ChatScreen() {
         userFriendlyMessage = 'Authentication error: Please sign in again.';
       } else if (isConnectionError) {
         userFriendlyMessage = 'Connection error: Please check your internet connection and try again.';
+      } else if (isProLimitReached) {
+        userFriendlyMessage = "You've reached your monthly limit of 300 premium messages. Your usage resets next month.\n\nYou can continue chatting using the free models like Gemini—switch your model in the input bar to keep going.";
       } else {
         userFriendlyMessage = `Sorry, I encountered an error. Please try again.\n\n*Error: ${errorMessage}*`;
       }
@@ -1841,6 +1902,7 @@ export default function ChatScreen() {
         errorMessage.toLowerCase().includes('network') ||
         errorMessage.toLowerCase().includes('fetch') ||
         errorMessage.toLowerCase().includes('timeout')) && !isCorsError;
+      const isProLimitReached = errorMessage.includes('429') || errorMessage.toLowerCase().includes('monthly pro limit reached');
 
       // Provide specific error messages
       let userFriendlyMessage = '';
@@ -1850,6 +1912,8 @@ export default function ChatScreen() {
         userFriendlyMessage = 'Authentication error: Please sign in again.';
       } else if (isConnectionError) {
         userFriendlyMessage = 'Connection error: Please check your internet connection and try again.';
+      } else if (isProLimitReached) {
+        userFriendlyMessage = "You've reached your monthly limit of 300 premium messages. Your usage resets next month.\n\nYou can continue chatting using the free models like Gemini—switch your model in the input bar to keep going.";
       } else {
         userFriendlyMessage = `Sorry, I encountered an error. Please try again.\n\n*Error: ${errorMessage}*`;
       }
@@ -2398,16 +2462,18 @@ export default function ChatScreen() {
             </View>
           ))}
 
-          {/* Streaming response */}
-          {/* Streaming response */}
+          {/* Streaming response - smooth fade-in and blinking cursor for natural typing feel */}
           {isLoading && streamingContent && typeof streamingContent === 'string' && streamingContent.trim().length > 0 && (
-            <View style={[styles.messageWrapper, styles.assistantMessageWrapper]}>
+            <StreamingMessageBlock>
               <View style={styles.assistantMessage}>
                 <Markdown style={markdownStyles}>
                   {streamingContent}
                 </Markdown>
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 2 }}>
+                  <StreamingCursor />
+                </View>
               </View>
-            </View>
+            </StreamingMessageBlock>
           )}
 
           {/* Thinking indicator - shows dynamic status (e.g., "🌐 Searching the web...") or generic "Thinking..." */}
@@ -2484,7 +2550,7 @@ export default function ChatScreen() {
                   onPress={() => {
                     // TODO: Navigate to purchase screen or trigger purchase flow
                     console.log('Purchase pressed for mascot:', mascotId);
-                    router.push(`/(tabs)/store`);
+                    router.push('/store');
                   }}
                 />
               </View>
@@ -2497,6 +2563,7 @@ export default function ChatScreen() {
                 placeholder={t.chat.placeholder}
                 disabled={!canUse}
                 isLoading={isLoading}
+                mascotColor={mascot.color}
                 showLLMPicker={true}
                 chatLLM={chatLLM}
                 onLLMChange={setChatLLM}

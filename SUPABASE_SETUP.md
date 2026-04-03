@@ -80,6 +80,12 @@ supabase functions deploy chat
 
 ## 7. Enable Authentication
 
+### Email deliverability (reduce spam)
+See **[docs/EMAIL_SETUP.md](docs/EMAIL_SETUP.md)** for:
+- Custom SMTP setup (Resend, Brevo, etc.)
+- DKIM, SPF, DMARC configuration
+- Improved branded email templates
+
 ### Email/Password Auth
 1. Go to **Authentication** → **Providers**
 2. Email is enabled by default

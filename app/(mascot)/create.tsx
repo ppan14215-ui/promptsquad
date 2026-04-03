@@ -14,6 +14,7 @@ import { useRouter } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, fontFamilies } from '@/design-system';
 import { BigPrimaryButton, TextButton } from '@/components';
+import { Icon } from '@/components/ui/Icon';
 import { MascotCard, MascotColorVariant } from '@/components/mascot/MascotCard';
 import { getMascotImageSource, getMascotGrayscaleImageSource, MASCOT_IMAGE_KEYS } from '@/services/admin/mascot-images';
 import { supabase } from '@/services/supabase/client';

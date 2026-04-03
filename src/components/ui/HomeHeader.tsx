@@ -1,28 +1,18 @@
 import React from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, useWindowDimensions } from 'react-native';
-import { LinkPill } from '@/components';
+import { View, Text, StyleSheet, useWindowDimensions } from 'react-native';
 import { useTheme, fontFamilies } from '@/design-system';
-import type { Skill } from '@/components';
 
 export type HomeHeaderProps = {
   userName: string;
   questionPrompt: string;
-  skills: Skill[];
-  onSkillPress: (skill: Skill) => void;
-  onSkillHover?: (skill: Skill | null) => void;
   keyboardVisible?: boolean;
-  skillsLoading?: boolean;
   isDesktop?: boolean;
 };
 
 export function HomeHeader({
   userName,
   questionPrompt,
-  skills,
-  onSkillPress,
-  onSkillHover,
   keyboardVisible = false,
-  skillsLoading = false,
   isDesktop = false,
 }: HomeHeaderProps) {
   const { colors } = useTheme();
@@ -70,24 +60,6 @@ export function HomeHeader({
             </Text>
           </View>
         )}
-
-        {!keyboardVisible && (
-          <View style={styles.skillPills}>
-            {skillsLoading ? (
-              <ActivityIndicator size="small" color={colors.primary} />
-            ) : (
-              skills.map((skill) => (
-                <LinkPill
-                  key={skill.id}
-                  label={skill.label}
-                  onPress={() => onSkillPress(skill)}
-                  onHoverIn={() => onSkillHover?.(skill)}
-                  onHoverOut={() => onSkillHover?.(null)}
-                />
-              ))
-            )}
-          </View>
-        )}
       </View>
     </View>
   );
@@ -124,12 +96,6 @@ const styles = StyleSheet.create({
     lineHeight: 18 * 1.3,
   },
   questionPrompt: {
-  },
-  skillPills: {
-    marginTop: 16,
-    gap: 12,
-    flexDirection: 'row',
-    flexWrap: 'wrap',
   },
 });
 

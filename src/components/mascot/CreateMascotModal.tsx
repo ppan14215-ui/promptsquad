@@ -40,6 +40,7 @@ type AccessTier = 'free' | 'pro';
 type DraftSkill = {
     id: string;
     label: string;
+    summary: string;
     prompt: string;
 };
 
@@ -62,7 +63,7 @@ export function CreateMascotModal({ visible, onClose, onSuccess }: CreateMascotM
     const [accessTier, setAccessTier] = useState<AccessTier>('pro');
     const [bio, setBio] = useState('');
     const [personality, setPersonality] = useState('');
-    const [draftSkills, setDraftSkills] = useState<DraftSkill[]>([{ id: '1', label: '', prompt: '' }]);
+    const [draftSkills, setDraftSkills] = useState<DraftSkill[]>([{ id: '1', label: '', summary: '', prompt: '' }]);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -77,18 +78,18 @@ export function CreateMascotModal({ visible, onClose, onSuccess }: CreateMascotM
             setAccessTier('pro');
             setBio('');
             setPersonality('');
-            setDraftSkills([{ id: '1', label: '', prompt: '' }]);
+            setDraftSkills([{ id: '1', label: '', summary: '', prompt: '' }]);
             setIsSubmitting(false);
             setError(null);
         }
     }, [visible]);
 
-    const updateDraftSkill = (id: string, field: 'label' | 'prompt', value: string) => {
+    const updateDraftSkill = (id: string, field: 'label' | 'summary' | 'prompt', value: string) => {
         setDraftSkills((prev) => prev.map((skill) => (skill.id === id ? { ...skill, [field]: value } : skill)));
     };
 
     const addDraftSkill = () => {
-        setDraftSkills((prev) => [...prev, { id: `${Date.now()}-${prev.length}`, label: '', prompt: '' }]);
+        setDraftSkills((prev) => [...prev, { id: `${Date.now()}-${prev.length}`, label: '', summary: '', prompt: '' }]);
     };
 
     const removeDraftSkill = (id: string) => {
@@ -188,13 +189,14 @@ export function CreateMascotModal({ visible, onClose, onSuccess }: CreateMascotM
             const completedSkills = draftSkills
                 .map((skill, index) => ({
                     label: skill.label.trim(),
+                    summary: skill.summary.trim(),
                     prompt: skill.prompt.trim(),
                     sortOrder: index,
                 }))
                 .filter((skill) => skill.label && skill.prompt);
 
             for (const skill of completedSkills) {
-                await createSkill(mascotData.id, skill.label, skill.prompt, skill.sortOrder);
+                await createSkill(mascotData.id, skill.label, skill.prompt, skill.sortOrder, null, skill.summary || null);
             }
 
             // Success! Pass the new mascot ID so parent can navigate to chat
@@ -420,6 +422,20 @@ export function CreateMascotModal({ visible, onClose, onSuccess }: CreateMascotM
                         value={skill.label}
                         onChangeText={(value) => updateDraftSkill(skill.id, 'label', value)}
                         maxLength={40}
+                    />
+                    <TextInput
+                        style={[styles.input, {
+                            backgroundColor: colors.background,
+                            color: colors.text,
+                            borderColor: colors.outline,
+                            fontFamily: fontFamilies.figtree.regular,
+                            marginTop: 10,
+                        }]}
+                        placeholder="Skill summary shown on agent cards"
+                        placeholderTextColor={colors.textMuted}
+                        value={skill.summary}
+                        onChangeText={(value) => updateDraftSkill(skill.id, 'summary', value)}
+                        maxLength={180}
                     />
                     <TextInput
                         style={[styles.textAreaInput, {

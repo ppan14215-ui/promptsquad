@@ -229,7 +229,6 @@ export function MascotCard({
             label={hoverActionLabel}
             onPress={onHoverAction}
             variant="primary"
-            color={colorVariant}
           />
         </View>
       )}

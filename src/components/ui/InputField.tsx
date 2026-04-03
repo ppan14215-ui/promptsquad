@@ -7,8 +7,9 @@ type InputFieldProps = TextInputProps & {
   containerStyle?: StyleProp<ViewStyle>;
 };
 
-export function InputField({ label, containerStyle, style, ...props }: InputFieldProps) {
+export function InputField({ label, containerStyle, style, multiline, ...props }: InputFieldProps) {
   const { colors } = useTheme();
+  const isMultiline = multiline === true;
 
   return (
     <View style={[styles.container, containerStyle]}>
@@ -24,8 +25,10 @@ export function InputField({ label, containerStyle, style, ...props }: InputFiel
         {label}
       </Text>
       <TextInput
+        multiline={multiline}
         style={[
           styles.input,
+          isMultiline ? styles.inputMultiline : styles.inputSingleLine,
           {
             fontFamily: fontFamilies.figtree.regular,
             color: colors.text,
@@ -53,11 +56,19 @@ const styles = StyleSheet.create({
   },
   input: {
     width: '100%',
-    height: 44,
     borderWidth: 1,
     borderRadius: 8,
     paddingHorizontal: 14,
     fontSize: 14,
     ...shadowToNative('xs'),
+  },
+  inputSingleLine: {
+    height: 44,
+  },
+  inputMultiline: {
+    minHeight: 88,
+    paddingTop: 12,
+    paddingBottom: 12,
+    ...(Platform.OS === 'android' ? { textAlignVertical: 'top' as const } : {}),
   },
 });

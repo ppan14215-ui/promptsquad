@@ -21,20 +21,20 @@ import {
 } from '@/components';
 import {
   useIsAdmin,
-  useMascots,
   useMascotSkills,
   useMascotPersonality,
   MascotSkill,
   updateMascot,
   deleteMascot,
 } from '@/services/admin';
+import { useMascotsData } from '@/context/MascotsDataContext';
 import { useAuth } from '@/services/auth';
 
 export default function SkillsScreen() {
   const { colors } = useTheme();
   const { user } = useAuth();
   const { isAdmin, isLoading: isAdminLoading } = useIsAdmin();
-  const { mascots, isLoading: isMascotsLoading, refetch: refetchMascots } = useMascots();
+  const { mascots, isLoading: isMascotsLoading, refetch: refetchMascots } = useMascotsData();
 
   const [selectedMascotId, setSelectedMascotId] = useState<string | null>(null);
   const [skillEditorVisible, setSkillEditorVisible] = useState(false);
@@ -119,13 +119,25 @@ export default function SkillsScreen() {
     refetchPersonality();
   };
 
-  const handleMascotSaved = async (name: string, subtitle: string, bio: string, isPro: boolean, isFree: boolean, isReady: boolean, sortOrder: number, color: string, isVisible: boolean) => {
+  const handleMascotSaved = async (
+    name: string,
+    subtitle: string,
+    shortBio: string,
+    longBio: string,
+    isPro: boolean,
+    isFree: boolean,
+    isReady: boolean,
+    sortOrder: number,
+    color: string,
+    isVisible: boolean
+  ) => {
     if (!selectedMascotId) return;
     try {
       await updateMascot(selectedMascotId, {
         name,
         subtitle,
-        bio: bio || null,
+        bio: shortBio || null,
+        description: longBio || null,
         is_pro: isPro,
         is_free: isFree,
         is_ready: isReady,
@@ -243,7 +255,7 @@ export default function SkillsScreen() {
             { fontFamily: fontFamilies.figtree.semiBold, color: colors.text },
           ]}
         >
-          Skills Management
+          Admin
         </Text>
         <Text
           style={[
@@ -251,7 +263,7 @@ export default function SkillsScreen() {
             { fontFamily: fontFamilies.figtree.regular, color: colors.textMuted },
           ]}
         >
-          Manage mascot skills and personality
+          Manage mascots, skills, and personality
         </Text>
       </View>
 
@@ -567,6 +579,7 @@ export default function SkillsScreen() {
           currentName={selectedMascot.name}
           currentSubtitle={selectedMascot.subtitle}
           currentBio={selectedMascot.bio || ''}
+          currentLongBio={selectedMascot.description || ''}
           currentIsPro={selectedMascot.is_pro || false}
           currentIsFree={selectedMascot.is_free || false}
           currentIsReady={selectedMascot.is_ready !== false} // Default to true if null/undefined for backward compat

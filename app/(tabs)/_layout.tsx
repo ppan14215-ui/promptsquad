@@ -50,6 +50,13 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
+        name="agents"
+        options={{
+          tabBarLabel: 'Agents',
+          tabBarIcon: ({ color }) => <Icon name="globe" color={color} size={24} />,
+        }}
+      />
+      <Tabs.Screen
         name="store"
         options={{
           tabBarLabel: 'Store',
@@ -59,7 +66,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="skills"
         options={{
-          tabBarLabel: 'Skills',
+          tabBarLabel: 'Admin',
           tabBarIcon: ({ color }) => <Icon name="settings" color={color} size={24} />,
           // Hide from tab bar for non-admins
           href: isAdmin ? undefined : null,

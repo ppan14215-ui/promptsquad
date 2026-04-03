@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { ScrollView, View, Text, StyleSheet } from 'react-native';
 import { useTheme, textStyles, fontFamilies } from '@/design-system';
-import { MascotCard, MascotCardState, CreateCustomCard, CreateCustomCardState, MiniButton, MiniButtonState, BigPrimaryButton, BigPrimaryButtonState, MediumDarkButton, MediumDarkButtonState, TextButton, TextButtonState, LinkPill, LinkPillState, ColoredTab, ColoredTabState, IconButton, IconButtonState, MascotDetails, MascotDetailsVariant, SegmentedToggle, InputField, ChatInputBox, BigSecondaryButton, HomeHeader, MascotCarousel, ChatHeader } from '@/components';
+import { MascotCard, MascotCardState, CreateCustomCard, CreateCustomCardState, MiniButton, MiniButtonState, BigPrimaryButton, BigPrimaryButtonState, MediumDarkButton, MediumDarkButtonState, TextButton, TextButtonState, LinkPill, LinkPillState, ColoredTab, ColoredTabState, IconButton, IconButtonState, MascotDetails, MascotDetailsVariant, SegmentedToggle, InputField, ChatInputBox, BigSecondaryButton, HomeHeader, MascotCarousel, ChatHeader, CircularMascotCarousel, SkillCard } from '@/components';
+import { FREE_MASCOTS } from '@/config/mascots';
+import type { LLMPreference } from '@/services/preferences';
 
 // Sample mascot for component preview
 const SAMPLE_MASCOT = {
@@ -123,7 +125,7 @@ const SAMPLE_MASCOT_DETAILS = {
   subtitle: 'Great at research',
   image: require('../../assets/mascots/Bear.png'),
   personality: ['Funny', 'Organized', 'Helpful'],
-  models: ['Gpt 4.o', 'Gemini Pro'],
+  models: ['GPT-5.4', 'Gemini 3.1'],
   skills: [
     { id: '1', label: 'Stock analysis' },
     { id: '2', label: 'Competitive analysis' },
@@ -136,8 +138,9 @@ export default function ComponentsScreen() {
   const [chatInput, setChatInput] = useState('');
   const [webSearchEnabled, setWebSearchEnabled] = useState(false);
   const [deepThinkingEnabled, setDeepThinkingEnabled] = useState(false);
-  const [chatLLM, setChatLLM] = useState<'auto' | 'openai' | 'gemini' | 'perplexity' | 'grok'>('auto');
+  const [chatLLM, setChatLLM] = useState<LLMPreference>('auto');
   const [carouselIndex, setCarouselIndex] = useState(2);
+  const [circularDeckIndex, setCircularDeckIndex] = useState(0);
   const [activeChatTab, setActiveChatTab] = useState('chat');
   const [isChatLiked, setIsChatLiked] = useState(false);
 
@@ -175,9 +178,6 @@ export default function ComponentsScreen() {
         <HomeHeader
           userName="Julian"
           questionPrompt="What should we analyze?"
-          skills={SAMPLE_MASCOT_DETAILS.skills}
-          onSkillPress={() => { }}
-          skillsLoading={false}
           isDesktop={false}
         />
       </View>
@@ -197,6 +197,43 @@ export default function ComponentsScreen() {
           }
           isDesktop={false}
         />
+      </View>
+
+      {/* Circular deck + skill UI — global exports from @/components */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>CircularMascotCarousel & skills</Text>
+        <Text
+          style={[
+            styles.sectionDescription,
+            {
+              fontFamily: fontFamilies.figtree.regular,
+              color: colors.textMuted,
+            },
+          ]}
+        >
+          Agents tab: circular deck plus compact LinkPill skill chips in the right column. Home uses full SkillCard rows for skill previews. Both patterns are exported from the components barrel.
+        </Text>
+        <View style={{ width: '100%', maxWidth: 900, alignSelf: 'center' }}>
+          <CircularMascotCarousel
+            mascots={FREE_MASCOTS.slice(0, 4)}
+            activeIndex={circularDeckIndex}
+            onActiveIndexChange={setCircularDeckIndex}
+            onActiveMascotPress={() => {}}
+            onSkillTabPress={() => {}}
+          />
+        </View>
+        <View style={{ marginTop: 20, gap: 12, maxWidth: 520, alignSelf: 'center', width: '100%' }}>
+          <SkillCard
+            title="Find Me The Best Value Product"
+            summary="Short admin summary for the card — not the full system prompt."
+            onPress={() => {}}
+          />
+          <SkillCard
+            title="Is This Product Worth Buying?"
+            summary="Another skill row using the same SkillCard as Home."
+            onPress={() => {}}
+          />
+        </View>
       </View>
 
       {/* Chat Header Section */}

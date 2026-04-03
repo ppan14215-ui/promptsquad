@@ -17,7 +17,7 @@ import { BigSecondaryButton } from '@/components/ui/BigSecondaryButton';
 import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
 import { MascotSkill, createSkill, updateSkill, deleteSkill } from '@/services/admin';
-import { LLM_OPTIONS } from '@/services/preferences';
+import { LLM_OPTIONS, llmOptionSubtitle } from '@/services/preferences';
 import { resolveMascotColor } from '@/lib/utils/mascot-colors';
 import { logger } from '@/lib/utils/logger';
 
@@ -43,10 +43,12 @@ export function SkillEditor({
   const { colors } = useTheme();
   const themeMascotColor = resolveMascotColor(mascotColor);
   const [skillLabel, setSkillLabel] = useState('');
+  const [skillSummary, setSkillSummary] = useState('');
   const [skillPrompt, setSkillPrompt] = useState('');
   const [sortOrder, setSortOrder] = useState('0');
   const [preferredProvider, setPreferredProvider] = useState<string | null>('auto');
   const [showModelPicker, setShowModelPicker] = useState(false);
+  const [isModelPickerHovered, setIsModelPickerHovered] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -56,11 +58,13 @@ export function SkillEditor({
   useEffect(() => {
     if (skill) {
       setSkillLabel(skill.skill_label);
+      setSkillSummary(skill.skill_summary || '');
       setSkillPrompt(skill.skill_prompt || '');
       setSortOrder(skill.sort_order?.toString() || '0');
       setPreferredProvider(skill.preferred_provider || 'auto');
     } else {
       setSkillLabel('');
+      setSkillSummary('');
       setSkillPrompt('');
       setSortOrder('0');
       setPreferredProvider('auto');
@@ -86,6 +90,7 @@ export function SkillEditor({
       if (isEditing && skill) {
         await updateSkill(skill.id, {
           skill_label: skillLabel.trim(),
+          skill_summary: skillSummary.trim() || null,
           skill_prompt: skillPrompt.trim(),
           sort_order: parseInt(sortOrder, 10) || 0,
           preferred_provider: preferredProvider,
@@ -96,7 +101,8 @@ export function SkillEditor({
           skillLabel.trim(),
           skillPrompt.trim(),
           parseInt(sortOrder, 10) || 0,
-          preferredProvider
+          preferredProvider,
+          skillSummary.trim() || null
         );
       }
       logger.debug('[SkillEditor] Skill saved successfully, calling onSave callback');
@@ -258,58 +264,141 @@ export function SkillEditor({
                 {
                   fontFamily: fontFamilies.figtree.regular,
                   color: colors.text,
-                  borderColor: colors.outline,
+                  borderColor:
+                    Platform.OS === 'web' && isModelPickerHovered ? colors.primary : colors.outline,
                   backgroundColor: colors.surface,
                   flexDirection: 'row',
                   justifyContent: 'space-between',
                   alignItems: 'center',
-                  paddingVertical: 12,
+                  paddingVertical: 8,
+                  paddingHorizontal: 12,
+                  minHeight: 48,
+                  height: undefined,
                 },
                 Platform.OS === 'web' && ({ boxShadow: shadowToCSS('xs') } as unknown as object),
+                Platform.OS === 'web' &&
+                  ({ transition: 'border-color 140ms ease-out' } as unknown as object),
               ]}
+              onHoverIn={() => {
+                if (Platform.OS === 'web') setIsModelPickerHovered(true);
+              }}
+              onHoverOut={() => {
+                if (Platform.OS === 'web') setIsModelPickerHovered(false);
+              }}
             >
-              <Text style={{ fontFamily: fontFamilies.figtree.regular, color: colors.text }}>
-                {LLM_OPTIONS.find(o => o.code === (preferredProvider || 'auto'))?.name || 'Auto'}
-              </Text>
+              <View style={{ flexShrink: 1 }}>
+                <Text
+                  style={{ fontFamily: fontFamilies.figtree.regular, color: colors.text, fontSize: 14 }}
+                  numberOfLines={1}
+                >
+                  {LLM_OPTIONS.find((o) => o.code === (preferredProvider || 'auto'))?.name || 'Auto'}
+                </Text>
+                {(() => {
+                  const sel = LLM_OPTIONS.find((o) => o.code === (preferredProvider || 'auto'));
+                  const sub = llmOptionSubtitle(sel);
+                  return sub ? (
+                    <Text style={{ fontSize: 11, color: colors.textMuted, marginTop: 2 }} numberOfLines={1}>
+                      {sub}
+                    </Text>
+                  ) : null;
+                })()}
+              </View>
               <Icon name={showModelPicker ? "arrow-up" : "arrow-down"} size={20} color={colors.textMuted} />
             </Pressable>
 
             {showModelPicker && (
-              <View style={{
-                marginTop: 4,
-                borderWidth: 1,
-                borderColor: colors.outline,
-                borderRadius: 8,
-                backgroundColor: colors.surface,
-                maxHeight: 200, // Limit height if many models
-              }}>
-                <ScrollView nestedScrollEnabled style={{ maxHeight: 200 }}>
-                  {LLM_OPTIONS.map((option, index) => (
-                    <Pressable
-                      key={option.code}
-                      onPress={() => {
-                        setPreferredProvider(option.code);
-                        setShowModelPicker(false);
-                      }}
-                      style={{
-                        padding: 12,
-                        borderBottomWidth: index < LLM_OPTIONS.length - 1 ? 1 : 0,
-                        borderBottomColor: colors.outline,
-                        backgroundColor: preferredProvider === option.code ? themeMascotColor + '15' : 'transparent',
-                      }}
-                    >
-                      <Text style={{
-                        fontFamily: preferredProvider === option.code ? fontFamilies.figtree.semiBold : fontFamilies.figtree.regular,
-                        color: preferredProvider === option.code ? themeMascotColor : colors.text
-                      }}>
-                        {option.name}
-                      </Text>
-                      <Text style={{ fontSize: 12, color: colors.textMuted, marginTop: 2 }}>{option.description}</Text>
-                    </Pressable>
-                  ))}
+              <View
+                style={{
+                  marginTop: 4,
+                  borderWidth: 1,
+                  borderColor: colors.outline,
+                  borderRadius: 8,
+                  backgroundColor: colors.surface,
+                  minWidth: 320,
+                  alignSelf: 'stretch',
+                  maxHeight: 280,
+                }}
+              >
+                <ScrollView nestedScrollEnabled style={{ maxHeight: 280 }}>
+                  {LLM_OPTIONS.map((option, index) => {
+                    const optionSub = llmOptionSubtitle(option);
+                    return (
+                      <Pressable
+                        key={option.code}
+                        onPress={() => {
+                          setPreferredProvider(option.code);
+                          setShowModelPicker(false);
+                        }}
+                        style={{
+                          paddingVertical: 12,
+                          paddingHorizontal: 14,
+                          borderBottomWidth: index < LLM_OPTIONS.length - 1 ? 1 : 0,
+                          borderBottomColor: colors.outline,
+                          backgroundColor: preferredProvider === option.code ? themeMascotColor + '15' : 'transparent',
+                        }}
+                      >
+                        <Text
+                          style={{
+                            fontFamily: preferredProvider === option.code ? fontFamilies.figtree.semiBold : fontFamilies.figtree.regular,
+                            color: preferredProvider === option.code ? themeMascotColor : colors.text,
+                          }}
+                          numberOfLines={1}
+                        >
+                          {option.name}
+                        </Text>
+                        {optionSub ? (
+                          <Text
+                            style={{ fontSize: 11, color: colors.textMuted, marginTop: 2 }}
+                            numberOfLines={1}
+                          >
+                            {optionSub}
+                          </Text>
+                        ) : null}
+                      </Pressable>
+                    );
+                  })}
                 </ScrollView>
               </View>
             )}
+          </View>
+
+          {/* Skill Prompt */}
+          <View style={styles.fieldContainer}>
+            <Text
+              style={[
+                styles.label,
+                { fontFamily: fontFamilies.figtree.medium, color: colors.text },
+              ]}
+            >
+              Skill Summary
+            </Text>
+            <Text
+              style={[
+                styles.hint,
+                { fontFamily: fontFamilies.figtree.regular, color: colors.textMuted },
+              ]}
+            >
+              Short text shown on Agent page skill cards.
+            </Text>
+            <TextInput
+              style={[
+                styles.input,
+                {
+                  fontFamily: fontFamilies.figtree.regular,
+                  color: colors.text,
+                  borderColor: colors.outline,
+                  backgroundColor: colors.surface,
+                },
+                Platform.OS === 'web' && ({ boxShadow: shadowToCSS('xs') } as unknown as object),
+              ]}
+              value={skillSummary}
+              onChangeText={setSkillSummary}
+              placeholder="One concise summary line..."
+              placeholderTextColor={colors.textMuted}
+              editable={true}
+              selectTextOnFocus={false}
+              maxLength={180}
+            />
           </View>
 
           {/* Skill Prompt */}

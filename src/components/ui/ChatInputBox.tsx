@@ -9,12 +9,12 @@ import {
   Image,
   Modal,
 } from 'react-native';
-import { useTheme, fontFamilies, shadowToCSS, shadowToNative, textStyles } from '@/design-system';
+import { useTheme, fontFamilies, shadowToCSS, shadowToNative } from '@/design-system';
 import { Icon } from './Icon';
 import { PaywallModal } from './PaywallModal';
 import { ProBadge } from './ProBadge';
 import * as ImagePicker from 'expo-image-picker';
-import { LLM_OPTIONS, LLMPreference } from '@/services/preferences';
+import { LLM_OPTIONS, LLMPreference, llmOptionSubtitle } from '@/services/preferences';
 import { resolveMascotColor, getContrastColor } from '@/lib/utils/mascot-colors';
 
 export type ChatInputBoxRef = {
@@ -78,12 +78,22 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
   const [isWebSearchHovered, setIsWebSearchHovered] = useState(false);
   const [isDeepThinkingHovered, setIsDeepThinkingHovered] = useState(false);
   const [isSendHovered, setIsSendHovered] = useState(false);
+  const [isLlmPickerHovered, setIsLlmPickerHovered] = useState(false);
+  const [isContainerHovered, setIsContainerHovered] = useState(false);
+  const [isInputFocused, setIsInputFocused] = useState(false);
   const [inputHeight, setInputHeight] = useState(48); // Start with min height
   const [attachedImage, setAttachedImage] = useState<{ uri: string; base64?: string; mimeType?: string } | null>(null);
   const [showImagePreview, setShowImagePreview] = useState(false);
   const inputRef = useRef<TextInput>(null);
   const sendButtonColor = resolveMascotColor(mascotColor);
   const sendIconColor = getContrastColor(sendButtonColor);
+  const accentOutline = isContainerHovered || isInputFocused;
+  const containerShadowStyle = Platform.select({
+    web: {
+      boxShadow: shadowToCSS(accentOutline ? 'lg' : 'xs'),
+    } as object,
+    default: shadowToNative(accentOutline ? 'lg' : 'xs'),
+  });
   const webIconTransitionStyle = Platform.select({
     web: {
       transition: 'all 160ms ease-out',
@@ -226,12 +236,25 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
       <View
         style={[
           styles.container,
+          containerShadowStyle,
           {
             backgroundColor: colors.background,
-            borderColor: colors.outline,
+            borderColor: accentOutline ? sendButtonColor : colors.outline,
             maxWidth,
           },
+          Platform.OS === 'web' &&
+            ({
+              transitionProperty: 'border-color, box-shadow',
+              transitionDuration: '160ms',
+              transitionTimingFunction: 'ease-out',
+            } as object),
         ]}
+        {...(Platform.OS === 'web'
+          ? ({
+              onMouseEnter: () => setIsContainerHovered(true),
+              onMouseLeave: () => setIsContainerHovered(false),
+            } as any)
+          : {})}
       >
         {/* Image Preview */}
         {attachedImage && (
@@ -282,7 +305,9 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
           onChangeText={onChangeText}
           multiline
           textAlignVertical="top"
-          selectionColor={colors.primary}
+          selectionColor={sendButtonColor}
+          onFocus={() => setIsInputFocused(true)}
+          onBlur={() => setIsInputFocused(false)}
           onKeyPress={handleKeyPress}
           onContentSizeChange={handleContentSizeChange}
           blurOnSubmit={false}
@@ -300,28 +325,58 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
                   styles.llmPickerButton,
                   {
                     backgroundColor: colors.background,
-                    borderColor: colors.outline,
+                    borderColor:
+                      Platform.OS === 'web' && isLlmPickerHovered ? sendButtonColor : colors.outline,
                   },
+                  Platform.OS === 'web' &&
+                    ({
+                      transition: 'border-color 140ms ease-out, box-shadow 140ms ease-out',
+                      cursor: 'pointer',
+                    } as object),
                 ]}
                 onPress={() => setShowLLMDropdown(!showLLMDropdown)}
                 disabled={disabled}
+                onHoverIn={() => {
+                  if (Platform.OS === 'web') setIsLlmPickerHovered(true);
+                }}
+                onHoverOut={() => {
+                  if (Platform.OS === 'web') setIsLlmPickerHovered(false);
+                }}
               >
-                <Text
-                  style={[
-                    styles.llmPickerText,
-                    {
-                      fontFamily: fontFamilies.figtree.medium,
-                      color: mode === 'dark' ? '#FFFFFF' : colors.text,
-                    },
-                  ]}
-                >
-                  {chatLLM === 'auto' ? 'Auto' :
-                    chatLLM === 'gemini' ? 'Google Gemini 3' :
-                      chatLLM === 'perplexity' ? 'Perplexity Sonar' :
-                        chatLLM === 'grok' ? 'xAI Grok 4.1' :
-                          chatLLM === 'claude' ? 'Claude 3.5' :
-                            chatLLM === 'openai' ? 'OpenAI GPT-5.2' : 'Auto'}
-                </Text>
+                {(() => {
+                  const sel = LLM_OPTIONS.find((o) => o.code === chatLLM);
+                  const sub = llmOptionSubtitle(sel);
+                  return (
+                    <View style={styles.llmPickerLabelBlock}>
+                      <Text
+                        style={[
+                          styles.llmPickerText,
+                          {
+                            fontFamily: fontFamilies.figtree.medium,
+                            color: mode === 'dark' ? '#FFFFFF' : colors.text,
+                          },
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {sel?.name ?? 'Auto'}
+                      </Text>
+                      {sub ? (
+                        <Text
+                          style={[
+                            styles.llmPickerVendor,
+                            {
+                              fontFamily: fontFamilies.figtree.regular,
+                              color: colors.textMuted,
+                            },
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {sub}
+                        </Text>
+                      ) : null}
+                    </View>
+                  );
+                })()}
               </Pressable>
 
               {/* Dropdown */}
@@ -335,7 +390,12 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
                       left: 0, // Align left since it's on the left side now
                       right: 'auto', // Reset right
                     },
-                    Platform.OS === 'web' && ({ boxShadow: shadowToCSS('md') } as unknown as object),
+                    Platform.OS === 'web' &&
+                      ({
+                        boxShadow: shadowToCSS('md'),
+                        width: 'max-content',
+                        maxWidth: 'min(100vw - 32px, 420px)',
+                      } as unknown as object),
                   ]}
                 >
                   {LLM_OPTIONS.map((option) => {
@@ -344,6 +404,7 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
                     const canAccessPro = isPro || isAdmin;
                     const isLocked = isProModel && !canAccessPro;
                     const isSelected = chatLLM === option.code;
+                    const optionSub = llmOptionSubtitle(option);
 
                     return (
                       <Pressable
@@ -363,20 +424,37 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
                           setShowLLMDropdown(false);
                         }}
                       >
-                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <Text
-                            style={[
-                              styles.llmDropdownItemText,
-                              {
-                                fontFamily: fontFamilies.figtree.semiBold,
-                                color: isSelected ? (mode === 'dark' ? '#FFFFFF' : colors.primary) : (isLocked ? colors.textMuted : colors.text),
-                              },
-                            ]}
-                          >
-                            {option.name}
-                          </Text>
+                        <View style={styles.llmDropdownRow}>
+                          <View style={styles.llmDropdownTextCol}>
+                            <Text
+                              style={[
+                                styles.llmDropdownItemText,
+                                {
+                                  fontFamily: fontFamilies.figtree.semiBold,
+                                  color: isSelected ? (mode === 'dark' ? '#FFFFFF' : colors.primary) : (isLocked ? colors.textMuted : colors.text),
+                                },
+                              ]}
+                              numberOfLines={1}
+                            >
+                              {option.name}
+                            </Text>
+                            {optionSub ? (
+                              <Text
+                                style={[
+                                  styles.llmDropdownItemVendor,
+                                  {
+                                    fontFamily: fontFamilies.figtree.regular,
+                                    color: isLocked ? colors.textMuted : colors.textMuted,
+                                  },
+                                ]}
+                                numberOfLines={1}
+                              >
+                                {optionSub}
+                              </Text>
+                            ) : null}
+                          </View>
                           {isProModel && (
-                            <View style={{ marginLeft: 6 }}>
+                            <View style={styles.llmDropdownBadgeWrap}>
                               {isLocked ? (
                                 <Icon name="lock" size={12} color={colors.textMuted} />
                               ) : (
@@ -385,17 +463,6 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
                             </View>
                           )}
                         </View>
-                        <Text
-                          style={[
-                            styles.llmDropdownItemDesc,
-                            {
-                              fontFamily: fontFamilies.figtree.regular,
-                              color: isLocked ? colors.textMuted : (isSelected ? (mode === 'dark' ? 'rgba(255,255,255,0.8)' : colors.primary) : colors.textMuted),
-                            },
-                          ]}
-                        >
-                          {option.description}
-                        </Text>
                       </Pressable>
                     );
                   })}
@@ -581,17 +648,7 @@ const styles = StyleSheet.create({
     padding: Platform.OS === 'web' ? 24 : 16, // 16px on mobile, 24px on desktop
     borderWidth: 1,
     width: '100%',
-    // Softer shadow on mobile, full shadow on web
-    // On web, use boxShadow (CSS), on native use shadow properties
-    ...(Platform.OS === 'web'
-      ? ({ boxShadow: shadowToCSS('lg') } as any)
-      : {
-        shadowColor: '#0A0D12',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.03, // Even softer on mobile
-        shadowRadius: 3, // Slightly larger radius for softer blur
-        elevation: 1, // Lower elevation for Android
-      }),
+    // Default / elevated shadow is applied inline (xs idle, lg on hover/focus).
   },
   input: {
     fontSize: 16,
@@ -608,15 +665,26 @@ const styles = StyleSheet.create({
   },
   llmPickerContainer: {
     position: 'relative',
+    alignSelf: 'flex-start',
   },
   llmPickerButton: {
-    paddingVertical: 6,
-    paddingHorizontal: 10,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
     borderRadius: 6,
     borderWidth: 1,
+    alignSelf: 'flex-start',
+  },
+  llmPickerLabelBlock: {
+    flexShrink: 1,
   },
   llmPickerText: {
-    fontSize: 12,
+    fontSize: 11,
+    lineHeight: 14,
+  },
+  llmPickerVendor: {
+    fontSize: 9,
+    marginTop: 1,
+    lineHeight: 12,
   },
   llmDropdown: {
     position: 'absolute',
@@ -625,20 +693,36 @@ const styles = StyleSheet.create({
     marginBottom: 4,
     borderRadius: 8,
     borderWidth: 1,
-    minWidth: 160,
     zIndex: 100,
     overflow: 'hidden',
+    alignSelf: 'flex-start',
+    alignItems: 'stretch',
+  },
+  llmDropdownRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'flex-start',
+    gap: 8,
+  },
+  llmDropdownTextCol: {
+    flexShrink: 1,
+  },
+  llmDropdownBadgeWrap: {
+    marginTop: 2,
+    flexShrink: 0,
   },
   llmDropdownItem: {
     paddingVertical: 10,
     paddingHorizontal: 12,
+    alignSelf: 'stretch',
   },
   llmDropdownItemText: {
     fontSize: 14,
   },
-  llmDropdownItemDesc: {
-    marginTop: 2,
+  llmDropdownItemVendor: {
     fontSize: 11,
+    marginTop: 2,
+    lineHeight: 14,
   },
   buttonsContainer: {
     flexDirection: 'row',

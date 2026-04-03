@@ -10,6 +10,7 @@ import Animated, {
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme, fontFamilies, shadowToCSS, shadowToNative } from '@/design-system';
 import { Icon, MediumDarkButton } from '@/components';
+import { ProBadge } from '@/components/ui/ProBadge';
 import { MascotDetails, type Skill } from './MascotDetails';
 
 type FlippableCardProps = {
@@ -34,6 +35,8 @@ type FlippableCardProps = {
   onSkillPress: (skill: Skill) => void;
   enableLikes?: boolean;
 };
+
+const MAX_DISPLAY_SKILLS = 4;
 
 function shortenToSeventyFivePercent(text: string) {
   const clean = text.trim();
@@ -120,6 +123,15 @@ export function FlippableCard({
   return (
     <View style={[styles.cardFrame, { width, height }, cardShadow]}>
       <View pointerEvents="none" style={[styles.frameOutline, { borderColor: colors.outline }]} />
+
+      {/* Pro / Custom badge in top right */}
+      {!isComingSoon && (isCustom || isPro) && (
+        <ProBadge
+          style={[styles.badgeTopRight, { zIndex: 25 }]}
+          color={isCustom ? colors.teal : colors.primary}
+          label={isCustom ? 'CUSTOM' : 'PRO'}
+        />
+      )}
       {/* ── Front face: native MascotDetails at 356px, no scaling ── */}
       <Animated.View pointerEvents={isFlipped ? 'none' : 'auto'} style={[styles.face, frontStyle]}>
         <MascotDetails
@@ -128,7 +140,7 @@ export function FlippableCard({
           imageSource={imageSource}
           personality={[]}
           models={models}
-          skills={skills}
+          skills={skills.slice(0, MAX_DISPLAY_SKILLS)}
           customBio={customBio || undefined}
           variant={isLocked ? 'locked' : 'available'}
           mascotId={id}
@@ -178,7 +190,7 @@ export function FlippableCard({
           </View>
 
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabsRow}>
-            {skills.map((skill) => {
+            {skills.slice(0, MAX_DISPLAY_SKILLS).map((skill) => {
               const active = selectedSkillId === skill.id;
               return (
                 <Pressable
@@ -253,6 +265,11 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     borderWidth: StyleSheet.hairlineWidth,
     zIndex: 20,
+  },
+  badgeTopRight: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
   },
   face: {
     position: 'absolute',

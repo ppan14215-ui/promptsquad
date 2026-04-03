@@ -259,6 +259,7 @@ export function MascotCardDeck({
   const launchIntoChat = (targetMascot?: DeckMascot, targetSkill?: Skill) => {
     const mascot = targetMascot || topCard;
     if (!mascot) return;
+    if (mascot.isComingSoon) return;
 
     pendingActivateRef.current = targetSkill ? { mascot, skill: targetSkill } : { mascot };
 

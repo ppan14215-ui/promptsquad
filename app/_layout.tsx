@@ -6,6 +6,7 @@ import { AuthProvider, useAuth } from '@/services/auth';
 import { PreferencesProvider } from '@/services/preferences';
 import { hasCompletedOnboarding } from '@/services/mascot-access';
 import { ChatPreferencesProvider } from '@/context/ChatPreferencesContext';
+import { MascotsDataProvider } from '@/context/MascotsDataContext';
 import { useFonts } from 'expo-font';
 import {
   Figtree_400Regular,
@@ -333,7 +334,9 @@ export default function RootLayout() {
               <I18nProvider>
                 <ChatPreferencesProvider>
                   <AuthGate>
-                    <ThemedStack />
+                    <MascotsDataProvider>
+                      <ThemedStack />
+                    </MascotsDataProvider>
                   </AuthGate>
                 </ChatPreferencesProvider>
               </I18nProvider>

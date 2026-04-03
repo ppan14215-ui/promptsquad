@@ -1,12 +1,15 @@
-import { View, StyleSheet, Text, Pressable, Platform, Image, useWindowDimensions, Modal, ActivityIndicator, Keyboard, LayoutAnimation, KeyboardAvoidingView, ScrollView, Alert } from 'react-native';
+import { View, StyleSheet, Text, Pressable, Platform, useWindowDimensions, Modal, ActivityIndicator, Keyboard, LayoutAnimation, KeyboardAvoidingView, ScrollView, Alert } from 'react-native';
 import { useState, useEffect, useMemo } from 'react';
-import { useRouter } from 'expo-router';
+import { Link, useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Icon, Skill, ChatInputBox, MascotDetails, LinkPill, HomeHeader, MascotCarousel, PaywallModal, FormattedText, MascotCardDeck } from '@/components';
-import { useTheme, fontFamilies } from '@/design-system';
+import { Image as ExpoImage } from 'expo-image';
+import { Icon, Skill, ChatInputBox, MascotDetails, HomeHeader, PaywallModal, MascotCardDeck } from '@/components';
+import { SkillCard } from '@/components/ui/SkillCard';
+import { useTheme, fontFamilies, shadowToCSS } from '@/design-system';
+import { useI18n } from '@/i18n';
 import { useAuth } from '@/services/auth';
 import { useSubscription } from '@/services/subscription';
-import { useMascotSkills, MascotSkill, useIsAdmin, useMascots, MascotBasic, deleteMascot } from '@/services/admin';
+import { useMascotSkills, useIsAdmin, useMascots, MascotBasic, deleteMascot } from '@/services/admin';
 import { getMascotImageSource, getMascotGrayscaleImageSource } from '@/services/admin/mascot-images';
 import { useUnlockedMascots } from '@/services/mascot-access';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -25,6 +28,7 @@ import { resolveMascotColor } from '@/lib/utils/mascot-colors';
 
 // Responsive breakpoint
 const DESKTOP_BREAKPOINT = 768;
+const DESKTOP_SIDENAV_WIDTH = 300;
 
 import { useChatPreferences } from '@/context/ChatPreferencesContext';
 
@@ -32,6 +36,7 @@ import { useChatPreferences } from '@/context/ChatPreferencesContext';
 
 export default function HomeScreen() {
   const { colors } = useTheme();
+  const { t } = useI18n();
   const { user } = useAuth();
   const { isSubscribed } = useSubscription();
   const { isAdmin } = useIsAdmin();
@@ -49,8 +54,10 @@ export default function HomeScreen() {
   } = useChatPreferences();
 
   const [selectedMascotDetails, setSelectedMascotDetails] = useState<OwnedMascot | null>(null);
-  const [hoveredSkillPrompt, setHoveredSkillPrompt] = useState<string | null>(null);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [hoveredHomeSkillId, setHoveredHomeSkillId] = useState<string | null>(null);
+  const [hoveredSidenavIndex, setHoveredSidenavIndex] = useState<number | null>(null);
+  const [hoverAddMoreAgents, setHoverAddMoreAgents] = useState(false);
 
   const isDesktop = width >= DESKTOP_BREAKPOINT;
 
@@ -108,15 +115,25 @@ export default function HomeScreen() {
   const selectedMascot = availableMascots[selectedIndex] || availableMascots[0];
   const isSelectedMascotLocked = !!selectedMascot && !selectedMascot.isFree && !isSubscribed && !isAdmin;
 
+  useEffect(() => {
+    setHoveredHomeSkillId(null);
+  }, [selectedMascot?.id]);
+
   // Fetch skills from database for the selected mascot (only if mascot exists)
-  const { skills: dbSkills, isLoading: skillsLoading } = useMascotSkills(selectedMascot?.id || '', selectedMascot?.isFree ?? false);
+  const { skills: dbSkills } = useMascotSkills(selectedMascot?.id || '', selectedMascot?.isFree ?? false);
 
   // Use DB skills if available, otherwise fall back to hardcoded
   const displaySkills = useMemo(() => {
     if (!selectedMascot) return [];
 
     if (dbSkills.length > 0) {
-      return dbSkills.map((s) => ({ id: s.id, label: s.skill_label, prompt: s.skill_prompt || undefined }));
+      return dbSkills.map((s) => ({
+        id: s.id,
+        label: s.skill_label,
+        prompt: s.skill_prompt || undefined,
+        summary: s.skill_summary?.trim() || undefined,
+        promptPreview: s.skill_prompt_preview?.trim() || undefined,
+      }));
     }
     // Fallback to hardcoded skills if available
     if (selectedMascot.skills && selectedMascot.skills.length > 0) {
@@ -127,28 +144,41 @@ export default function HomeScreen() {
     return hardcodedMascot?.skills || [];
   }, [dbSkills, selectedMascot?.id, selectedMascot?.skills]);
 
+  const homeSkillSummaries = useMemo(() => {
+    const clean = (s: string) => s.replace(/\s+/g, ' ').trim();
+    const maxChars = 115;
+    const clamp = (text: string) =>
+      text.length > maxChars ? `${text.slice(0, maxChars - 1).trim()}…` : text;
+    const summarize = (label: string, prompt?: string) => {
+      const raw = prompt ? clean(prompt) : '';
+      if (!raw) {
+        return `Use ${label.toLowerCase()} to get a guided response with clear next steps.`;
+      }
+      const sentences = raw.split(/(?<=[.!?])\s+/).filter(Boolean);
+      const picked = sentences.slice(0, 2).join(' ');
+      return clamp(picked);
+    };
+    return new Map(
+      displaySkills.map((sk) => {
+        const s = sk as Skill;
+        const fromAdmin = s.summary?.trim();
+        if (fromAdmin) return [sk.id, fromAdmin] as const;
+        const fromPreview = s.promptPreview?.trim();
+        if (fromPreview) return [sk.id, clamp(fromPreview)] as const;
+        return [sk.id, summarize(sk.label, sk.prompt)] as const;
+      })
+    );
+  }, [displaySkills]);
+
+  const homeSkillAccent = useMemo(
+    () => (selectedMascot ? resolveMascotColor(selectedMascot.color) : undefined),
+    [selectedMascot?.color]
+  );
+
   const userName = user?.user_metadata?.full_name?.split(' ')[0] ||
     user?.user_metadata?.name?.split(' ')[0] ||
     user?.email?.split('@')[0] ||
     'Julian';
-
-  const handlePrevMascot = () => {
-    const newIndex = selectedIndex > 0 ? selectedIndex - 1 : availableMascots.length - 1;
-    setSelectedIndex(newIndex);
-    // Persist selection in background to avoid blocking UI interactions.
-    void AsyncStorage.setItem(LAST_MASCOT_KEY, availableMascots[newIndex].id).catch((error) => {
-      console.error('Error saving last mascot:', error);
-    });
-  };
-
-  const handleNextMascot = () => {
-    const newIndex = selectedIndex < availableMascots.length - 1 ? selectedIndex + 1 : 0;
-    setSelectedIndex(newIndex);
-    // Persist selection in background to avoid blocking UI interactions.
-    void AsyncStorage.setItem(LAST_MASCOT_KEY, availableMascots[newIndex].id).catch((error) => {
-      console.error('Error saving last mascot:', error);
-    });
-  };
 
   const handleDeckIndexChange = (newIndex: number) => {
     setSelectedIndex(newIndex);
@@ -160,6 +190,7 @@ export default function HomeScreen() {
 
   const handleSkillPress = (skill: Skill) => {
     if (!selectedMascot) return;
+    if (selectedMascot.isComingSoon) return;
     if (isSelectedMascotLocked) {
       setPaywallProps({
         visible: true,
@@ -190,6 +221,7 @@ export default function HomeScreen() {
   const handleSendMessage = (text?: string, attachment?: { uri: string; base64?: string; mimeType?: string }) => {
     const textToSend = typeof text === 'string' ? text : message;
     if (!textToSend.trim() && !attachment) return;
+    if (selectedMascot?.isComingSoon) return;
     if (isSelectedMascotLocked) {
       setPaywallProps({
         visible: true,
@@ -252,46 +284,6 @@ export default function HomeScreen() {
       } else {
         Alert.alert('Error', 'Failed to delete mascot. Please try again.');
       }
-    }
-  };
-
-
-
-  const handleMascotCardPress = (mascot: any, actualIndex: number, isSelected: boolean) => {
-    // Find the full OwnedMascot from availableMascots
-    const fullMascot = availableMascots.find(m => m.id === mascot.id);
-    if (!fullMascot) return;
-    if (isSelected) {
-      // If already selected, open details modal
-      setSelectedMascotDetails(fullMascot);
-    } else {
-      // If not selected, select this mascot
-      setSelectedIndex(actualIndex);
-      // Persist selection in background to avoid blocking UI interactions.
-      void AsyncStorage.setItem(LAST_MASCOT_KEY, fullMascot.id).catch((error) => {
-        console.error('Error saving last mascot:', error);
-      });
-    }
-  };
-
-  const handleSkillHover = (skill: Skill | null) => {
-    if (!skill) {
-      setHoveredSkillPrompt(null);
-      return;
-    }
-
-    // Check if skill object already has the prompt
-    if ('prompt' in skill && typeof (skill as any).prompt === 'string') {
-      setHoveredSkillPrompt((skill as any).prompt);
-      return;
-    }
-
-    // Fallback: Find full skill data in DB skills
-    const dbSkill = dbSkills.find(s => s.id === skill.id);
-    if (dbSkill?.skill_prompt) {
-      setHoveredSkillPrompt(dbSkill.skill_prompt);
-    } else {
-      setHoveredSkillPrompt(null);
     }
   };
 
@@ -414,6 +406,33 @@ export default function HomeScreen() {
               );
             }}
           />
+          <Link href="/store" asChild>
+            <Pressable
+              accessibilityRole="link"
+              accessibilityLabel={t.home.addMoreAgents}
+              style={StyleSheet.flatten([
+                styles.sidenavAddMore,
+                styles.mobileStoreLink,
+                {
+                  borderColor: colors.outline,
+                  backgroundColor: colors.background,
+                },
+              ])}
+            >
+              <Icon name="add-circle" size={20} color={colors.textMuted} />
+              <Text
+                style={[
+                  styles.sidenavAddMoreLabel,
+                  {
+                    color: colors.textMuted,
+                    fontFamily: fontFamilies.figtree.semiBold,
+                  },
+                ]}
+              >
+                {t.home.addMoreAgents}
+              </Text>
+            </Pressable>
+          </Link>
         </View>
 
         <PaywallModal
@@ -427,102 +446,253 @@ export default function HomeScreen() {
     );
   }
 
+  const handleSidenavMascotPress = (mascot: OwnedMascot, index: number) => {
+    if (index === selectedIndex) {
+      setSelectedMascotDetails(mascot);
+      return;
+    }
+    setSelectedIndex(index);
+    void AsyncStorage.setItem(LAST_MASCOT_KEY, mascot.id).catch((error) => {
+      console.error('Error saving last mascot:', error);
+    });
+  };
+
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={wrapperBehavior}
-        keyboardVerticalOffset={0}
-      >
-        {/* Top Section: Header + Skills (Pinned to Top) */}
-        <HomeHeader
-          userName={userName}
-          questionPrompt={selectedMascot.questionPrompt}
-          skills={displaySkills}
-          onSkillPress={handleSkillPress}
-          onSkillHover={handleSkillHover}
-          keyboardVisible={keyboardVisible}
-          skillsLoading={skillsLoading}
-          isDesktop={isDesktop}
-        />
-
-        {/* Spacer to push carousel and input to bottom */}
-        <View style={styles.spacer}>
-          {hoveredSkillPrompt && !keyboardVisible && (
-            <ScrollView
-              style={styles.previewScrollContainer}
-              contentContainerStyle={styles.previewContentContainer}
-              showsVerticalScrollIndicator={false}
-            >
-              <FormattedText
-                style={styles.previewText}
-                baseColor={colors.textMuted}
-              >
-                {hoveredSkillPrompt}
-              </FormattedText>
-            </ScrollView>
-          )}
-        </View>
-
-        {/* Bottom Section: Carousel + Input (Pinned to Bottom) */}
-        <View style={styles.bottomSection}>
-          <MascotCarousel
-            mascots={availableMascots.map((m, index) => {
-              // Free tier limit: Only mascots marked as FREE in DB
-              // Unless user is Pro or Admin
-              // Fallback to index logic if isFree is undefined (should fail safe to locked)
-              const isFreeMascot = m.isFree !== undefined ? m.isFree : (index < 4);
+      <View style={styles.desktopShell}>
+        {/* Left: mascot sidenav (desktop only — mobile uses deck screen above) */}
+        <View
+          style={[
+            styles.sidenav,
+            {
+              width: DESKTOP_SIDENAV_WIDTH,
+              borderRightColor: colors.outline,
+              backgroundColor: colors.background,
+            },
+          ]}
+        >
+          <Text
+            style={[
+              styles.sidenavTitle,
+              { color: colors.textMuted, fontFamily: fontFamilies.figtree.semiBold },
+            ]}
+          >
+            Your agents
+          </Text>
+          <ScrollView
+            style={styles.sidenavScroll}
+            contentContainerStyle={styles.sidenavScrollContent}
+            showsVerticalScrollIndicator={Platform.OS === 'web'}
+            keyboardShouldPersistTaps="handled"
+          >
+            {availableMascots.map((m, index) => {
+              const isFreeMascot = m.isFree !== undefined ? m.isFree : index < 4;
               const hasOwnedAccess = unlockedMascotIds.includes(m.id);
               const isLocked = !isFreeMascot && !isSubscribed && !isAdmin && !hasOwnedAccess;
-
-              return {
-                id: m.id,
-                name: m.name,
-                subtitle: m.subtitle,
-                image: m.image,
-                color: m.color as any,
-                isCustom: m.isCustom || false,
-                isPro: !m.isCustom && (m.isPro || isLocked),
-              };
+              const isSelected = index === selectedIndex;
+              const isNotReady = !!m.isComingSoon;
+              const subtitleLine = (m.subtitle ?? '').trim();
+              const isSidenavHover = Platform.OS === 'web' && hoveredSidenavIndex === index;
+              const sidenavRowActive = isSelected || isSidenavHover;
+              return (
+                <Pressable
+                  key={m.id}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Select ${m.name}`}
+                  onPress={() => handleSidenavMascotPress(m, index)}
+                  style={({ pressed }) => [
+                    styles.sidenavBubble,
+                    {
+                      backgroundColor: sidenavRowActive ? colors.surface : 'transparent',
+                      opacity: isNotReady
+                        ? 0.52
+                        : pressed && Platform.OS !== 'web'
+                          ? 0.88
+                          : 1,
+                    },
+                    Platform.OS === 'web' ? ({ cursor: 'pointer' } as any) : null,
+                    Platform.OS === 'web'
+                      ? ({
+                          transitionDuration: '150ms',
+                          transitionTimingFunction: 'ease-out',
+                          transitionProperty: 'background-color',
+                        } as any)
+                      : null,
+                  ]}
+                  {...(Platform.OS === 'web'
+                    ? {
+                        onHoverIn: () => setHoveredSidenavIndex(index),
+                        onHoverOut: () =>
+                          setHoveredSidenavIndex((prev) => (prev === index ? null : prev)),
+                      }
+                    : {})}
+                >
+                  <ExpoImage
+                    source={m.image}
+                    style={[styles.sidenavAvatar, { backgroundColor: colors.surface }]}
+                    contentFit="cover"
+                    transition={0}
+                  />
+                  <View style={styles.sidenavBubbleTextCol}>
+                    <Text
+                      numberOfLines={1}
+                      style={[
+                        styles.sidenavName,
+                        {
+                          color: isNotReady ? colors.textMuted : colors.text,
+                          fontFamily: fontFamilies.figtree.semiBold,
+                        },
+                      ]}
+                    >
+                      {m.name}
+                    </Text>
+                    {subtitleLine ? (
+                      <Text
+                        numberOfLines={1}
+                        style={[
+                          styles.sidenavSubtitle,
+                          { color: colors.textMuted, fontFamily: fontFamilies.figtree.regular },
+                        ]}
+                      >
+                        {subtitleLine}
+                      </Text>
+                    ) : null}
+                  </View>
+                  {isLocked ? <Icon name="lock" size={14} color={colors.textMuted} /> : null}
+                </Pressable>
+              );
             })}
-            selectedIndex={selectedIndex}
-            onMascotPress={(mascot, actualIndex, isSelected) => {
-              // Always allow browsing/selecting every mascot in the carousel.
-              handleMascotCardPress(mascot, actualIndex, isSelected);
-            }}
-            onPrev={handlePrevMascot}
-            onNext={handleNextMascot}
+            <Link href="/store" asChild>
+              <Pressable
+                accessibilityRole="link"
+                accessibilityLabel={t.home.addMoreAgents}
+                style={StyleSheet.flatten([
+                  styles.sidenavAddMore,
+                  {
+                    borderColor:
+                      Platform.OS === 'web' && hoverAddMoreAgents ? colors.primary : colors.outline,
+                    backgroundColor: colors.background,
+                  },
+                  Platform.OS === 'web' && hoverAddMoreAgents
+                    ? ({ boxShadow: shadowToCSS('md') } as object)
+                    : null,
+                  Platform.OS === 'web' ? ({ cursor: 'pointer' } as any) : null,
+                  Platform.OS === 'web'
+                    ? ({
+                        transition: 'all 200ms ease-out',
+                      } as any)
+                    : null,
+                ])}
+                {...(Platform.OS === 'web'
+                  ? {
+                      onHoverIn: () => setHoverAddMoreAgents(true),
+                      onHoverOut: () => setHoverAddMoreAgents(false),
+                    }
+                  : {})}
+              >
+                <Icon
+                  name="add-circle"
+                  size={20}
+                  color={
+                    Platform.OS === 'web' && hoverAddMoreAgents ? colors.primary : colors.textMuted
+                  }
+                />
+                <Text
+                  style={[
+                    styles.sidenavAddMoreLabel,
+                    {
+                      color:
+                        Platform.OS === 'web' && hoverAddMoreAgents ? colors.primary : colors.textMuted,
+                      fontFamily: fontFamilies.figtree.semiBold,
+                    },
+                  ]}
+                >
+                  {t.home.addMoreAgents}
+                </Text>
+              </Pressable>
+            </Link>
+          </ScrollView>
+        </View>
+
+        <KeyboardAvoidingView
+          style={styles.desktopMain}
+          behavior={wrapperBehavior}
+          keyboardVerticalOffset={0}
+        >
+          {/* Top Section: Header + Skills (Pinned to Top) */}
+          <HomeHeader
+            userName={userName}
+            questionPrompt={selectedMascot.questionPrompt}
+            keyboardVisible={keyboardVisible}
             isDesktop={isDesktop}
-            scale={0.75}
           />
 
-          {/* Chat Input - sits right below carousel */}
-          <View style={[
-            styles.inputSection,
-            isDesktop && styles.inputSectionDesktop,
-            { paddingBottom: Platform.OS !== 'web' ? Math.max(16, insets.bottom) : 24 },
-          ]}>
-            <ChatInputBox
-              value={message}
-              onChangeText={setMessage}
-              onSend={(text, attachment) => handleSendMessage(text, attachment)}
-              placeholder={selectedMascot?.questionPrompt || 'Ask anything...'}
-              mascotColor={resolveMascotColor(selectedMascot.color)}
-              showLLMPicker={true}
-              chatLLM={chatLLM}
-              onLLMChange={setChatLLM}
-              deepThinkingEnabled={deepThinkingEnabled}
-              onDeepThinkingToggle={() => setDeepThinkingEnabled(!deepThinkingEnabled)}
-              webSearchEnabled={webSearchEnabled}
-              onWebSearchToggle={() => setWebSearchEnabled(!webSearchEnabled)}
-              isAdmin={isAdmin}
-              isPro={isSubscribed || isAdmin}
-              onVoicePress={() => console.log('Voice input not implemented on home screen')}
-              maxWidth={800} // Slightly wider on home screen
-            />
+          <ScrollView
+            style={styles.agentPanelScroll}
+            contentContainerStyle={styles.agentPanelContent}
+            showsVerticalScrollIndicator={Platform.OS === 'web'}
+            keyboardShouldPersistTaps="handled"
+          >
+            {!keyboardVisible && (
+              <View
+                style={[
+                  styles.agentSkillsStack,
+                  selectedMascot?.isComingSoon ? { opacity: 0.45 } : null,
+                ]}
+              >
+                {displaySkills.map((skill) => {
+                    const summaryText = (homeSkillSummaries.get(skill.id) ?? '').trim();
+                    const isHovered = Platform.OS === 'web' && hoveredHomeSkillId === skill.id;
+                    return (
+                      <SkillCard
+                        key={skill.id}
+                        title={skill.label}
+                        summary={summaryText.length > 0 ? summaryText : undefined}
+                        onPress={() => handleSkillPress(skill)}
+                        hovered={isHovered}
+                        accentBorderColor={homeSkillAccent}
+                        onHoverIn={() => setHoveredHomeSkillId(skill.id)}
+                        onHoverOut={() =>
+                          setHoveredHomeSkillId((prev) => (prev === skill.id ? null : prev))
+                        }
+                      />
+                    );
+                  })}
+              </View>
+            )}
+          </ScrollView>
+
+          <View style={[styles.bottomSection, styles.bottomSectionDesktopSidenav]}>
+            <View
+              style={[
+                styles.inputSection,
+                styles.inputSectionDesktop,
+                { paddingBottom: Platform.OS !== 'web' ? Math.max(16, insets.bottom) : 24 },
+              ]}
+            >
+              <ChatInputBox
+                value={message}
+                onChangeText={setMessage}
+                onSend={(text, attachment) => handleSendMessage(text, attachment)}
+                placeholder={selectedMascot?.questionPrompt || 'Ask anything...'}
+                mascotColor={resolveMascotColor(selectedMascot.color)}
+                showLLMPicker={true}
+                chatLLM={chatLLM}
+                onLLMChange={setChatLLM}
+                deepThinkingEnabled={deepThinkingEnabled}
+                onDeepThinkingToggle={() => setDeepThinkingEnabled(!deepThinkingEnabled)}
+                webSearchEnabled={webSearchEnabled}
+                onWebSearchToggle={() => setWebSearchEnabled(!webSearchEnabled)}
+                isAdmin={isAdmin}
+                isPro={isSubscribed || isAdmin}
+                onVoicePress={() => console.log('Voice input not implemented on home screen')}
+                maxWidth={800}
+                disabled={!!selectedMascot?.isComingSoon}
+              />
+            </View>
           </View>
-        </View>
-      </KeyboardAvoidingView>
+        </KeyboardAvoidingView>
+      </View>
 
       {/* Mascot Details Modal */}
       <Modal
@@ -620,6 +790,101 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  desktopShell: {
+    flex: 1,
+    flexDirection: 'row',
+    minHeight: 0,
+  },
+  sidenav: {
+    borderRightWidth: 1,
+    paddingTop: 8,
+    paddingBottom: 8,
+  },
+  sidenavTitle: {
+    fontSize: 11,
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+    paddingHorizontal: 16,
+    paddingBottom: 10,
+  },
+  sidenavScroll: {
+    flex: 1,
+  },
+  sidenavScrollContent: {
+    paddingBottom: 16,
+    paddingHorizontal: 6,
+  },
+  sidenavBubble: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    marginVertical: 3,
+    borderRadius: 22,
+  },
+  sidenavAvatar: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+  },
+  sidenavBubbleTextCol: {
+    flex: 1,
+    minWidth: 0,
+    justifyContent: 'center',
+    gap: 2,
+  },
+  sidenavName: {
+    fontSize: 16,
+    lineHeight: 20,
+  },
+  sidenavSubtitle: {
+    fontSize: 13,
+    lineHeight: 16,
+  },
+  sidenavAddMore: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+  },
+  sidenavAddMoreLabel: {
+    fontSize: 14,
+    lineHeight: 18,
+  },
+  mobileStoreLink: {
+    alignSelf: 'stretch',
+    marginHorizontal: 16,
+    marginTop: 16,
+  },
+  agentPanelScroll: {
+    flex: 1,
+    minHeight: 0,
+    width: '100%',
+  },
+  agentPanelContent: {
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: 24,
+    width: '100%',
+    maxWidth: 720,
+    alignSelf: 'center',
+  },
+  agentSkillsStack: {
+    gap: 12,
+    width: '100%',
+    alignItems: 'stretch',
+  },
+  desktopMain: {
+    flex: 1,
+    minWidth: 0,
+  },
   mobileDeckContainer: {
     flex: 1,
     alignItems: 'center',
@@ -693,9 +958,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
   },
-  spacer: {
-    flex: 1,
-  },
   bottomSection: {
     alignItems: 'center',
     gap: 16,
@@ -703,6 +965,10 @@ const styles = StyleSheet.create({
   },
   bottomSectionDesktop: {
     alignItems: 'center',
+  },
+  bottomSectionDesktopSidenav: {
+    gap: 0,
+    paddingTop: 8,
   },
   carouselSection: {
     alignItems: 'center',
@@ -758,26 +1024,5 @@ const styles = StyleSheet.create({
   },
   modalContent: {
     // Prevents clicks from propagating to overlay
-  },
-  previewScrollContainer: {
-    flex: 1,
-    maxWidth: 600,
-    alignSelf: 'center',
-    width: '100%',
-  },
-  previewContentContainer: {
-    paddingHorizontal: 24,
-    paddingTop: 8,
-    paddingBottom: 16,
-    alignItems: 'center',
-  },
-  previewText: {
-    fontSize: 14,
-    textAlign: 'center',
-    fontStyle: 'normal',
-    lineHeight: 20,
-    opacity: 0.8,
-    // @ts-ignore
-    userSelect: 'none',
   },
 });

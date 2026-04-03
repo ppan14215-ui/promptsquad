@@ -132,7 +132,9 @@ export type Database = {
           skill_label: string
           skill_prompt: string
           skill_prompt_preview: string | null
+          skill_summary: string | null
           sort_order: number | null
+          preferred_provider: string | null
           updated_at: string | null
         }
         Insert: {
@@ -144,7 +146,9 @@ export type Database = {
           skill_label: string
           skill_prompt: string
           skill_prompt_preview?: string | null
+          skill_summary?: string | null
           sort_order?: number | null
+          preferred_provider?: string | null
           updated_at?: string | null
         }
         Update: {
@@ -156,7 +160,9 @@ export type Database = {
           skill_label?: string
           skill_prompt?: string
           skill_prompt_preview?: string | null
+          skill_summary?: string | null
           sort_order?: number | null
+          preferred_provider?: string | null
           updated_at?: string | null
         }
         Relationships: [
@@ -174,6 +180,7 @@ export type Database = {
           bio: string | null
           color: string
           created_at: string | null
+          description: string | null
           id: string
           image_url: string
           is_active: boolean | null
@@ -193,6 +200,7 @@ export type Database = {
           bio?: string | null
           color: string
           created_at?: string | null
+          description?: string | null
           id: string
           image_url: string
           is_active?: boolean | null
@@ -212,6 +220,7 @@ export type Database = {
           bio?: string | null
           color?: string
           created_at?: string | null
+          description?: string | null
           id?: string
           image_url?: string
           is_active?: boolean | null
@@ -395,10 +404,14 @@ export type Database = {
           created_at: string | null
           id: string | null
           is_active: boolean | null
+          is_full_access: boolean | null
           mascot_id: string | null
           skill_label: string | null
+          skill_prompt: string | null
           skill_prompt_preview: string | null
+          skill_summary: string | null
           sort_order: number | null
+          preferred_provider: string | null
           updated_at: string | null
         }
         Insert: {

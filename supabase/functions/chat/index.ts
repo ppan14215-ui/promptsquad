@@ -351,7 +351,7 @@ serve(async (req: Request) => {
     } else {
       // Other providers
       useModel = deepThinking
-        ? (useProvider === 'openai' ? 'gpt-5.2' :
+        ? (useProvider === 'openai' ? 'gpt-5.4' :
           useProvider === 'perplexity' ? 'sonar-reasoning-pro' :
             useProvider === 'claude' ? 'claude-sonnet-4-5-20250929' :
               'gemini-3-pro-preview')
@@ -581,6 +581,7 @@ serve(async (req: Request) => {
           model: useModel,
           messages: perplexityMessages,
           stream: true,
+          max_tokens: 4096, // Prevent truncation; Perplexity default can cut responses short
         }),
       });
 
@@ -592,13 +593,20 @@ serve(async (req: Request) => {
         );
       }
 
+      // Buffer incomplete SSE chunks - Perplexity events can be split across network packets
+      let sseBuffer = '';
       const transformStream = new TransformStream({
         async transform(chunk, controller) {
           const text = new TextDecoder().decode(chunk);
-          const lines = text.split('\n').filter(line => line.startsWith('data: '));
+          sseBuffer += text;
+          // SSE events are delimited by double newline; process only complete events
+          const events = sseBuffer.split('\n\n');
+          sseBuffer = events.pop() || ''; // Keep incomplete event for next chunk
 
-          for (const line of lines) {
-            const data = line.slice(6);
+          for (const event of events) {
+            const line = event.split('\n').find((l) => l.startsWith('data: '));
+            if (!line) continue;
+            const data = line.slice(6).trim();
             if (data === '[DONE]') {
               controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ done: true, model: useModel, provider: 'perplexity' })}\n\n`));
             } else {
@@ -610,6 +618,28 @@ serve(async (req: Request) => {
                 }
               } catch {
                 // Skip invalid JSON
+              }
+            }
+          }
+        },
+        flush(controller) {
+          // Process any remaining buffer (e.g. final [DONE] or trailing content)
+          if (sseBuffer.trim()) {
+            const line = sseBuffer.split('\n').find((l) => l.startsWith('data: '));
+            if (line) {
+              const data = line.slice(6).trim();
+              if (data === '[DONE]') {
+                controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ done: true, model: useModel, provider: 'perplexity' })}\n\n`));
+              } else {
+                try {
+                  const parsed = JSON.parse(data);
+                  const content = parsed.choices?.[0]?.delta?.content;
+                  if (content) {
+                    controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ content })}\n\n`));
+                  }
+                } catch {
+                  // Skip invalid JSON
+                }
               }
             }
           }

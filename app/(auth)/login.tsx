@@ -57,6 +57,7 @@ export default function LoginScreen() {
   const [rememberMe, setRememberMe] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [signupSuccess, setSignupSuccess] = useState(false);
   const [rateLimitSeconds, setRateLimitSeconds] = useState(0);
 
   // Load saved email on mount - run immediately
@@ -94,6 +95,7 @@ export default function LoginScreen() {
 
   const validateForm = (): boolean => {
     setError(null);
+    setSignupSuccess(false);
 
     // Email validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -142,6 +144,9 @@ export default function LoginScreen() {
         } else {
           setError(message || t.auth.errors.generic);
         }
+      } else if (!isLogin) {
+        // Signup succeeded — show confirmation to check email
+        setSignupSuccess(true);
       } else {
         // Save email only if "Remember Me" is checked (password should never be stored)
         if (isLogin && rememberMe) {
@@ -256,7 +261,10 @@ export default function LoginScreen() {
           { key: 'login', label: t.auth.tabs.login },
         ]}
         selectedKey={mode}
-        onChange={(key) => setMode(key as AuthMode)}
+        onChange={(key) => {
+          setMode(key as AuthMode);
+          setSignupSuccess(false);
+        }}
         style={styles.tabContainer}
       />
 
@@ -273,6 +281,23 @@ export default function LoginScreen() {
             ]}
           >
             {error}
+          </Text>
+        </View>
+      )}
+
+      {/* Signup Success — check your email */}
+      {signupSuccess && (
+        <View style={[styles.successContainer, { backgroundColor: `${colors.primary}18` }]}>
+          <Text
+            style={[
+              styles.successText,
+              {
+                fontFamily: fontFamilies.figtree.medium,
+                color: colors.primary,
+              },
+            ]}
+          >
+            {t.auth.signupEmailSent}
           </Text>
         </View>
       )}
@@ -478,7 +503,17 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     marginBottom: 16,
   },
+  successContainer: {
+    width: '100%',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 16,
+  },
   errorText: {
+    fontSize: 14,
+    textAlign: 'center',
+  },
+  successText: {
     fontSize: 14,
     textAlign: 'center',
   },

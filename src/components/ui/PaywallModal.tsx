@@ -29,7 +29,7 @@ type PaywallModalProps = {
 
 const PRO_FEATURES = [
     { icon: 'star', text: 'All 12+ mascots unlocked' },
-    { icon: 'cpu', text: 'Premium AI models (Claude, GPT-4, Grok)' },
+    { icon: 'cpu', text: 'Premium AI models (Claude, GPT-5.4, Grok)' },
     { icon: 'zap', text: 'Priority response times' },
     { icon: 'sparkles', text: 'Create custom mascots' },
     { icon: 'infinity', text: '300 premium messages/month' },
