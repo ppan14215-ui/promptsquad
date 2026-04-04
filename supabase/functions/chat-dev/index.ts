@@ -130,9 +130,26 @@ serve(async (req: Request) => {
 
     // Parse request body
     const body: ChatRequest = await req.json();
-    const { mascotId, messages, skillId, provider, deepThinking, image, taskCategory, webSearch } = body;
+    const {
+      mascotId,
+      messages,
+      skillId,
+      provider: rawProvider,
+      deepThinking,
+      image,
+      taskCategory,
+      webSearch,
+    } = body;
 
-    console.log('[Edge Function] Received messages for mascot:', mascotId, 'provider:', provider, 'webSearch:', webSearch);
+    const normalizeProviderInput = (p: unknown): string | undefined => {
+      if (p == null || typeof p !== 'string') return undefined;
+      const x = p.toLowerCase().trim();
+      if (['openai', 'gemini', 'perplexity', 'grok', 'claude', 'auto'].includes(x)) return x;
+      return undefined;
+    };
+    const clientProvider = normalizeProviderInput(rawProvider);
+
+    console.log('[Edge Function] Received messages for mascot:', mascotId, 'provider:', clientProvider, 'webSearch:', webSearch);
     console.log('[Edge Function] Message count:', messages?.length);
     if (messages?.length > 0) {
       console.log('[Edge Function] First message role:', messages[0].role, 'content:', messages[0].content.substring(0, 50) + '...');
@@ -164,7 +181,7 @@ serve(async (req: Request) => {
     }
 
     // Determine basic provider/model early for checking (final selection happens later if 'auto')
-    const tempProvider = provider || 'gemini'; // Default for checking
+    const tempProvider = clientProvider || 'gemini'; // Default for checking
     // Note: Model might change later based on deepThinking logic, but we can estimate
     // If provider is 'auto', we assume it MIGHT switch to OpenAI/Claude, so treat as High Tier 
     // UNLESS we are strictly Free tier, in which case we force 'gemini-flash' later?
@@ -213,18 +230,40 @@ serve(async (req: Request) => {
       }
     }
 
-    // Get skill prompt if provided
+    // Resolve skill by UUID or by label (home/agents deep links often pass skill_label as skillId)
     let skillPrompt = '';
+    let skillPreferredResolved: string | undefined;
     if (skillId) {
-      const { data: skillData } = await supabaseAdmin
-        .from('mascot_skills')
-        .select('skill_prompt')
-        .eq('id', skillId)
-        .eq('mascot_id', mascotId.toString())
-        .maybeSingle();
-      if (skillData?.skill_prompt) {
-        skillPrompt = skillData.skill_prompt;
+      const sid = String(skillId);
+      const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+      let skillRow: { skill_prompt: string | null; preferred_provider: string | null } | null = null;
+      if (uuidRe.test(sid)) {
+        const { data } = await supabaseAdmin
+          .from('mascot_skills')
+          .select('skill_prompt, preferred_provider')
+          .eq('id', sid)
+          .eq('mascot_id', mascotId.toString())
+          .maybeSingle();
+        skillRow = data;
       }
+      if (!skillRow) {
+        const { data } = await supabaseAdmin
+          .from('mascot_skills')
+          .select('skill_prompt, preferred_provider')
+          .eq('skill_label', sid)
+          .eq('mascot_id', mascotId.toString())
+          .eq('is_active', true)
+          .maybeSingle();
+        skillRow = data;
+      }
+      if (skillRow?.skill_prompt) skillPrompt = skillRow.skill_prompt;
+      const sp = normalizeProviderInput(skillRow?.preferred_provider);
+      if (sp && sp !== 'auto') skillPreferredResolved = sp;
+    }
+
+    let useProvider = clientProvider;
+    if ((!useProvider || useProvider === 'auto') && skillPreferredResolved) {
+      useProvider = skillPreferredResolved;
     }
 
     // Build system prompt
@@ -243,15 +282,20 @@ serve(async (req: Request) => {
     // Add search instructions if web search is enabled
     // Only Add instructions if we are NOT using a provider that handles this natively (like Perplexity or Grok)
     // Actually, for consistency, we can add a small note, but the tools definition handles the mechanism.
-    if (webSearch && provider !== 'perplexity' && provider !== 'grok') {
+    if (webSearch && useProvider !== 'perplexity' && useProvider !== 'grok') {
       systemPrompt += `\n\n---\n\nWEB SEARCH ENABLED:\nYou have access to Google Search. Verify facts and provide up-to-date information. Cite your sources using [Title](URL) format at the end of your response.`;
     }
 
-    // Determine Provider and Model
-    // 1. User manual selection (highest priority if Pro/Admin)
-    let useProvider = provider;
+    // Calendar anchor for every request — without this, models often infer the wrong year/month from training priors.
+    {
+      const now = new Date();
+      const utcDateStr = now.toISOString().split('T')[0];
+      const utcWeekday = now.toLocaleDateString('en-US', { weekday: 'long', timeZone: 'UTC' });
+      const utcMonthYear = now.toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+      systemPrompt += `\n\n---\n\nCURRENT DATE CONTEXT (use for all time-sensitive analysis, news, and "today" questions; do not assume a different calendar year):\nToday is ${utcWeekday}, ${utcDateStr} (UTC). For month/year context: ${utcMonthYear}. If the user needs local time or a specific timezone, ask.`;
+    }
 
-    // 2. Default/Auto selection
+    // Determine Provider and Model — task defaults when still auto / unset
     if (!useProvider || useProvider === 'auto' as any) {
       if (taskCategory === 'creative') {
         useProvider = 'gemini'; // Gemini 1.5 Pro is great for creative
@@ -264,10 +308,7 @@ serve(async (req: Request) => {
       }
     }
 
-    // Override: If web search is requested, prefer Perplexity or Gemini (native search)
-    // If user specifically asked for 'openai' + web search, we accept it (using our manual tool)
-    // But if 'auto', we route to Gemini for better grounding
-    if (webSearch && (!provider || provider === 'auto' as any)) {
+    if (webSearch && (!clientProvider || clientProvider === 'auto') && !skillPreferredResolved) {
       useProvider = 'gemini';
     }
 
@@ -547,18 +588,20 @@ serve(async (req: Request) => {
         );
       }
 
-      // Buffer incomplete SSE chunks - Perplexity events can be split across network packets
+      // Buffer incomplete SSE chunks; UTF-8 stream decode so bytes split across TCP packets never corrupt text.
       let sseBuffer = '';
-      const transformStream = new TransformStream({
-        async transform(chunk, controller) {
-          const text = new TextDecoder().decode(chunk);
-          sseBuffer += text;
-          const events = sseBuffer.split('\n\n');
-          sseBuffer = events.pop() || '';
+      const utf8Decoder = new TextDecoder('utf-8');
 
-          for (const event of events) {
-            const line = event.split('\n').find((l) => l.startsWith('data: '));
-            if (!line) continue;
+      const processSseText = (text: string, controller: { enqueue: (c: Uint8Array) => void }) => {
+        sseBuffer += text;
+        sseBuffer = sseBuffer.replace(/\r\n/g, '\n');
+        const events = sseBuffer.split('\n\n');
+        sseBuffer = events.pop() || '';
+
+        for (const event of events) {
+          if (!event.trim()) continue;
+          for (const line of event.split('\n')) {
+            if (!line.startsWith('data: ')) continue;
             const data = line.slice(6).trim();
             if (data === '[DONE]') {
               controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ done: true, model: useModel, provider: 'perplexity' })}\n\n`));
@@ -566,7 +609,7 @@ serve(async (req: Request) => {
               try {
                 const parsed = JSON.parse(data);
                 const content = parsed.choices?.[0]?.delta?.content;
-                if (content) {
+                if (typeof content === 'string' && content.length > 0) {
                   controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ content })}\n\n`));
                 }
               } catch {
@@ -574,26 +617,20 @@ serve(async (req: Request) => {
               }
             }
           }
+        }
+      };
+
+      const transformStream = new TransformStream({
+        transform(chunk, controller) {
+          const text = utf8Decoder.decode(chunk, { stream: true });
+          processSseText(text, controller);
         },
         flush(controller) {
+          const tail = utf8Decoder.decode();
+          if (tail) processSseText(tail, controller);
           if (sseBuffer.trim()) {
-            const line = sseBuffer.split('\n').find((l) => l.startsWith('data: '));
-            if (line) {
-              const data = line.slice(6).trim();
-              if (data === '[DONE]') {
-                controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ done: true, model: useModel, provider: 'perplexity' })}\n\n`));
-              } else {
-                try {
-                  const parsed = JSON.parse(data);
-                  const content = parsed.choices?.[0]?.delta?.content;
-                  if (content) {
-                    controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ content })}\n\n`));
-                  }
-                } catch {
-                  // Skip invalid JSON
-                }
-              }
-            }
+            sseBuffer += '\n\n';
+            processSseText('', controller);
           }
         },
       });

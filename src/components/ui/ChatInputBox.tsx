@@ -238,7 +238,7 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
           styles.container,
           containerShadowStyle,
           {
-            backgroundColor: colors.background,
+            backgroundColor: mode === 'dark' ? colors.surface : colors.background,
             borderColor: accentOutline ? sendButtonColor : colors.outline,
             maxWidth,
           },
@@ -271,18 +271,18 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
             >
               <Image
                 source={{ uri: attachedImage.uri }}
-                style={styles.previewImage}
+                style={[styles.previewImage, { borderColor: colors.outline }]}
                 resizeMode="cover"
               />
             </Pressable>
             <Pressable
-              style={styles.removePreviewButton}
+              style={[styles.removePreviewButton, { borderColor: colors.outline }]}
               onPress={(e) => {
                 e.stopPropagation();
                 clearAttachment();
               }}
             >
-              <Icon name="close" size={12} color="#FFFFFF" />
+              <Icon name="close" size={12} color={colors.buttonText} />
             </Pressable>
           </View>
         )}
@@ -324,7 +324,7 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
                 style={[
                   styles.llmPickerButton,
                   {
-                    backgroundColor: colors.background,
+                    backgroundColor: mode === 'dark' ? colors.chatBubble : colors.background,
                     borderColor:
                       Platform.OS === 'web' && isLlmPickerHovered ? sendButtonColor : colors.outline,
                   },
@@ -353,7 +353,7 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
                           styles.llmPickerText,
                           {
                             fontFamily: fontFamilies.figtree.medium,
-                            color: mode === 'dark' ? '#FFFFFF' : colors.text,
+                            color: colors.text,
                           },
                         ]}
                         numberOfLines={1}
@@ -385,7 +385,7 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
                   style={[
                     styles.llmDropdown,
                     {
-                      backgroundColor: colors.background,
+                      backgroundColor: colors.surface,
                       borderColor: colors.outline,
                       left: 0, // Align left since it's on the left side now
                       right: 'auto', // Reset right
@@ -431,7 +431,7 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
                                 styles.llmDropdownItemText,
                                 {
                                   fontFamily: fontFamilies.figtree.semiBold,
-                                  color: isSelected ? (mode === 'dark' ? '#FFFFFF' : colors.primary) : (isLocked ? colors.textMuted : colors.text),
+                                  color: isSelected ? (mode === 'dark' ? colors.buttonText : colors.primary) : (isLocked ? colors.textMuted : colors.text),
                                 },
                               ]}
                               numberOfLines={1}
@@ -458,7 +458,7 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
                               {isLocked ? (
                                 <Icon name="lock" size={12} color={colors.textMuted} />
                               ) : (
-                                <ProBadge size="small" color={isSelected && mode === 'dark' ? colors.primary : '#8A2BE2'} />
+                                <ProBadge size="small" color={colors.primary} />
                               )}
                             </View>
                           )}
@@ -488,7 +488,7 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
               <Icon
                 name="add"
                 size={20}
-                color={isAddHovered ? colors.text : (mode === 'dark' ? '#FFFFFF' : colors.icon)}
+                color={isAddHovered ? colors.text : (mode === 'dark' ? colors.text : colors.icon)}
               />
             </Pressable>
 
@@ -527,7 +527,7 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
                       size={18}
                       color={
                         webSearchEnabled
-                          ? (mode === 'dark' ? '#FFFFFF' : colors.primary)
+                          ? (mode === 'dark' ? colors.buttonText : colors.primary)
                           : (isWebSearchHovered ? colors.text : colors.icon)
                       }
                     />
@@ -568,7 +568,7 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
                       size={18}
                       color={
                         deepThinkingEnabled
-                          ? (mode === 'dark' ? '#FFFFFF' : colors.primary)
+                          ? (mode === 'dark' ? colors.buttonText : colors.primary)
                           : (isDeepThinkingHovered ? colors.text : colors.icon)
                       }
                     />
@@ -627,7 +627,7 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
               style={styles.modalCloseButton}
               onPress={() => setShowImagePreview(false)}
             >
-              <Icon name="close" size={20} color="#FFFFFF" />
+              <Icon name="close" size={20} color={colors.buttonText} />
             </Pressable>
           </Pressable>
         </Pressable>
@@ -778,7 +778,6 @@ const styles = StyleSheet.create({
     height: 60,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.1)',
   },
   removePreviewButton: {
     position: 'absolute',
@@ -791,7 +790,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: '#FFFFFF',
   },
   modalOverlay: {
     flex: 1,

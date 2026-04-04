@@ -31,7 +31,7 @@ export type SkillCardProps = {
   containerStyle?: StyleProp<ViewStyle>;
 };
 
-/** Skill card: airy padding, title + body hierarchy; sm shadow by default, md + accent border on hover (web). */
+/** Skill card: compact padding, title + body hierarchy; sm shadow by default, md + accent border on hover (web). */
 export function SkillCard({
   title,
   summary,
@@ -42,7 +42,8 @@ export function SkillCard({
   onHoverOut,
   containerStyle,
 }: SkillCardProps) {
-  const { colors } = useTheme();
+  const { colors, mode } = useTheme();
+  const cardBg = mode === 'dark' ? colors.chatBubble : '#FFFFFF';
   const borderColor = hovered && accentBorderColor ? accentBorderColor : colors.outline;
   const webShadow = Platform.OS === 'web' ? ({ boxShadow: shadowToCSS(hovered ? 'md' : 'xs') } as object) : null;
   const nativeShadow = Platform.OS !== 'web' ? (hovered ? shadowToNative('md') : shadowToNative('xs')) : null;
@@ -60,7 +61,7 @@ export function SkillCard({
       style={({ pressed }) => [
         styles.card,
         {
-          backgroundColor: '#FFFFFF',
+          backgroundColor: cardBg,
           borderColor,
           borderWidth: 1,
           opacity: pressed && Platform.OS !== 'web' ? 0.9 : 1,
@@ -75,14 +76,12 @@ export function SkillCard({
       <View style={styles.textBlock}>
         <Text
           style={[styles.title, { color: colors.text, fontFamily: fontFamilies.figtree.semiBold }]}
-          numberOfLines={2}
         >
           {title}
         </Text>
         {summary?.trim() ? (
           <Text
             style={[styles.summary, { color: colors.textMuted, fontFamily: fontFamilies.figtree.regular }]}
-            numberOfLines={3}
           >
             {summary.trim()}
           </Text>
@@ -95,21 +94,20 @@ export function SkillCard({
 const styles = StyleSheet.create({
   card: {
     width: '100%',
-    borderRadius: 20,
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    overflow: 'hidden',
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
   },
   textBlock: {
-    gap: 8,
+    gap: 4,
     width: '100%',
   },
   title: {
-    fontSize: 13,
-    lineHeight: 19,
+    fontSize: 12,
+    lineHeight: 17,
   },
   summary: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 10,
+    lineHeight: 14,
   },
 });

@@ -1,20 +1,24 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
+import { useTheme } from '@/design-system';
 
 type ProBadgeProps = {
     size?: 'small' | 'medium';
+    /** Defaults to theme primary when omitted */
     color?: string;
     style?: any;
     label?: string;
 };
 
-export const ProBadge: React.FC<ProBadgeProps> = ({ size = 'small', color = '#8A2BE2', style, label = 'PRO' }) => {
+export const ProBadge: React.FC<ProBadgeProps> = ({ size = 'small', color, style, label = 'PRO' }) => {
+    const { colors } = useTheme();
+    const bg = color ?? colors.primary;
     const isSmall = size === 'small';
 
     return (
         <View style={[
             styles.container,
-            { backgroundColor: color, borderRadius: 999, paddingVertical: isSmall ? 2 : 4, paddingHorizontal: isSmall ? 8 : 12 },
+            { backgroundColor: bg, borderRadius: 999, paddingVertical: isSmall ? 2 : 4, paddingHorizontal: isSmall ? 8 : 12 },
             style
         ]}>
             <Text style={[styles.text, { fontSize: isSmall ? 10 : 12 }]}>{label}</Text>

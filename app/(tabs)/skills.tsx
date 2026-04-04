@@ -96,10 +96,6 @@ export default function SkillsScreen() {
     console.log('[SkillsScreen] Current skills count before refetch:', skillsRef.current.length);
 
     try {
-      // Add a small delay to ensure database commit is complete
-      await new Promise(resolve => setTimeout(resolve, 200));
-
-      // Force refetch - this should update the skills state
       await refetchSkills();
 
       // Wait a bit for state to update, then log
@@ -552,8 +548,12 @@ export default function SkillsScreen() {
 
       {/* Skill Editor Modal */}
       <SkillEditor
+        key={editingSkill?.id ?? 'new-skill'}
         visible={skillEditorVisible}
-        onClose={() => setSkillEditorVisible(false)}
+        onClose={() => {
+          setSkillEditorVisible(false);
+          setEditingSkill(null);
+        }}
         onSave={handleSkillSaved}
         mascotId={selectedMascotId || ''}
         mascotName={selectedMascot?.name}

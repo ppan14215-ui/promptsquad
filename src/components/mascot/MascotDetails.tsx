@@ -7,7 +7,10 @@ import { IconButton } from '@/components/ui/IconButton';
 import { TextButton } from '@/components/ui/TextButton';
 import { MediumDarkButton } from '@/components/ui/MediumDarkButton';
 import { MiniButton } from '@/components/ui/MiniButton';
-import { LinkPill } from '@/components/ui/LinkPill';
+import {
+  SkillPillWithTooltip,
+  getSkillTooltipTextFromSummaryFields,
+} from '@/components/ui/SkillPillWithTooltip';
 import { ColoredTab } from '@/components/ui/ColoredTab';
 import { AI_MODEL_DISPLAY } from '@/constants/ai-models';
 import { useMascotLike } from '@/services/mascot-likes';
@@ -225,38 +228,17 @@ export function MascotDetails({
         {isLoadingSkills && displaySkills.length === 0 ? (
           <ActivityIndicator size="small" color={colors.primary} />
         ) : (
-          displaySkills.map((skill) => {
-            const isActive = hoveredSkill === skill.id;
-            const tooltipPreview =
-              skill.summary?.trim() ||
-              skill.promptPreview?.trim() ||
-              skill.prompt?.trim() ||
-              '';
-            const showTooltip = isActive && !!tooltipPreview;
-            return (
-              <View key={skill.id} style={{ position: 'relative', alignItems: 'center', zIndex: isActive ? 100 : 1 }}>
-                {showTooltip && (
-                  <View style={[styles.tooltipContainer, { backgroundColor: '#1A1A1A' }]}>
-                    <Text style={styles.tooltipText} numberOfLines={4}>{tooltipPreview}</Text>
-                    <View style={[styles.tooltipArrow, { borderTopColor: '#1A1A1A' }]} />
-                  </View>
-                )}
-                <LinkPill
-                  label={skill.label}
-                  onPress={() => {
-                    if (Platform.OS !== 'web') {
-                      if (isActive) { onSkillPress?.(skill); } else { setHoveredSkill(skill.id); }
-                    } else {
-                      onSkillPress?.(skill);
-                    }
-                  }}
-                  onHoverIn={() => setHoveredSkill(skill.id)}
-                  onHoverOut={() => setHoveredSkill(null)}
-                  forceState={isActive ? 'hover' : undefined}
-                />
-              </View>
-            );
-          })
+          displaySkills.map((skill) => (
+            <SkillPillWithTooltip
+              key={skill.id}
+              skillId={skill.id}
+              label={skill.label}
+              tooltipText={getSkillTooltipTextFromSummaryFields(skill)}
+              onPress={() => onSkillPress?.(skill)}
+              hoveredSkillId={hoveredSkill}
+              onHoveredSkillChange={setHoveredSkill}
+            />
+          ))
         )}
         {!isLoadingSkills && displaySkills.length === 0 && (
           <Text style={{ color: colors.textMuted, fontSize: 13 }}>No skills available</Text>
@@ -382,6 +364,7 @@ export function MascotDetails({
             source={imageSource}
             recyclingKey={`${mascotId || name}-image`}
             cachePolicy="memory-disk"
+            priority="high"
             style={[
               styles.mascotImage,
               isLocked && styles.mascotImageLocked,
@@ -568,6 +551,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'center',
+    alignItems: 'flex-end',
     columnGap: 8,
     rowGap: 6,
   },
@@ -583,40 +567,6 @@ const styles = StyleSheet.create({
   likeCount: {
     fontSize: 12,
     lineHeight: 16,
-  },
-  tooltipContainer: {
-    position: 'absolute',
-    bottom: '100%',
-    marginBottom: 8,
-    width: 220, // Tooltip width
-    borderRadius: 8,
-    padding: 12,
-    zIndex: 1000,
-    // Add shadow
-    ...Platform.select({
-      web: { boxShadow: '0px 4px 12px rgba(0,0,0,0.15)' } as any,
-      default: { elevation: 5 },
-    }),
-  },
-  tooltipText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    lineHeight: 16,
-    textAlign: 'center',
-  },
-  tooltipArrow: {
-    position: 'absolute',
-    bottom: -6,
-    left: '50%',
-    marginLeft: -6, // Center
-    width: 0,
-    height: 0,
-    borderLeftWidth: 6,
-    borderRightWidth: 6,
-    borderTopWidth: 6,
-    borderLeftColor: 'transparent',
-    borderRightColor: 'transparent',
-    // Border top color set in component
   },
 });
 

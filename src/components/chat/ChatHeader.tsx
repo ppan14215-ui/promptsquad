@@ -1,5 +1,13 @@
 import React from 'react';
-import { View, Text, StyleSheet, Platform, ImageSourcePropType, useWindowDimensions } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  Platform,
+  ImageSourcePropType,
+  useWindowDimensions,
+  ActivityIndicator,
+} from 'react-native';
 import { Image } from 'expo-image';
 import { IconButton, ColoredTab } from '@/components';
 import { useTheme, textStyles, fontFamilies } from '@/design-system';
@@ -12,7 +20,8 @@ export type ChatHeaderTab = {
 export type ChatHeaderProps = {
   mascotName: string;
   mascotSubtitle: string;
-  mascotImage: ImageSourcePropType;
+  /** When undefined, shows a neutral placeholder until the real asset is resolved (avoids wrong-mascot flash). */
+  mascotImage?: ImageSourcePropType;
   isLiked: boolean;
   likeCount: number;
   onBack: () => void;
@@ -53,6 +62,8 @@ export function ChatHeader({
   // If very narrow, hide trial progress
   const showTrial = isTrial && width > 380;
 
+  const avatarRecyclingKey = `chat-header-${mascotName}`;
+
   if (isMobile) {
     // ── Mobile layout ──
     // Row 1: [Back] [Mascot Image] [Name + Subtitle] [Favourite]
@@ -77,16 +88,36 @@ export function ChatHeader({
         <View style={styles.mobileTopRow}>
           <IconButton iconName="arrow-left" onPress={onBack} />
 
-          <Image
-            source={mascotImage}
-            style={{
-              width: mascotSize,
-              height: mascotSize,
-              borderRadius: mascotSize / 2,
-            }}
-            contentFit="cover"
-            transition={200}
-          />
+          {mascotImage ? (
+            <Image
+              source={mascotImage}
+              style={{
+                width: mascotSize,
+                height: mascotSize,
+                borderRadius: mascotSize / 2,
+                backgroundColor: colors.surface,
+              }}
+              contentFit="cover"
+              cachePolicy="memory-disk"
+              recyclingKey={`${avatarRecyclingKey}-mobile`}
+              priority="high"
+              transition={120}
+            />
+          ) : (
+            <View
+              style={{
+                width: mascotSize,
+                height: mascotSize,
+                borderRadius: mascotSize / 2,
+                backgroundColor: colors.surface,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+              accessibilityLabel="Loading mascot image"
+            >
+              <ActivityIndicator size="small" color={colors.primary} />
+            </View>
+          )}
 
           <View style={styles.mobileTextContainer}>
             <Text
@@ -202,20 +233,44 @@ export function ChatHeader({
         },
       ]}
     >
-      <Image
-        source={mascotImage}
-        style={[
-          styles.headerMascotImage,
-          {
-            width: mascotSize,
-            height: mascotSize,
-            left: 53,
-            bottom: 0,
-          }
-        ]}
-        contentFit="cover"
-        transition={200}
-      />
+      {mascotImage ? (
+        <Image
+          source={mascotImage}
+          style={[
+            styles.headerMascotImage,
+            {
+              width: mascotSize,
+              height: mascotSize,
+              left: 53,
+              bottom: 0,
+              backgroundColor: colors.surface,
+            },
+          ]}
+          contentFit="cover"
+          cachePolicy="memory-disk"
+          recyclingKey={`${avatarRecyclingKey}-desktop`}
+          priority="high"
+          transition={120}
+        />
+      ) : (
+        <View
+          style={[
+            styles.headerMascotImage,
+            {
+              width: mascotSize,
+              height: mascotSize,
+              left: 53,
+              bottom: 0,
+              backgroundColor: colors.surface,
+              alignItems: 'center',
+              justifyContent: 'center',
+            },
+          ]}
+          accessibilityLabel="Loading mascot image"
+        >
+          <ActivityIndicator size="small" color={colors.primary} />
+        </View>
+      )}
 
       <View style={styles.headerRow}>
         <View style={[styles.headerBackContainer, { width: backContainerWidth }]}>

@@ -21,10 +21,19 @@ import { LLM_OPTIONS, llmOptionSubtitle } from '@/services/preferences';
 import { resolveMascotColor } from '@/lib/utils/mascot-colors';
 import { logger } from '@/lib/utils/logger';
 
+/** Card copy may live in `skill_summary` or legacy `skill_prompt_preview` (e.g. older rows / retry insert path). */
+function summaryTextForForm(skill: Pick<MascotSkill, 'skill_summary' | 'skill_prompt_preview'> | null | undefined): string {
+  if (!skill) return '';
+  const fromSummary = typeof skill.skill_summary === 'string' ? skill.skill_summary.trim() : '';
+  if (fromSummary) return fromSummary;
+  const fromPreview = typeof skill.skill_prompt_preview === 'string' ? skill.skill_prompt_preview.trim() : '';
+  return fromPreview;
+}
+
 type SkillEditorProps = {
   visible: boolean;
   onClose: () => void;
-  onSave: () => void;
+  onSave: () => void | Promise<void>;
   mascotId: string;
   mascotName?: string;
   mascotColor?: string;
@@ -54,14 +63,15 @@ export function SkillEditor({
 
   const isEditing = !!skill;
 
-  // Reset form when skill changes
+  // Hydrate form when the sheet opens (avoid stale empty summary when skill only has preview, or same ref + reopened modal)
   useEffect(() => {
+    if (!visible) return;
     if (skill) {
       setSkillLabel(skill.skill_label);
-      setSkillSummary(skill.skill_summary || '');
+      setSkillSummary(summaryTextForForm(skill));
       setSkillPrompt(skill.skill_prompt || '');
       setSortOrder(skill.sort_order?.toString() || '0');
-      setPreferredProvider(skill.preferred_provider || 'auto');
+      setPreferredProvider(skill.preferred_provider && skill.preferred_provider !== 'auto' ? skill.preferred_provider : 'auto');
     } else {
       setSkillLabel('');
       setSkillSummary('');
@@ -71,7 +81,7 @@ export function SkillEditor({
     }
     setError(null);
     setShowModelPicker(false);
-  }, [skill, visible]);
+  }, [visible, skill]);
 
   const handleSave = async () => {
     if (!skillLabel.trim()) {
@@ -86,6 +96,10 @@ export function SkillEditor({
     setIsLoading(true);
     setError(null);
 
+    // Store NULL for "Auto" so DB/edge routing match; UI still uses 'auto' state.
+    const providerForDb =
+      preferredProvider == null || preferredProvider === 'auto' ? null : preferredProvider;
+
     try {
       if (isEditing && skill) {
         await updateSkill(skill.id, {
@@ -93,7 +107,7 @@ export function SkillEditor({
           skill_summary: skillSummary.trim() || null,
           skill_prompt: skillPrompt.trim(),
           sort_order: parseInt(sortOrder, 10) || 0,
-          preferred_provider: preferredProvider,
+          preferred_provider: providerForDb,
         });
       } else {
         await createSkill(
@@ -101,12 +115,12 @@ export function SkillEditor({
           skillLabel.trim(),
           skillPrompt.trim(),
           parseInt(sortOrder, 10) || 0,
-          preferredProvider,
+          providerForDb,
           skillSummary.trim() || null
         );
       }
       logger.debug('[SkillEditor] Skill saved successfully, calling onSave callback');
-      onSave();
+      await Promise.resolve(onSave());
       onClose();
     } catch (err: any) {
       logger.error('[SkillEditor] Error saving skill:', err);
@@ -132,7 +146,7 @@ export function SkillEditor({
 
     try {
       await deleteSkill(skill.id);
-      onSave();
+      await Promise.resolve(onSave());
       onClose();
     } catch (err: any) {
       logger.error('Error deleting skill:', err);
@@ -362,7 +376,7 @@ export function SkillEditor({
             )}
           </View>
 
-          {/* Skill Prompt */}
+          {/* Skill Summary (card line on Agents / home) */}
           <View style={styles.fieldContainer}>
             <Text
               style={[

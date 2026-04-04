@@ -29,7 +29,16 @@ import { usePreferences, selectBestProvider, TaskCategory, LLMPreference } from 
 import { useChatPreferences } from '@/context/ChatPreferencesContext';
 import { useSubscription } from '@/services/subscription';
 import { supabase } from '@/services/supabase';
-import { ChatHeader, LinkPill, ChatInputBox, SkillPreview, ChatHistory, Icon, BigPrimaryButton } from '@/components';
+import {
+  ChatHeader,
+  SkillPillWithTooltip,
+  getSkillTooltipTextFromMascotSkill,
+  ChatInputBox,
+  SkillPreview,
+  ChatHistory,
+  Icon,
+  BigPrimaryButton,
+} from '@/components';
 import type { ChatInputBoxRef } from '@/components/ui/ChatInputBox';
 import { useAuth } from '@/services/auth';
 import { SkillEditor } from '@/components/admin/SkillEditor';
@@ -64,6 +73,33 @@ type Message = {
 
 // Chat tabs
 type ChatTab = 'chat' | 'sources' | 'skills' | 'personality' | 'history';
+
+type ApiLlmProvider = 'openai' | 'gemini' | 'perplexity' | 'grok' | 'claude';
+
+/** Normalize DB / admin UI `preferred_provider` to Edge Function codes (lowercase). */
+function normalizePreferredProvider(
+  raw: string | null | undefined
+): ApiLlmProvider | 'auto' | undefined {
+  if (raw == null || typeof raw !== 'string') return undefined;
+  const x = raw.toLowerCase().trim();
+  if (x === 'auto' || x === '') return 'auto';
+  if (x === 'openai' || x === 'gemini' || x === 'perplexity' || x === 'grok' || x === 'claude') return x;
+  const alias: Record<string, ApiLlmProvider> = {
+    anthropic: 'claude',
+    gpt: 'openai',
+    chatgpt: 'openai',
+    google: 'gemini',
+  };
+  if (alias[x]) return alias[x];
+  return undefined;
+}
+
+/** Expo Router may pass search params as `string | string[]`. */
+function asSingleRouteParam(value: string | string[] | undefined): string | undefined {
+  if (value == null) return undefined;
+  const v = Array.isArray(value) ? value[0] : value;
+  return typeof v === 'string' && v.trim().length > 0 ? v.trim() : undefined;
+}
 
 // Local mascot images (fallback when getMascotImageSource doesn't match)
 const mascotImages: Record<string, ImageSourcePropType> = {
@@ -551,9 +587,11 @@ export default function ChatScreen() {
   const scrollViewHeightRef = useRef(0);
 
   const resolvedMascotId = Array.isArray(mascotId) ? mascotId[0] : mascotId;
+  const skillIdParam = asSingleRouteParam(skillId as string | string[] | undefined);
+  const initialMessageParam = asSingleRouteParam(initialMessage as string | string[] | undefined);
   const staticMascot = (resolvedMascotId ? MASCOT_DATA[resolvedMascotId] : undefined) || {
     name: '',
-    image: 'bear',
+    image: '',
     color: colors.primary,
     greeting: 'How can I help you today?',
     subtitle: '',
@@ -563,8 +601,9 @@ export default function ChatScreen() {
   };
   const [dbMascot, setDbMascot] = useState<MascotBasic | null>(null);
 
-  // Fetch real-time mascot details from DB
+  // Fetch real-time mascot details from DB (ignore stale responses when switching chats)
   useEffect(() => {
+    let cancelled = false;
     async function fetchMascot() {
       if (!resolvedMascotId) return;
       const { data } = await supabase
@@ -572,24 +611,40 @@ export default function ChatScreen() {
         .select('*')
         .eq('id', resolvedMascotId)
         .single();
-      if (data) setDbMascot(data);
+      if (cancelled || !data || data.id !== resolvedMascotId) return;
+      setDbMascot(data);
     }
     fetchMascot();
+    return () => {
+      cancelled = true;
+    };
   }, [resolvedMascotId]);
 
-  // Merge DB data with static data
-  const mascot = useMemo(() => ({
-    ...staticMascot,
-    name: dbMascot?.name || staticMascot.name,
-    subtitle: dbMascot?.subtitle || staticMascot.subtitle,
-    greeting: dbMascot?.question_prompt || staticMascot.greeting,
-    image: dbMascot?.image_url || staticMascot.image,
-    color: dbMascot?.color || staticMascot.color,
-  }), [staticMascot, dbMascot]);
+  /** DB row only when it belongs to the current route (stale row from previous chat is ignored). */
+  const dbMatch = useMemo(
+    () => (dbMascot?.id === resolvedMascotId ? dbMascot : null),
+    [dbMascot, resolvedMascotId]
+  );
 
-  // Resolve mascot image: use getMascotImageSource for consistent lookup (handles all mascots),
-  // then fall back to local map, then default to bear
-  const mascotImage = getMascotImageSource(mascot.image) || mascotImages[mascot.image] || mascotImages.bear;
+  // Merge DB data with static / hardcoded defaults
+  const mascot = useMemo(
+    () => ({
+      ...staticMascot,
+      name: dbMatch?.name || staticMascot.name,
+      subtitle: dbMatch?.subtitle || staticMascot.subtitle,
+      greeting: dbMatch?.question_prompt || staticMascot.greeting,
+      image: dbMatch?.image_url || staticMascot.image,
+      color: dbMatch?.color || staticMascot.color,
+    }),
+    [staticMascot, dbMatch]
+  );
+
+  // Resolve mascot image: never default to bear — show header placeholder until URL/key is known
+  const mascotImage = useMemo(() => {
+    const raw = typeof mascot.image === 'string' ? mascot.image.trim() : '';
+    if (!raw) return undefined;
+    return getMascotImageSource(raw) || mascotImages[raw];
+  }, [mascot.image]);
   const headerSubtitle = mascot.subtitle || 'Your AI assistant';
   const { preferredLLM } = usePreferences();
 
@@ -600,7 +655,7 @@ export default function ChatScreen() {
   const { user } = useAuth();
 
   // Check if current user is the owner of this custom mascot
-  const isOwner = !!(user && dbMascot?.owner_id && dbMascot.owner_id === user.id);
+  const isOwner = !!(user && dbMatch?.owner_id && dbMatch.owner_id === user.id);
 
   // Check subscription status
   const { isSubscribed } = useSubscription();
@@ -611,7 +666,7 @@ export default function ChatScreen() {
   const canEdit = isAdmin || isSubscribed;
 
   // Fetch skills and personality from database
-  const { skills: dbSkills, isLoading: skillsLoading, error: skillsError, refetch: refetchSkills } = useMascotSkills(resolvedMascotId || null, dbMascot?.is_free ?? false, isOwner);
+  const { skills: dbSkills, isLoading: skillsLoading, error: skillsError, refetch: refetchSkills } = useMascotSkills(resolvedMascotId || null, dbMatch?.is_free ?? false, isOwner);
   const { personality: dbPersonality, isLoading: personalityLoading, refetch: refetchPersonality } = useMascotPersonality(resolvedMascotId || null);
 
   // Fetch like data for mascot
@@ -631,7 +686,12 @@ export default function ChatScreen() {
   }, [trialCount]);
 
   // Active skill for enhanced prompting
-  const [activeSkillId, setActiveSkillId] = useState<string | null>(skillId || null);
+  const [activeSkillId, setActiveSkillId] = useState<string | null>(skillIdParam ?? null);
+
+  useEffect(() => {
+    if (skillIdParam != null) setActiveSkillId(skillIdParam);
+  }, [skillIdParam]);
+
   // Only show skills for the current mascot (avoids stale/wrong skills when switching profiles)
   const skillsForMascot = useMemo(
     () => (resolvedMascotId ? dbSkills.filter((s) => s.mascot_id === resolvedMascotId) : dbSkills),
@@ -639,6 +699,26 @@ export default function ChatScreen() {
   );
   const activeSkill = skillsForMascot.find((s) => s.id === activeSkillId)
     ?? (activeSkillId ? skillsForMascot.find((s) => s.skill_label === activeSkillId) : undefined);
+
+  const matchedSkillFromUrl = useMemo(() => {
+    if (!skillIdParam || skillsForMascot.length === 0) return undefined;
+    return (
+      skillsForMascot.find((s) => s.id === skillIdParam) ??
+      skillsForMascot.find((s) => s.skill_label === skillIdParam)
+    );
+  }, [skillIdParam, skillsForMascot]);
+
+  // Normalize URL skill id/label to row UUID once skills load (only while selection still matches URL param)
+  useEffect(() => {
+    if (!skillIdParam || skillsLoading || skillsForMascot.length === 0) return;
+    const row =
+      skillsForMascot.find((s) => s.id === skillIdParam) ??
+      skillsForMascot.find((s) => s.skill_label === skillIdParam);
+    if (!row) return;
+    if (activeSkillId === skillIdParam || activeSkillId === row.skill_label) {
+      if (activeSkillId !== row.id) setActiveSkillId(row.id);
+    }
+  }, [skillIdParam, skillsLoading, skillsForMascot, activeSkillId]);
 
   // Clear active skill when it doesn't belong to the current mascot's skills (e.g. after switching profile)
   useEffect(() => {
@@ -890,6 +970,7 @@ export default function ChatScreen() {
   // deepThinking provided by context
   const [showDeepThinkingTooltip, setShowDeepThinkingTooltip] = useState(false);
   const [showSkills, setShowSkills] = useState(true);
+  const [hoveredSkillTooltipId, setHoveredSkillTooltipId] = useState<string | null>(null);
   const [webSources, setWebSources] = useState<WebSource[]>([]);
   const [webSearchError, setWebSearchError] = useState<string | null>(null);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
@@ -947,9 +1028,13 @@ export default function ChatScreen() {
     messageContent: string,
     isSkillLabel: boolean = false,
     attachment?: { uri: string; base64?: string; mimeType?: string },
-    explicitProvider?: 'openai' | 'gemini' | 'perplexity' | 'grok' | 'claude' // Add explicit provider override
+    explicitProvider?: 'openai' | 'gemini' | 'perplexity' | 'grok' | 'claude',
+    /** Prompt + preferred_provider for this send (auto-send from home before activeSkill state catches up). */
+    skillRowForSend?: MascotSkill | null
   ) => {
     if ((!messageContent.trim() && !attachment) || isLoading) return;
+
+    const effSkill = skillRowForSend ?? activeSkill;
 
     // Check if this is the first user message BEFORE adding it to state
     // This determines if it's a new conversation for trial purposes
@@ -960,9 +1045,9 @@ export default function ChatScreen() {
     // but display the label to the user
     let actualMessageContentForLLM = messageContent.trim();
 
-    if (isSkillLabel && activeSkill?.skill_prompt) {
+    if (isSkillLabel && effSkill?.skill_prompt) {
       // This is a skill click - send full prompt to LLM
-      actualMessageContentForLLM = activeSkill.skill_prompt;
+      actualMessageContentForLLM = effSkill.skill_prompt;
     }
 
     const userMessage: Message = {
@@ -1025,14 +1110,14 @@ export default function ChatScreen() {
       }
 
       // Check if messageContent is the skill prompt (when clicking a skill)
-      const isSkillPrompt = activeSkill?.skill_prompt &&
-        messageContent.trim() === activeSkill.skill_prompt.trim();
+      const isSkillPrompt = effSkill?.skill_prompt &&
+        messageContent.trim() === effSkill.skill_prompt.trim();
 
       // Build chat history for AI
       // CRITICAL: If this is a skill prompt, send the FULL prompt to LLM, not the label
       // Use the actualMessageContentForLLM calculated at buffer start, OR check again
-      const contentForLLM = isSkillPrompt || (isSkillLabel && activeSkill?.skill_prompt)
-        ? (activeSkill?.skill_prompt || messageContent.trim())
+      const contentForLLM = isSkillPrompt || (isSkillLabel && effSkill?.skill_prompt)
+        ? (effSkill?.skill_prompt || messageContent.trim())
         : messageContent.trim();
 
       const currentMessages = [...messages];
@@ -1050,8 +1135,8 @@ export default function ChatScreen() {
 
       // Add active skill prompt to system prompt so it continues to be followed
       // This ensures step-by-step prompts work correctly throughout the conversation
-      if (activeSkill?.skill_prompt) {
-        systemPrompt = `${systemPrompt}\n\n---\n\nCRITICAL: Follow these skill-specific instructions throughout this entire conversation:\n\n${activeSkill.skill_prompt}\n\nThese instructions define how you should behave and what questions you should ask. Continue following them for all subsequent messages, maintaining the step-by-step process they specify.`;
+      if (effSkill?.skill_prompt) {
+        systemPrompt = `${systemPrompt}\n\n---\n\nCRITICAL: Follow these skill-specific instructions throughout this entire conversation:\n\n${effSkill.skill_prompt}\n\nThese instructions define how you should behave and what questions you should ask. Continue following them for all subsequent messages, maintaining the step-by-step process they specify.`;
       }
 
       // Convert to ChatMessage format with system prompt
@@ -1091,8 +1176,11 @@ export default function ChatScreen() {
       // If 'auto', intelligently choose based on query content and mascot task category
       let providerOverride: 'openai' | 'gemini' | 'perplexity' | 'grok' | 'claude' | undefined;
 
-      // Check if the active skill has a preferred provider
-      const skillProvider = activeSkill?.preferred_provider as 'openai' | 'gemini' | 'perplexity' | 'grok' | 'claude' | 'auto' | undefined;
+      // Skill preferred model (must not be bypassed by heuristics on the full skill prompt text)
+      const skillProvider = normalizePreferredProvider(effSkill?.preferred_provider);
+      // For "needs real-time" heuristics: use the short user-visible line for skill activations,
+      // not contentForLLM (full skill prompt often contains words like "today"/"current"/"latest").
+      const textForRealtimeHeuristic = isSkillLabel ? messageContent.trim() : contentForLLM;
 
       if (explicitProvider) {
         // Explicit override (e.g. from skill deep link/auto-send) takes highest precedence
@@ -1104,9 +1192,8 @@ export default function ChatScreen() {
           providerOverride = skillProvider;
           console.log('[Chat] Using Skill Preferred Provider:', providerOverride);
         } else {
-          // Check if query needs real-time data
-          // Use the current user input, not the last message in the array
-          if (needsRealTimeData(contentForLLM) && (isSubscribed || isAdmin)) {
+          // Check if query needs real-time data (never key off full skill prompt for this)
+          if (needsRealTimeData(textForRealtimeHeuristic) && (isSubscribed || isAdmin)) {
             providerOverride = 'perplexity'; // Use web-grounded for current info
             console.log('[Chat] Auto mode detected real-time query, using Perplexity (Pro/Admin)');
           } else {
@@ -1266,7 +1353,7 @@ export default function ChatScreen() {
           }
         },
         conversationId || undefined, // Pass conversationId to Edge Function
-        activeSkillId || undefined, // skillId
+        (effSkill?.id ?? activeSkillId) || undefined, // skillId (row id for Edge lookup)
         providerOverride as any, // provider override (undefined = system chooses)
         deepThinkingEnabled, // Deep Thinking mode (uses pro models)
         attachment && attachment.base64 ? { mimeType: attachment.mimeType || 'image/jpeg', base64: attachment.base64 } : undefined,
@@ -1409,57 +1496,72 @@ export default function ChatScreen() {
   // IMPORTANT: If skillId is provided, send the skill label
   // User sees the skill label, but LLM receives the full skill prompt (handled in sendMessage)
   useEffect(() => {
-    // If we have a skillId, we must ensure skills are loaded before proceeding
-    // This allows us to find the activeSkill (if it exists) and use its preferences
-    if (skillId && skillsLoading) {
+    if (!(initialMessageParam || (initialAttachmentUri && initialAttachmentBase64))) return;
+    if (hasProcessedInitialMessage.current) return;
+
+    if (skillIdParam && skillsLoading) return;
+
+    const hasOnlyInitialAssistantMessage =
+      messages.length === 1 && messages[0]?.id === '1' && messages[0]?.role === 'assistant';
+    const isMessagesEmpty = messages.length === 0;
+    if (!hasOnlyInitialAssistantMessage && !isMessagesEmpty) return;
+
+    if (skillIdParam && !skillsLoading && !matchedSkillFromUrl) {
+      hasProcessedInitialMessage.current = true;
+      let attachment: { uri: string; base64: string; mimeType: string } | undefined;
+      if (initialAttachmentUri && initialAttachmentBase64) {
+        attachment = {
+          uri: initialAttachmentUri as string,
+          base64: initialAttachmentBase64 as string,
+          mimeType: (initialAttachmentMime as string) || 'image/jpeg',
+        };
+      }
+      setTimeout(() => sendMessage(initialMessageParam || '', false, attachment), 500);
       return;
     }
 
-    if ((initialMessage || (initialAttachmentUri && initialAttachmentBase64)) && !hasProcessedInitialMessage.current) {
-      hasProcessedInitialMessage.current = true;
+    if (skillIdParam && !matchedSkillFromUrl) return;
 
-      // If we have an initial message, send it automatically
-      // But verify we haven't already saved it (in case of remounts)
-      // Check if messages array contains only the initial assistant message (length 1)
-      // or is completely empty (length 0)
-      const hasOnlyInitialAssistantMessage = messages.length === 1 && messages[0]?.id === '1' && messages[0]?.role === 'assistant';
-      const isMessagesEmpty = messages.length === 0;
+    hasProcessedInitialMessage.current = true;
 
-      if (hasOnlyInitialAssistantMessage || isMessagesEmpty) {
-        console.log('Auto-sending initial message:', initialMessage || 'Image only');
-
-        let attachment = undefined;
-        if (initialAttachmentUri && initialAttachmentBase64) {
-          attachment = {
-            uri: initialAttachmentUri,
-            base64: initialAttachmentBase64,
-            mimeType: initialAttachmentMime || 'image/jpeg'
-          };
-        }
-
-        // Use a small timeout to ensure the UI is ready
-        setTimeout(() => {
-          // If we have a skillId, send the skill label
-          // sendMessage will detect it's a skill and send the full prompt to LLM
-          if (skillId && activeSkillId && activeSkill) {
-            // Determine explicit provider for this skill activation
-            const skillProvider = activeSkill.preferred_provider as 'openai' | 'gemini' | 'perplexity' | 'grok' | 'claude' | 'auto' | undefined;
-            // Respect manual override if set
-            const explicitProvider = (chatLLM !== 'auto')
-              ? chatLLM
-              : ((skillProvider && skillProvider !== 'auto') ? skillProvider : undefined);
-
-            // Send the skill label (user sees this), but LLM gets full prompt
-            // Pass the skill provider explicitly to ensure it overrides defaults/auto
-            sendMessage(activeSkill.skill_label, true, attachment, explicitProvider);
-          } else {
-            // No skill selected, send the initial message as-is
-            sendMessage(initialMessage || '', false, attachment);
-          }
-        }, 500);
-      }
+    let attachment: { uri: string; base64: string; mimeType: string } | undefined;
+    if (initialAttachmentUri && initialAttachmentBase64) {
+      attachment = {
+        uri: initialAttachmentUri as string,
+        base64: initialAttachmentBase64 as string,
+        mimeType: (initialAttachmentMime as string) || 'image/jpeg',
+      };
     }
-  }, [initialMessage, sendMessage, skillId, activeSkillId, activeSkill, initialAttachmentUri, initialAttachmentBase64, initialAttachmentMime, messages, skillsLoading]);
+
+    console.log('Auto-sending initial message:', initialMessageParam || 'Image only');
+
+    setTimeout(() => {
+      if (skillIdParam && matchedSkillFromUrl) {
+        setActiveSkillId(matchedSkillFromUrl.id);
+        const skillPref = normalizePreferredProvider(matchedSkillFromUrl.preferred_provider);
+        const explicitProvider =
+          chatLLM !== 'auto'
+            ? (chatLLM as ApiLlmProvider)
+            : skillPref && skillPref !== 'auto'
+              ? skillPref
+              : undefined;
+        sendMessage(matchedSkillFromUrl.skill_label, true, attachment, explicitProvider, matchedSkillFromUrl);
+      } else {
+        sendMessage(initialMessageParam || '', false, attachment);
+      }
+    }, 500);
+  }, [
+    initialMessageParam,
+    sendMessage,
+    skillIdParam,
+    matchedSkillFromUrl,
+    initialAttachmentUri,
+    initialAttachmentBase64,
+    initialAttachmentMime,
+    messages,
+    skillsLoading,
+    chatLLM,
+  ]);
 
   // Track keyboard state to fix padding issues
   useEffect(() => {
@@ -1576,11 +1678,12 @@ export default function ChatScreen() {
     if (chatLLM !== 'auto') {
       console.log('[Chat] Preserving user manual selection:', chatLLM);
       selectedLLM = chatLLM;
-    } else if (typeof skill !== 'string' && skill.preferred_provider && skill.preferred_provider !== 'auto') {
-      console.log('[Chat] Setting preferred LLM from skill:', skill.preferred_provider);
-      // Cast to any because LLMPreference comes from a different file but values mimic string literals
-      selectedLLM = skill.preferred_provider as any;
-      // setChatLLM(selectedLLM); // REQUESTED: Keep UI on 'Auto' (or current), but use selectedLLM for routing below
+    } else if (typeof skill !== 'string') {
+      const np = normalizePreferredProvider(skill.preferred_provider);
+      if (np && np !== 'auto') {
+        console.log('[Chat] Setting preferred LLM from skill:', np);
+        selectedLLM = np as typeof selectedLLM;
+      }
     }
 
     // Handle both database skill objects and legacy string skills
@@ -2099,7 +2202,7 @@ export default function ChatScreen() {
 
       {activeTab === 'skills' ? (
         <ScrollView
-          style={styles.messagesContainer}
+          style={[styles.messagesContainer, styles.skillsTabScroll]}
           contentContainerStyle={styles.skillsTabContent}
         >
           {skillsLoading ? (
@@ -2134,7 +2237,7 @@ export default function ChatScreen() {
             <>
               {/* Add Skill Button (for owners/admins) */}
               {canEdit && (
-                dbMascot?.is_custom ? (
+                dbMatch?.is_custom ? (
                   <View style={styles.customAddSkillButtonRow}>
                     <Pressable
                       onPress={() => {
@@ -2205,12 +2308,10 @@ export default function ChatScreen() {
                     <Pressable
                       key={skill.id}
                       onPress={() => {
-                        // Only allow clicking if skill is not locked or user has access
                         if (!isSkillLocked || skill.is_full_access) {
                           handleSkillPress(skill);
                         }
                       }}
-                      disabled={isSkillLocked && !skill.is_full_access}
                       style={[
                         styles.skillPreviewCard,
                         isSkillLocked && !skill.is_full_access && { opacity: 0.6 },
@@ -2312,7 +2413,7 @@ export default function ChatScreen() {
       ) : activeTab === 'history' ? (
         <ChatHistory
           mascotId={mascotId}
-          isMascotFree={dbMascot?.is_free ?? false}
+          isMascotFree={dbMatch?.is_free ?? false}
           onConversationPress={(conversationId) => {
             // Switch to the selected conversation
             // This will trigger the useEffect to load messages
@@ -2500,21 +2601,32 @@ export default function ChatScreen() {
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
+              style={styles.skillsRowScroll}
               contentContainerStyle={styles.skillsContent}
             >
               {skillsForMascot.length > 0
                 ? skillsForMascot.map((skill) => (
-                  <LinkPill
+                  <SkillPillWithTooltip
                     key={skill.id}
+                    skillId={skill.id}
                     label={skill.skill_label}
+                    tooltipText={getSkillTooltipTextFromMascotSkill(skill)}
                     onPress={() => handleSkillPress(skill)}
+                    hoveredSkillId={hoveredSkillTooltipId}
+                    onHoveredSkillChange={setHoveredSkillTooltipId}
+                    color={mascot.color}
                   />
                 ))
-                : mascot.skills.map((skill) => (
-                  <LinkPill
+                : mascot.skills.map((skill, idx) => (
+                  <SkillPillWithTooltip
                     key={skill}
+                    skillId={`fallback-${idx}-${skill}`}
                     label={skill}
+                    tooltipText=""
                     onPress={() => handleSkillPress(skill)}
+                    hoveredSkillId={hoveredSkillTooltipId}
+                    onHoveredSkillChange={setHoveredSkillTooltipId}
+                    color={mascot.color}
                   />
                 ))}
             </ScrollView>
@@ -2763,6 +2875,11 @@ const styles = StyleSheet.create({
   },
   messagesContainer: {
     flex: 1,
+    ...Platform.select({
+      /** Keep message list under skill tooltips on web (stacking context). */
+      web: { zIndex: 0 },
+      default: {},
+    }),
   },
   messagesContent: {
     padding: Platform.OS === 'web' ? 24 : 16,
@@ -2854,15 +2971,48 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 8,
     alignItems: 'center',
+    ...Platform.select({
+      web: {
+        overflow: 'visible' as const,
+        zIndex: 50,
+        position: 'relative' as const,
+      },
+      default: {},
+    }),
   },
+  /** Bottom chat skill pills: avoid clipping tooltips above chips (web). */
+  skillsRowScroll: Platform.select({
+    web: { overflow: 'visible' as const },
+    default: {},
+  }),
   skillsContent: {
     gap: 8,
     width: '100%',
     maxWidth: CHAT_MAX_WIDTH,
+    /** Bottom-align columns so pills share a baseline when one column shows a tooltip above. */
+    alignItems: 'flex-end',
+    ...Platform.select({
+      web: { overflow: 'visible' as const, paddingVertical: 6 },
+      default: {},
+    }),
   },
+  /** Allow skill summary tooltips to extend above cards without clipping (web). */
+  skillsTabScroll: Platform.select({
+    web: { overflow: 'visible' as const },
+    default: {},
+  }),
   skillsTabContent: {
     padding: 16,
     gap: 16,
+    ...Platform.select({
+      web: {
+        overflow: 'visible' as const,
+        paddingTop: 24,
+        paddingBottom: 16,
+        paddingHorizontal: 16,
+      },
+      default: {},
+    }),
   },
   customAddSkillButtonRow: {
     alignItems: 'flex-start',

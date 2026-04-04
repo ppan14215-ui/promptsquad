@@ -63,26 +63,50 @@ const grayscaleImages: Partial<Record<keyof typeof mascotImages, ImageSourceProp
 // Export the list of all available mascot image keys
 export const MASCOT_IMAGE_KEYS = Object.keys(mascotImages) as (keyof typeof mascotImages)[];
 
+function isRemoteImageUrl(value: string): boolean {
+  return /^https?:\/\//i.test(value.trim());
+}
+
+function localKeyFromImageRef(imageUrl: string): string {
+  const trimmed = imageUrl.trim();
+  const last = trimmed.split('/').pop()?.split('.')[0] || trimmed;
+  return last.toLowerCase();
+}
+
 /**
- * Get local image source from database image_url
+ * Get image source from database `image_url`: remote HTTPS URL, or bundled mascot key (e.g. bear, fox).
  */
 export function getMascotImageSource(imageUrl: string | null): ImageSourcePropType | undefined {
   if (!imageUrl) return undefined;
 
-  // Extract image key from URL (e.g., 'bear' from '/mascots/bear.png' or just 'bear')
-  const imageKey = imageUrl.split('/').pop()?.split('.')[0] || imageUrl;
+  const trimmed = imageUrl.trim();
+  if (isRemoteImageUrl(trimmed)) {
+    return { uri: trimmed };
+  }
 
-  return mascotImages[imageKey as keyof typeof mascotImages];
+  const key = localKeyFromImageRef(trimmed) as keyof typeof mascotImages;
+  if (mascotImages[key]) return mascotImages[key];
+
+  return undefined;
 }
 
 /**
- * Get grayscale image source from database image_url
+ * Grayscale asset for bundled keys only; remote URLs rely on CSS/filter or color image fallback.
  */
 export function getMascotGrayscaleImageSource(imageUrl: string | null): ImageSourcePropType | undefined {
   if (!imageUrl) return undefined;
+  if (isRemoteImageUrl(imageUrl.trim())) return undefined;
 
-  // Extract image key from URL
-  const imageKey = imageUrl.split('/').pop()?.split('.')[0] || imageUrl;
+  const key = localKeyFromImageRef(imageUrl) as keyof typeof grayscaleImages;
+  return grayscaleImages[key];
+}
 
-  return grayscaleImages[imageKey as keyof typeof grayscaleImages];
+/** Collect remote URIs for expo-image prefetch (deduped). */
+export function collectRemoteMascotImageUris(imageUrls: (string | null | undefined)[]): string[] {
+  const out: string[] = [];
+  for (const u of imageUrls) {
+    const t = u?.trim();
+    if (t && isRemoteImageUrl(t)) out.push(t);
+  }
+  return [...new Set(out)];
 }

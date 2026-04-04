@@ -9,7 +9,7 @@ import { useTheme, fontFamilies, shadowToCSS } from '@/design-system';
 import { useI18n } from '@/i18n';
 import { useAuth } from '@/services/auth';
 import { useSubscription } from '@/services/subscription';
-import { useMascotSkills, useIsAdmin, useMascots, MascotBasic, deleteMascot } from '@/services/admin';
+import { useMascotSkills, useIsAdmin, deleteMascot } from '@/services/admin';
 import { getMascotImageSource, getMascotGrayscaleImageSource } from '@/services/admin/mascot-images';
 import { useUnlockedMascots } from '@/services/mascot-access';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -119,12 +119,22 @@ export default function HomeScreen() {
     setHoveredHomeSkillId(null);
   }, [selectedMascot?.id]);
 
-  // Fetch skills from database for the selected mascot (only if mascot exists)
-  const { skills: dbSkills } = useMascotSkills(selectedMascot?.id || '', selectedMascot?.isFree ?? false);
+  const isMascotOwner = !!(user?.id && selectedMascot?.ownerId === user.id);
 
-  // Use DB skills if available, otherwise fall back to hardcoded
+  // Fetch skills from database for the selected mascot (only if mascot exists)
+  const { skills: dbSkills, isLoading: isSkillsLoading } = useMascotSkills(
+    selectedMascot?.id || '',
+    selectedMascot?.isFree ?? false,
+    isMascotOwner
+  );
+
+  // Prefer DB rows; while fetching, avoid hardcoded fallback so copy does not flash then swap.
   const displaySkills = useMemo(() => {
     if (!selectedMascot) return [];
+
+    if (isSkillsLoading) {
+      return [];
+    }
 
     if (dbSkills.length > 0) {
       return dbSkills.map((s) => ({
@@ -135,18 +145,17 @@ export default function HomeScreen() {
         promptPreview: s.skill_prompt_preview?.trim() || undefined,
       }));
     }
-    // Fallback to hardcoded skills if available
     if (selectedMascot.skills && selectedMascot.skills.length > 0) {
       return selectedMascot.skills;
     }
-    // Final fallback: find from ALL_MASCOTS
     const hardcodedMascot = ALL_MASCOTS.find((m) => m.id === selectedMascot.id);
     return hardcodedMascot?.skills || [];
-  }, [dbSkills, selectedMascot?.id, selectedMascot?.skills]);
+  }, [dbSkills, selectedMascot, isSkillsLoading]);
 
   const homeSkillSummaries = useMemo(() => {
     const clean = (s: string) => s.replace(/\s+/g, ' ').trim();
-    const maxChars = 115;
+    /** Allow full card copy; SkillCard wraps text (no ellipsis). */
+    const maxChars = 2000;
     const clamp = (text: string) =>
       text.length > maxChars ? `${text.slice(0, maxChars - 1).trim()}…` : text;
     const summarize = (label: string, prompt?: string) => {
@@ -494,6 +503,7 @@ export default function HomeScreen() {
               const subtitleLine = (m.subtitle ?? '').trim();
               const isSidenavHover = Platform.OS === 'web' && hoveredSidenavIndex === index;
               const sidenavRowActive = isSelected || isSidenavHover;
+              const sidenavUseColorAvatar = !isLocked && !isNotReady;
               return (
                 <Pressable
                   key={m.id}
@@ -528,9 +538,22 @@ export default function HomeScreen() {
                     : {})}
                 >
                   <ExpoImage
-                    source={m.image}
-                    style={[styles.sidenavAvatar, { backgroundColor: colors.surface }]}
+                    source={
+                      sidenavUseColorAvatar ? m.image : (m.grayscaleImage ?? m.image)
+                    }
+                    style={[
+                      styles.sidenavAvatar,
+                      { backgroundColor: colors.surface },
+                      Platform.OS === 'web' &&
+                      !sidenavUseColorAvatar &&
+                      !m.grayscaleImage
+                        ? ({ filter: 'grayscale(1)' } as any)
+                        : null,
+                    ]}
                     contentFit="cover"
+                    cachePolicy="memory-disk"
+                    recyclingKey={`sidenav-avatar-${m.id}`}
+                    priority={index < 16 ? 'high' : 'normal'}
                     transition={0}
                   />
                   <View style={styles.sidenavBubbleTextCol}>
@@ -640,7 +663,12 @@ export default function HomeScreen() {
                   selectedMascot?.isComingSoon ? { opacity: 0.45 } : null,
                 ]}
               >
-                {displaySkills.map((skill) => {
+                {isSkillsLoading && displaySkills.length === 0 ? (
+                  <View style={styles.skillsLoadingPlaceholder} accessibilityLabel="Loading skills">
+                    <ActivityIndicator size="small" color={colors.primary} />
+                  </View>
+                ) : (
+                  displaySkills.map((skill) => {
                     const summaryText = (homeSkillSummaries.get(skill.id) ?? '').trim();
                     const isHovered = Platform.OS === 'web' && hoveredHomeSkillId === skill.id;
                     return (
@@ -657,7 +685,8 @@ export default function HomeScreen() {
                         }
                       />
                     );
-                  })}
+                  })
+                )}
               </View>
             )}
           </ScrollView>
@@ -877,9 +906,15 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
   },
   agentSkillsStack: {
-    gap: 12,
+    gap: 14,
     width: '100%',
     alignItems: 'stretch',
+  },
+  skillsLoadingPlaceholder: {
+    paddingVertical: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 56,
   },
   desktopMain: {
     flex: 1,

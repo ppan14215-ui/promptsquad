@@ -247,7 +247,10 @@ export function MascotCarousel({
                     },
                   ]}
                   contentFit="contain"
-                  transition={200}
+                  cachePolicy="memory-disk"
+                  recyclingKey={`carousel-${mascot.id}`}
+                  priority={isSelected ? 'high' : 'normal'}
+                  transition={isSelected ? 120 : 0}
                 />
               </Pressable>
 

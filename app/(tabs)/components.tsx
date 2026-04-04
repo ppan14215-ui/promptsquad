@@ -211,7 +211,7 @@ export default function ComponentsScreen() {
             },
           ]}
         >
-          Agents tab: circular deck plus compact LinkPill skill chips in the right column. Home uses full SkillCard rows for skill previews. Both patterns are exported from the components barrel.
+          Agents tab: circular deck plus compact LinkPill skill chips in the right column. Home uses compact SkillCard rows for skill previews. Both patterns are exported from the components barrel.
         </Text>
         <View style={{ width: '100%', maxWidth: 900, alignSelf: 'center' }}>
           <CircularMascotCarousel

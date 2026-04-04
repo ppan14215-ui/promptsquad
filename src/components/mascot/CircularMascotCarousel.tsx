@@ -15,7 +15,10 @@ import type { OwnedMascot } from '@/config/mascots';
 import type { MascotColor } from '@/config/mascots';
 import { useTheme, fontFamilies, shadowToNative } from '@/design-system';
 import { Icon } from '@/components';
-import { LinkPill } from '@/components/ui/LinkPill';
+import {
+  SkillPillWithTooltip,
+  getSkillTooltipTextFromSummaryFields,
+} from '@/components/ui/SkillPillWithTooltip';
 
 export type CircularMascotCarouselProps = {
   mascots: OwnedMascot[];
@@ -105,7 +108,8 @@ export function CircularMascotCarousel({
   activeNameOverride,
   onSkillTabPress,
 }: CircularMascotCarouselProps) {
-  const { colors } = useTheme();
+  const { colors, mode } = useTheme();
+  const chipFill = mode === 'dark' ? colors.chatBubble : colors.surface;
   const { width } = useWindowDimensions();
   const total = mascots.length;
 
@@ -349,7 +353,7 @@ export function CircularMascotCarousel({
             <Icon
               name="arrow-left"
               size={16}
-              color={hoveredArrow === 'left' ? '#FFFFFF' : colors.textMuted}
+              color={hoveredArrow === 'left' ? colors.buttonText : colors.textMuted}
             />
           </Pressable>
           <Pressable
@@ -375,7 +379,7 @@ export function CircularMascotCarousel({
             <Icon
               name="arrow-right"
               size={16}
-              color={hoveredArrow === 'right' ? '#FFFFFF' : colors.textMuted}
+              color={hoveredArrow === 'right' ? colors.buttonText : colors.textMuted}
             />
           </Pressable>
         </View>
@@ -409,7 +413,7 @@ export function CircularMascotCarousel({
                 key={chip}
                 style={[
                   styles.chip,
-                  { borderColor: colors.outline, backgroundColor: '#FFFFFF' },
+                  { borderColor: colors.outline, backgroundColor: chipFill },
                 ]}
               >
                 <Text style={[styles.chipText, { color: colors.textMuted }]}>{chip}</Text>
@@ -431,48 +435,22 @@ export function CircularMascotCarousel({
         <View style={styles.bioToSkills}>
           <View style={styles.skillsPillsRow}>
             {skillTabs.map((skill) => {
-              const isActive = hoveredSkillId === skill.id;
-              const tooltipPreview =
-                skill.summary?.trim() ||
-                skill.promptPreview?.trim() ||
-                skill.prompt?.trim() ||
-                '';
-              const showTooltip = isActive && !!tooltipPreview;
+              const tooltipPreview = activeMascot.isComingSoon
+                ? ''
+                : getSkillTooltipTextFromSummaryFields(skill);
               return (
-                <View
+                <SkillPillWithTooltip
                   key={skill.id}
-                  style={{
-                    position: 'relative',
-                    alignItems: 'center',
-                    zIndex: isActive ? 100 : 1,
+                  skillId={skill.id}
+                  label={skill.label}
+                  tooltipText={tooltipPreview}
+                  onPress={() => {
+                    if (activeMascot.isComingSoon) return;
+                    onSkillTabPress?.(skill);
                   }}
-                >
-                  {showTooltip && (
-                    <View style={[styles.skillTooltipContainer, { backgroundColor: '#1A1A1A' }]}>
-                      <Text style={styles.skillTooltipText} numberOfLines={4}>
-                        {tooltipPreview}
-                      </Text>
-                      <View style={[styles.skillTooltipArrow, { borderTopColor: '#1A1A1A' }]} />
-                    </View>
-                  )}
-                  <LinkPill
-                    label={skill.label}
-                    forceState={isActive ? 'hover' : undefined}
-                    onHoverIn={() => {
-                      if (!activeMascot.isComingSoon) setHoveredSkillId(skill.id);
-                    }}
-                    onHoverOut={() => setHoveredSkillId(null)}
-                    onPress={() => {
-                      if (activeMascot.isComingSoon) return;
-                      if (Platform.OS !== 'web') {
-                        if (isActive) onSkillTabPress?.(skill);
-                        else setHoveredSkillId(skill.id);
-                      } else {
-                        onSkillTabPress?.(skill);
-                      }
-                    }}
-                  />
-                </View>
+                  hoveredSkillId={hoveredSkillId}
+                  onHoveredSkillChange={setHoveredSkillId}
+                />
               );
             })}
           </View>
@@ -510,7 +488,9 @@ function CircularMascotCard({
   setHoveredIndex: (v: number | null) => void;
   onPress: () => void;
 }) {
-  const { colors } = useTheme();
+  const { colors, mode } = useTheme();
+  const cardFaceBg = mode === 'dark' ? colors.chatBubble : '#FFFFFF';
+  const cornerMuted = colors.text;
   const rank = fixedRank;
   const suitSymbol = getSuitForColor(mascot.color);
   const isFrontSlot = slotNumber === 0;
@@ -520,7 +500,10 @@ function CircularMascotCard({
   const cornerAccent = getAccentForColor(mascot.color, colors.primary);
   const shadowStyle = Platform.select({
     web: {
-      boxShadow: '0 4px 20px rgba(0,0,0,0.10), 0 1px 4px rgba(0,0,0,0.06)',
+      boxShadow:
+        mode === 'dark'
+          ? '0 4px 24px rgba(0,0,0,0.45), 0 1px 4px rgba(0,0,0,0.35)'
+          : '0 4px 20px rgba(0,0,0,0.10), 0 1px 4px rgba(0,0,0,0.06)',
     } as unknown as object,
     default: shadowToNative('md'),
   });
@@ -651,8 +634,7 @@ function CircularMascotCard({
             width: cardWidth,
             height: cardHeight,
             borderRadius,
-            // Use "surface" so cards remain visible on light backgrounds.
-            backgroundColor: '#FFFFFF',
+            backgroundColor: cardFaceBg,
             borderColor: colors.outline,
             ...shadowStyle,
           },
@@ -664,7 +646,7 @@ function CircularMascotCard({
               styles.cornerRank,
               {
                 fontSize: rankFont,
-                color: useAccentCorners ? cornerAccent.cornerTextColor : '#111',
+                color: useAccentCorners ? cornerAccent.cornerTextColor : cornerMuted,
                 fontFamily: fontFamilies.figtree.semiBold,
               },
             ]}
@@ -674,7 +656,7 @@ function CircularMascotCard({
           <Text
             style={[
               styles.cornerSuit,
-              { fontSize: suitFont, color: useAccentCorners ? cornerAccent.cornerTextColor : '#111' },
+              { fontSize: suitFont, color: useAccentCorners ? cornerAccent.cornerTextColor : cornerMuted },
             ]}
           >
             {suitSymbol}
@@ -687,7 +669,7 @@ function CircularMascotCard({
               styles.cornerRank,
               {
                 fontSize: rankFont,
-                color: useAccentCorners ? cornerAccent.cornerTextColor : '#111',
+                color: useAccentCorners ? cornerAccent.cornerTextColor : cornerMuted,
                 fontFamily: fontFamilies.figtree.semiBold,
               },
             ]}
@@ -697,7 +679,7 @@ function CircularMascotCard({
           <Text
             style={[
               styles.cornerSuit,
-              { fontSize: suitFont, color: useAccentCorners ? cornerAccent.cornerTextColor : '#111' },
+              { fontSize: suitFont, color: useAccentCorners ? cornerAccent.cornerTextColor : cornerMuted },
             ]}
           >
             {suitSymbol}
@@ -876,7 +858,7 @@ const styles = StyleSheet.create({
   skillsPillsRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    alignItems: 'flex-start',
+    alignItems: 'flex-end',
     alignSelf: 'flex-start',
     width: '100%',
     maxWidth: 524,
@@ -888,38 +870,6 @@ const styles = StyleSheet.create({
     width: '100%',
     marginTop: 36,
     ...(Platform.OS === 'web' ? ({ overflow: 'visible' } as any) : null),
-  },
-  skillTooltipContainer: {
-    position: 'absolute',
-    bottom: '100%',
-    marginBottom: 8,
-    width: 220,
-    borderRadius: 8,
-    padding: 12,
-    zIndex: 1000,
-    ...Platform.select({
-      web: { boxShadow: '0px 4px 12px rgba(0,0,0,0.15)' } as any,
-      default: { elevation: 5 },
-    }),
-  },
-  skillTooltipText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    lineHeight: 16,
-    textAlign: 'center',
-  },
-  skillTooltipArrow: {
-    position: 'absolute',
-    bottom: -6,
-    left: '50%',
-    marginLeft: -6,
-    width: 0,
-    height: 0,
-    borderLeftWidth: 6,
-    borderRightWidth: 6,
-    borderTopWidth: 6,
-    borderLeftColor: 'transparent',
-    borderRightColor: 'transparent',
   },
   empty: {
     height: 420,

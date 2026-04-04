@@ -37,6 +37,7 @@ export type MascotCardProps = {
 };
 
 export function MascotCard({
+  id,
   name,
   subtitle,
   imageUrl,
@@ -135,6 +136,7 @@ export function MascotCard({
         style={[
           styles.imageContainer,
           {
+            backgroundColor: 'transparent',
             width: imageSizeDefault,
             height: imageSizeDefault,
             top: effectiveCardSize - imageSizeDefault,
@@ -156,7 +158,7 @@ export function MascotCard({
             // Use grayscale if available and locked (including coming soon)
             (isLockedState || effectiveIsComingSoon) && grayscaleImageSource
               ? grayscaleImageSource
-              : (imageSource || { uri: imageUrl })
+              : (imageSource || (imageUrl ? { uri: imageUrl } : undefined))
           }
           style={[
             styles.image,
@@ -165,7 +167,9 @@ export function MascotCard({
               : {},
           ]}
           contentFit="cover"
-          transition={200}
+          cachePolicy="memory-disk"
+          recyclingKey={`mascot-card-${id}`}
+          transition={120}
         />
       </View>
 

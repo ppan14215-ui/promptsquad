@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, Pressable, FlatList, ActivityIndicator, Alert, ScrollView, Platform } from 'react-native';
 import { useTheme, fontFamilies } from '@/design-system';
 import { useConversations, deleteConversation, togglePinConversation } from '@/services/chat-history';
-import { Icon, LinkPill } from '@/components';
+import { Icon, SkillPillWithTooltip, getSkillTooltipTextFromMascotSkill } from '@/components';
 import { useMascotSkills, MascotSkill } from '@/services/admin';
 import { logger } from '@/lib/utils/logger';
 
@@ -22,6 +22,7 @@ export function ChatHistory({ mascotId, isMascotFree = false, onConversationPres
   const { skills: dbSkills, isLoading: skillsLoading } = useMascotSkills(mascotId || '1', isMascotFree);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [pinningId, setPinningId] = useState<string | null>(null);
+  const [hoveredSkillTooltipId, setHoveredSkillTooltipId] = useState<string | null>(null);
 
   const handleDelete = async (conversationId: string, event: any) => {
     event?.stopPropagation?.(); // Prevent navigation when clicking delete
@@ -151,7 +152,7 @@ export function ChatHistory({ mascotId, isMascotFree = false, onConversationPres
           </Text>
           {/* Show skills when no conversations */}
           {onSkillPress && (dbSkills.length > 0 || mascotId) && (
-            <View style={styles.skillsSection}>
+            <View style={[styles.skillsSection, styles.skillsSectionWeb]}>
               <Text
                 style={[
                   styles.skillsTitle,
@@ -166,16 +167,21 @@ export function ChatHistory({ mascotId, isMascotFree = false, onConversationPres
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
+                style={styles.skillsRowScroll}
                 contentContainerStyle={styles.skillsContent}
               >
                 {skillsLoading ? (
                   <ActivityIndicator size="small" color={colors.primary} />
                 ) : dbSkills.length > 0 ? (
                   dbSkills.map((skill) => (
-                    <LinkPill
+                    <SkillPillWithTooltip
                       key={skill.id}
+                      skillId={skill.id}
                       label={skill.skill_label}
+                      tooltipText={getSkillTooltipTextFromMascotSkill(skill)}
                       onPress={() => onSkillPress(skill)}
+                      hoveredSkillId={hoveredSkillTooltipId}
+                      onHoveredSkillChange={setHoveredSkillTooltipId}
                     />
                   ))
                 ) : null}
@@ -273,7 +279,7 @@ export function ChatHistory({ mascotId, isMascotFree = false, onConversationPres
 
       {/* Skills section at bottom - always visible */}
       {onSkillPress && (dbSkills.length > 0 || mascotId) && (
-        <View style={[styles.skillsSection, { borderTopColor: colors.outline }]}>
+        <View style={[styles.skillsSection, styles.skillsSectionWeb, { borderTopColor: colors.outline }]}>
           <Text
             style={[
               styles.skillsTitle,
@@ -288,16 +294,21 @@ export function ChatHistory({ mascotId, isMascotFree = false, onConversationPres
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
+            style={styles.skillsRowScroll}
             contentContainerStyle={styles.skillsContent}
           >
             {skillsLoading ? (
               <ActivityIndicator size="small" color={colors.primary} />
             ) : dbSkills.length > 0 ? (
               dbSkills.map((skill) => (
-                <LinkPill
+                <SkillPillWithTooltip
                   key={skill.id}
+                  skillId={skill.id}
                   label={skill.skill_label}
+                  tooltipText={getSkillTooltipTextFromMascotSkill(skill)}
                   onPress={() => onSkillPress(skill)}
+                  hoveredSkillId={hoveredSkillTooltipId}
+                  onHoveredSkillChange={setHoveredSkillTooltipId}
                 />
               ))
             ) : null}
@@ -401,6 +412,18 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     gap: 12,
   },
+  skillsSectionWeb: Platform.select({
+    web: {
+      overflow: 'visible' as const,
+      zIndex: 50,
+      position: 'relative' as const,
+    },
+    default: {},
+  }),
+  skillsRowScroll: Platform.select({
+    web: { overflow: 'visible' as const },
+    default: {},
+  }),
   skillsTitle: {
     fontSize: 14,
     lineHeight: 18,
@@ -408,5 +431,10 @@ const styles = StyleSheet.create({
   skillsContent: {
     flexDirection: 'row',
     gap: 8,
+    alignItems: 'flex-end',
+    ...Platform.select({
+      web: { overflow: 'visible' as const, paddingVertical: 6 },
+      default: {},
+    }),
   },
 });

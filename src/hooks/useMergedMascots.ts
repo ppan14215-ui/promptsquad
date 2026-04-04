@@ -1,12 +1,17 @@
-
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Image as ExpoImage } from 'expo-image';
 import { MascotBasic } from '@/services/admin';
 import { useMascotsData } from '@/context/MascotsDataContext';
 import { useUnlockedMascots } from '@/services/mascot-access';
 import { useIsAdmin } from '@/services/admin';
 import { useSubscription } from '@/services/subscription';
-import { getMascotGrayscaleImageSource, getMascotImageSource } from '@/services/admin/mascot-images';
+import {
+  collectRemoteMascotImageUris,
+  getMascotGrayscaleImageSource,
+  getMascotImageSource,
+} from '@/services/admin/mascot-images';
 import { supabase } from '@/services/supabase';
+import { useAuth } from '@/services/auth';
 import {
     ALL_MASCOTS,
     FREE_MASCOTS,
@@ -25,40 +30,69 @@ type SkillRow = {
     sort_order?: number;
 };
 
-/** Fetch all active skills for all mascots in one query. */
-function useAllMascotSkills(mascotIds: string[]) {
+/** Fetch all active skills for all mascots in one query (same table as useMascotSkills — avoids empty view JOINs). */
+function useAllMascotSkills(
+    mascotIds: string[],
+    dbMascots: MascotBasic[],
+    opts: { isAdmin: boolean; isSubscribed: boolean; userId: string | undefined }
+) {
     const [skillsByMascot, setSkillsByMascot] = useState<Record<string, { id: string; label: string; summary?: string; prompt?: string }[]>>({});
 
     const idsKey = mascotIds.join(',');
+    const metaKey = useMemo(
+        () => dbMascots.map((m) => `${m.id}:${m.is_free}:${m.owner_id ?? ''}`).join('|'),
+        [dbMascots]
+    );
+
+    const { isAdmin, isSubscribed, userId } = opts;
 
     const fetchAll = useCallback(async () => {
-        if (!mascotIds.length) { setSkillsByMascot({}); return; }
+        if (!mascotIds.length) {
+            setSkillsByMascot({});
+            return;
+        }
         try {
             const { data, error } = await supabase
-                .from('public_mascot_skills' as any)
+                .from('mascot_skills' as any)
                 .select('*')
                 .in('mascot_id', mascotIds)
                 .eq('is_active', true)
-                .order('sort_order', { ascending: true });
-            if (error || !data) { setSkillsByMascot({}); return; }
+                .order('sort_order', { ascending: true })
+                .order('created_at', { ascending: true });
+            if (error || !data) {
+                setSkillsByMascot({});
+                return;
+            }
             const map: Record<string, { id: string; label: string; summary?: string; prompt?: string }[]> = {};
             for (const row of data as SkillRow[]) {
+                const mascot = dbMascots.find((m) => m.id === row.mascot_id);
+                const isFree = mascot?.is_free ?? false;
+                const isOwner = !!(userId && mascot?.owner_id === userId);
+                const hasFullAccess = isAdmin || isSubscribed || isFree || isOwner;
+                const preview =
+                    row.skill_prompt_preview ||
+                    (row.skill_prompt
+                        ? row.skill_prompt.substring(0, Math.max(1, Math.floor(row.skill_prompt.length / 4)))
+                        : '');
+                const summary =
+                    (typeof row.skill_summary === 'string' && row.skill_summary.trim()) ? row.skill_summary.trim() : preview || undefined;
                 if (!map[row.mascot_id]) map[row.mascot_id] = [];
                 map[row.mascot_id].push({
                     id: row.id,
                     label: row.skill_label,
-                    summary: row.skill_summary || row.skill_prompt_preview || undefined,
-                    prompt: row.skill_prompt || undefined,
+                    summary,
+                    prompt: hasFullAccess ? (row.skill_prompt || undefined) : undefined,
                 });
             }
             setSkillsByMascot(map);
         } catch {
             setSkillsByMascot({});
         }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [idsKey]);
+    }, [idsKey, metaKey, isAdmin, isSubscribed, userId, mascotIds, dbMascots]);
 
-    useEffect(() => { fetchAll(); }, [fetchAll]);
+    useEffect(() => {
+        fetchAll();
+    }, [fetchAll]);
 
     return skillsByMascot;
 }
@@ -68,9 +102,25 @@ export function useMergedMascots() {
     const { unlockedMascotIds, isLoading: isLoadingUnlocked } = useUnlockedMascots();
     const { isAdmin } = useIsAdmin();
     const { isSubscribed } = useSubscription();
+    const { user } = useAuth();
 
     const dbMascotIds = useMemo(() => dbMascots.map(m => m.id), [dbMascots]);
-    const skillsByMascot = useAllMascotSkills(dbMascotIds);
+    const skillsByMascot = useAllMascotSkills(dbMascotIds, dbMascots, {
+        isAdmin,
+        isSubscribed,
+        userId: user?.id,
+    });
+
+    const remoteMascotImagePrefetchKey = useMemo(
+        () => dbMascots.map((m) => `${m.id}:${m.image_url || ''}`).join('\n'),
+        [dbMascots]
+    );
+
+    useEffect(() => {
+        const uris = collectRemoteMascotImageUris(dbMascots.map((m) => m.image_url));
+        if (!uris.length) return;
+        void ExpoImage.prefetch(uris, 'memory-disk').catch(() => {});
+    }, [remoteMascotImagePrefetchKey]);
 
     const availableMascots = useMemo(() => {
         let convertedMascots: OwnedMascot[] = [];

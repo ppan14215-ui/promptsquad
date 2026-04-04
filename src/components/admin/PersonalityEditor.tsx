@@ -108,7 +108,7 @@ export function PersonalityEditor({
           <Text
             style={[
               styles.headerTitle,
-              { fontFamily: fontFamilies.semibold, color: colors.text },
+              { fontFamily: fontFamilies.figtree.semiBold, color: colors.text },
             ]}
           >
             Mascot Personality
@@ -117,7 +117,7 @@ export function PersonalityEditor({
             <Text
               style={[
                 styles.headerSubtitle,
-                { fontFamily: fontFamilies.regular, color: colors.textMuted },
+                { fontFamily: fontFamilies.figtree.regular, color: colors.textMuted },
               ]}
             >
               for {mascotName}
@@ -136,7 +136,7 @@ export function PersonalityEditor({
             <Text
               style={[
                 styles.infoText,
-                { fontFamily: fontFamilies.regular, color: colors.textMuted },
+                { fontFamily: fontFamilies.figtree.regular, color: colors.textMuted },
               ]}
             >
               Personality defines the mascot's traits and behavior. It is combined with skill prompts to create the final system prompt for the AI.
@@ -148,7 +148,7 @@ export function PersonalityEditor({
             <Text
               style={[
                 styles.label,
-                { fontFamily: fontFamilies.medium, color: colors.text },
+                { fontFamily: fontFamilies.figtree.medium, color: colors.text },
               ]}
             >
               Personality *
@@ -156,7 +156,7 @@ export function PersonalityEditor({
             <Text
               style={[
                 styles.hint,
-                { fontFamily: fontFamilies.regular, color: colors.textMuted },
+                { fontFamily: fontFamilies.figtree.regular, color: colors.textMuted },
               ]}
             >
               Define personality traits, communication style, and general behaviors.
@@ -165,7 +165,7 @@ export function PersonalityEditor({
               style={[
                 styles.textArea,
                 {
-                  fontFamily: fontFamilies.regular,
+                  fontFamily: fontFamilies.figtree.regular,
                   color: colors.text,
                   borderColor: colors.outline,
                   backgroundColor: colors.surface,
@@ -189,7 +189,7 @@ export function PersonalityEditor({
             <Text
               style={[
                 styles.exampleTitle,
-                { fontFamily: fontFamilies.medium, color: colors.text },
+                { fontFamily: fontFamilies.figtree.medium, color: colors.text },
               ]}
             >
               Example Personality
@@ -197,7 +197,7 @@ export function PersonalityEditor({
             <Text
               style={[
                 styles.exampleText,
-                { fontFamily: fontFamilies.regular, color: colors.textMuted },
+                { fontFamily: fontFamilies.figtree.regular, color: colors.textMuted },
               ]}
             >
               {`• Be friendly and approachable

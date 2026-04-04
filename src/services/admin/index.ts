@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/services/supabase';
 import { useAuth } from '@/services/auth';
 import { useSubscription } from '@/services/subscription';
@@ -279,11 +279,15 @@ export function useMascotSkills(mascotId: string | null, isMascotFree: boolean =
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Force refresh trigger
+  // Force refresh trigger; waiters resolve after each fetch completes (for await refetch())
   const [refreshKey, setRefreshKey] = useState(0);
+  const fetchWaitersRef = useRef<(() => void)[]>([]);
+  /** Ignore late responses after the user switched mascots (belt-and-suspenders with isActive). */
+  const latestMascotIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     let isActive = true;
+    latestMascotIdRef.current = mascotId;
 
     async function fetchSkills() {
       if (!mascotId) {
@@ -291,6 +295,7 @@ export function useMascotSkills(mascotId: string | null, isMascotFree: boolean =
           setSkills([]);
           setIsLoading(false);
         }
+        fetchWaitersRef.current.splice(0).forEach((w) => w());
         return;
       }
 
@@ -317,37 +322,42 @@ export function useMascotSkills(mascotId: string | null, isMascotFree: boolean =
           .order('sort_order', { ascending: true })
           .order('created_at', { ascending: true });
 
+        if (!isActive || latestMascotIdRef.current !== mascotId) return;
+
         if (error) {
-          if (!isActive) return;
           logger.error('[useMascotSkills] DB error:', error);
           setError(error.message);
           setSkills([]);
         } else {
-          if (!isActive) return;
-
           logger.debug('[useMascotSkills] Fetched skills:', data?.length || 0, 'skills');
 
           // Full access: Admin, Pro users, free mascot, OR mascot owner (sees real prompts)
           const hasFullAccess = isAdmin || isSubscribed || isMascotFree || isMascotOwner;
-          const enrichedData = (data || []).map((skill: any) => ({
-            ...skill,
-            // For users without full access, mask the full prompt (client-side)
-            skill_prompt: hasFullAccess ? (skill.skill_prompt || null) : null,
-            skill_prompt_preview: skill.skill_prompt_preview
-              || (skill.skill_prompt ? skill.skill_prompt.substring(0, Math.max(1, Math.floor(skill.skill_prompt.length / 4))) : ''),
-            is_full_access: hasFullAccess,
-          }));
+          const enrichedData = (data || [])
+            .filter((skill: any) => skill.mascot_id === mascotId)
+            .map((skill: any) => ({
+              ...skill,
+              // For users without full access, mask the full prompt (client-side)
+              skill_prompt: hasFullAccess ? (skill.skill_prompt || null) : null,
+              skill_prompt_preview: skill.skill_prompt_preview
+                || (skill.skill_prompt ? skill.skill_prompt.substring(0, Math.max(1, Math.floor(skill.skill_prompt.length / 4))) : ''),
+              is_full_access: hasFullAccess,
+            }));
 
           setSkills(enrichedData as MascotSkill[]);
           setError(null);
         }
       } catch (err: any) {
-        if (!isActive) return;
+        if (!isActive || latestMascotIdRef.current !== mascotId) return;
         logger.error('[useMascotSkills] Exception:', err);
         setError(err.message);
         setSkills([]);
       } finally {
-        if (isActive) setIsLoading(false);
+        if (isActive && latestMascotIdRef.current === mascotId) {
+          setIsLoading(false);
+        }
+        const waiters = fetchWaitersRef.current.splice(0);
+        waiters.forEach((w) => w());
       }
     }
 
@@ -358,9 +368,11 @@ export function useMascotSkills(mascotId: string | null, isMascotFree: boolean =
     };
   }, [mascotId, isAdmin, isSubscribed, isMascotFree, isMascotOwner, refreshKey]);
 
-  // Refetch simply increments the key to re-trigger the effect
   const refetch = useCallback(async () => {
-    setRefreshKey(prev => prev + 1);
+    return new Promise<void>((resolve) => {
+      fetchWaitersRef.current.push(resolve);
+      setRefreshKey((prev) => prev + 1);
+    });
   }, []);
 
   return { skills, isLoading, error, refetch };
@@ -451,7 +463,8 @@ export async function createSkill(
     .select()
     .single();
 
-  // Retry logic if optional columns are missing (migration not applied)
+  // Retry logic if optional columns are missing (migration not applied).
+  // Never drop preferred_provider when the failure was about skill_summary / preview only.
   if (
     error &&
     (error.code === '42703' ||
@@ -461,22 +474,46 @@ export async function createSkill(
       error.message.includes('skill_prompt_preview') ||
       error.message.includes('schema cache'))
   ) {
-    logger.warn('[Admin] Optional skill columns missing or schema issue, retrying without them');
-    const { data: retryData, error: retryError } = await supabase
-      .from('mascot_skills')
-      .insert({
-        mascot_id: mascotId,
-        skill_label: skillLabel,
-        skill_prompt: skillPrompt,
-        skill_prompt_preview: summaryValue,
-        sort_order: sortOrder,
-        is_active: true,
-      })
-      .select()
-      .single();
+    const msg = error.message || '';
+    const looksLikePreferredOnly =
+      msg.includes('preferred_provider') &&
+      !msg.includes('skill_summary') &&
+      !msg.includes('skill_prompt_preview');
 
-    data = retryData;
-    error = retryError;
+    if (looksLikePreferredOnly) {
+      logger.warn('[Admin] preferred_provider column missing; retrying insert without it');
+      const { data: retryData, error: retryError } = await supabase
+        .from('mascot_skills')
+        .insert({
+          mascot_id: mascotId,
+          skill_label: skillLabel,
+          skill_prompt: skillPrompt,
+          skill_prompt_preview: summaryValue,
+          sort_order: sortOrder,
+          is_active: true,
+        })
+        .select()
+        .single();
+      data = retryData;
+      error = retryError;
+    } else {
+      logger.warn('[Admin] Optional skill columns missing or schema issue, retrying without skill_summary');
+      const { data: retryData, error: retryError } = await supabase
+        .from('mascot_skills')
+        .insert({
+          mascot_id: mascotId,
+          skill_label: skillLabel,
+          skill_prompt: skillPrompt,
+          skill_prompt_preview: summaryValue,
+          sort_order: sortOrder,
+          preferred_provider: preferredProvider ?? null,
+          is_active: true,
+        })
+        .select()
+        .single();
+      data = retryData;
+      error = retryError;
+    }
   }
 
   if (error) {
@@ -519,7 +556,7 @@ export async function updateSkill(
     .select()
     .single();
 
-  // Retry logic if 'preferred_provider' column is missing or schema error
+  // Retry if optional columns missing. Do not strip preferred_provider when the error was about summary/preview.
   if (
     error &&
     (error.code === '42703' ||
@@ -529,25 +566,46 @@ export async function updateSkill(
       error.message.includes('skill_prompt_preview') ||
       error.message.includes('schema cache'))
   ) {
-    logger.warn('[Admin] preferred_provider column missing or schema issue, retrying without it');
-    const { preferred_provider, skill_summary, ...safeUpdates } = updates;
-    const fallbackUpdates =
-      skill_summary !== undefined
-        ? { ...safeUpdates, skill_prompt_preview: summaryTrimmed ?? null }
-        : safeUpdates;
+    const msg = error.message || '';
+    const looksLikePreferredOnly =
+      msg.includes('preferred_provider') &&
+      !msg.includes('skill_summary') &&
+      !msg.includes('skill_prompt_preview');
 
-    const { data: retryData, error: retryError } = await supabase
-      .from('mascot_skills')
-      .update({
-        ...fallbackUpdates,
+    if (looksLikePreferredOnly) {
+      logger.warn('[Admin] preferred_provider column missing; retrying update without it');
+      const { preferred_provider, ...rest } = updates;
+      const fallbackPayload: Record<string, unknown> = {
+        ...rest,
+        ...(typeof updates.skill_summary !== 'undefined'
+          ? { skill_summary: summaryTrimmed, skill_prompt_preview: summaryTrimmed }
+          : {}),
         updated_at: new Date().toISOString(),
-      })
-      .eq('id', skillId)
-      .select()
-      .single();
-
-    data = retryData;
-    error = retryError;
+      };
+      const { data: retryData, error: retryError } = await supabase
+        .from('mascot_skills')
+        .update(fallbackPayload)
+        .eq('id', skillId)
+        .select()
+        .single();
+      data = retryData;
+      error = retryError;
+    } else {
+      logger.warn('[Admin] Retrying skill update without skill_summary columns; keeping preferred_provider');
+      const { skill_summary, ...safeUpdates } = updates;
+      const fallbackPayload: Record<string, unknown> = {
+        ...safeUpdates,
+        updated_at: new Date().toISOString(),
+      };
+      const { data: retryData, error: retryError } = await supabase
+        .from('mascot_skills')
+        .update(fallbackPayload)
+        .eq('id', skillId)
+        .select()
+        .single();
+      data = retryData;
+      error = retryError;
+    }
   }
 
   if (error) {
