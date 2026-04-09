@@ -26,6 +26,7 @@ export const es: TranslationKeys = {
   mascot: {
     personality: 'Personalidad',
     usedModels: 'Modelos utilizados',
+    defaultModels: 'Modelos predeterminados',
     skills: 'Habilidades',
     startChatting: 'Iniciar chat',
     tryOut: 'Probar mascota',
@@ -71,6 +72,19 @@ export const es: TranslationKeys = {
     noAccount: '¿No tienes cuenta?',
     hasAccount: '¿Ya tienes cuenta?',
     signupEmailSent: 'Te hemos enviado un correo de confirmación. Por favor revisa tu bandeja de entrada.',
+    passwordReset: {
+      title: 'Elige tu nueva contraseña',
+      subtitle: 'Configura una nueva contraseña para tu cuenta.',
+      newPassword: 'Nueva contraseña',
+      confirmNewPassword: 'Confirmar nueva contraseña',
+      updatePassword: 'Actualizar contraseña',
+      emailSent: 'Si existe una cuenta con ese correo, enviamos un enlace para restablecer la contraseña.',
+      passwordUpdated: 'Tu contraseña fue actualizada. Puedes continuar a la app.',
+      enterEmailFirst: 'Primero ingresa un correo válido y luego toca Olvidé mi contraseña.',
+      invalidSession: 'Tu enlace de restablecimiento es inválido o expiró. Solicita uno nuevo.',
+      backToLogin: 'Volver al inicio de sesión',
+      continueToApp: 'Continuar a la app',
+    },
     errors: {
       invalidEmail: 'Por favor ingresa un correo válido',
       passwordTooShort: 'La contraseña debe tener al menos 6 caracteres',

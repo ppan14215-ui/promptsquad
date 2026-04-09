@@ -24,6 +24,7 @@ export const en = {
   mascot: {
     personality: 'Personality',
     usedModels: 'Used models',
+    defaultModels: 'Default models',
     skills: 'Skills',
     startChatting: 'Start chatting',
     tryOut: 'Try out Mascot',
@@ -69,6 +70,19 @@ export const en = {
     noAccount: "Don't have an account?",
     hasAccount: 'Already have an account?',
     signupEmailSent: "We've sent you a confirmation email. Please check your inbox to verify your account.",
+    passwordReset: {
+      title: 'Set your new password',
+      subtitle: 'Choose a new password for your account.',
+      newPassword: 'New password',
+      confirmNewPassword: 'Confirm new password',
+      updatePassword: 'Update password',
+      emailSent: "If an account exists for that email, we've sent a password reset link.",
+      passwordUpdated: 'Your password was updated. You can continue to the app.',
+      enterEmailFirst: 'Enter a valid email first, then tap forgot password.',
+      invalidSession: 'Your reset link is invalid or expired. Request a new password reset email.',
+      backToLogin: 'Back to login',
+      continueToApp: 'Continue to app',
+    },
     errors: {
       invalidEmail: 'Please enter a valid email',
       passwordTooShort: 'Password must be at least 6 characters',

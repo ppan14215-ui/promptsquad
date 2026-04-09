@@ -48,7 +48,7 @@ function extractRateLimitSeconds(message: string): number | null {
 export default function LoginScreen() {
   const { colors } = useTheme();
   const { t } = useI18n();
-  const { signIn, signUp, signInWithGoogle } = useAuth();
+  const { signIn, signUp, signInWithGoogle, requestPasswordReset } = useAuth();
 
   const [mode, setMode] = useState<AuthMode>('login');
   const [email, setEmail] = useState('');
@@ -58,6 +58,7 @@ export default function LoginScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [signupSuccess, setSignupSuccess] = useState(false);
+  const [resetEmailSent, setResetEmailSent] = useState(false);
   const [rateLimitSeconds, setRateLimitSeconds] = useState(0);
 
   // Load saved email on mount - run immediately
@@ -96,6 +97,7 @@ export default function LoginScreen() {
   const validateForm = (): boolean => {
     setError(null);
     setSignupSuccess(false);
+    setResetEmailSent(false);
 
     // Email validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -207,6 +209,36 @@ export default function LoginScreen() {
     }
   };
 
+  const handleForgotPassword = async () => {
+    setError(null);
+    setSignupSuccess(false);
+    setResetEmailSent(false);
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      setError(t.auth.passwordReset.enterEmailFirst);
+      return;
+    }
+
+    setIsLoading(true);
+    const { error: resetError } = await requestPasswordReset(email);
+    setIsLoading(false);
+
+    if (resetError) {
+      const message = resetError.message || '';
+      const waitSeconds = extractRateLimitSeconds(message);
+      if (waitSeconds !== null) {
+        setRateLimitSeconds(waitSeconds);
+        setError(`Too many attempts. Please wait ${waitSeconds}s and try again.`);
+      } else {
+        setError(message || t.auth.errors.generic);
+      }
+      return;
+    }
+
+    setResetEmailSent(true);
+  };
+
   // Web-specific styles
   const webInputStyle = Platform.select({
     web: { outlineStyle: 'none' } as any,
@@ -302,6 +334,22 @@ export default function LoginScreen() {
         </View>
       )}
 
+      {resetEmailSent && (
+        <View style={[styles.successContainer, { backgroundColor: `${colors.primary}18` }]}>
+          <Text
+            style={[
+              styles.successText,
+              {
+                fontFamily: fontFamilies.figtree.medium,
+                color: colors.primary,
+              },
+            ]}
+          >
+            {t.auth.passwordReset.emailSent}
+          </Text>
+        </View>
+      )}
+
       {/* Email Input */}
       <InputField
         label={t.auth.email}
@@ -385,7 +433,7 @@ export default function LoginScreen() {
           </Pressable>
           <TextButton
             label={t.auth.forgotPassword}
-            onPress={() => console.log('Forgot password')}
+            onPress={handleForgotPassword}
           />
         </View>
       )}

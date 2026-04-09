@@ -30,6 +30,7 @@ export default function CallbackScreen() {
   const { colors } = useTheme();
   const { user, isLoading } = useAuth();
   const [manualCheck, setManualCheck] = useState(false);
+  const [isRecoveryFlow, setIsRecoveryFlow] = useState(false);
 
   // If we're on native, don't render anything (we're redirecting above)
   if (Platform.OS !== 'web') {
@@ -47,12 +48,18 @@ export default function CallbackScreen() {
 
   useEffect(() => {
     const handleOAuthCallback = async () => {
+      let recoveryDetected = false;
+
       // Parse tokens from URL hash (web OAuth redirect)
       if (window.location.hash?.includes('access_token=')) {
         try {
           const hashParams = new URLSearchParams(window.location.hash.slice(1));
           const accessToken = hashParams.get('access_token');
           const refreshToken = hashParams.get('refresh_token');
+          recoveryDetected = hashParams.get('type') === 'recovery';
+          if (recoveryDetected) {
+            setIsRecoveryFlow(true);
+          }
           if (accessToken && refreshToken) {
             await supabase.auth.setSession({
               access_token: accessToken,
@@ -73,7 +80,7 @@ export default function CallbackScreen() {
       // Handle relay redirect (Vercel callback with redirect_to param)
       const params = new URLSearchParams(window.location.search);
       const redirectTo = params.get('redirect_to');
-      if (redirectTo) {
+      if (redirectTo && !recoveryDetected) {
         let destination = redirectTo;
         const lastVisitedPath = await AsyncStorage.getItem(LAST_VISITED_PATH_KEY);
         if (isRestorablePath(lastVisitedPath)) {
@@ -107,6 +114,10 @@ export default function CallbackScreen() {
 
       // Standard: user detected by auth context → redirect to app
       if (user) {
+        if (isRecoveryFlow || recoveryDetected) {
+          router.replace('/(auth)/reset-password');
+          return;
+        }
         const redirectPath = await AsyncStorage.getItem('redirect_after_login');
         if (isRestorablePath(redirectPath)) {
           await AsyncStorage.removeItem('redirect_after_login');
@@ -118,7 +129,7 @@ export default function CallbackScreen() {
     };
 
     handleOAuthCallback();
-  }, [router, user]);
+  }, [router, user, isRecoveryFlow]);
 
   // Timeout: if no session after 3s, show manual button
   useEffect(() => {

@@ -12,6 +12,8 @@ type AuthContextType = {
   isLoading: boolean;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signUp: (email: string, password: string) => Promise<{ error: Error | null }>;
+  requestPasswordReset: (email: string) => Promise<{ error: Error | null }>;
+  updatePassword: (password: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
   signInWithGoogle: () => Promise<{ error: Error | null }>;
 };
@@ -119,6 +121,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = async () => {
     await supabase.auth.signOut();
+  };
+
+  const requestPasswordReset = async (email: string) => {
+    let redirectTo: string;
+    if (Platform.OS === 'web') {
+      redirectTo = `${window.location.origin}/callback`;
+    } else {
+      redirectTo = Linking.createURL('/callback');
+    }
+
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo,
+    });
+
+    return { error: error as Error | null };
+  };
+
+  const updatePassword = async (password: string) => {
+    const { error } = await supabase.auth.updateUser({ password });
+    return { error: error as Error | null };
   };
 
   const signInWithGoogle = async () => {
@@ -235,6 +257,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isLoading,
         signIn,
         signUp,
+        requestPasswordReset,
+        updatePassword,
         signOut,
         signInWithGoogle,
       }}
