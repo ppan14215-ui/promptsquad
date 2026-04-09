@@ -19,7 +19,6 @@ import {
     mascotImages,
     OwnedMascot,
     MascotColor,
-    resolveMascotIsFree,
 } from '@/config/mascots';
 
 type SkillRow = {
@@ -32,6 +31,14 @@ type SkillRow = {
     sort_order?: number;
     preferred_provider?: string | null;
 };
+
+function inferIsFreeMascot(m: { id: string; is_free?: boolean | null; isFree?: boolean | null }): boolean {
+    const raw = m.is_free !== undefined && m.is_free !== null ? m.is_free : m.isFree;
+    if (raw === true) return true;
+    if (raw === false) return false;
+    const n = parseInt(m.id, 10);
+    return !Number.isNaN(n) && n <= 4;
+}
 
 /** Batch-fetch active skills via get_mascot_skills_by_ids RPC (full prompts); falls back to mascot_skills table. */
 function useAllMascotSkills(mascotIds: string[], dbMascots: MascotBasic[]) {
@@ -152,7 +159,7 @@ export function useMergedMascots() {
                     const isCustom = m.is_custom || false;
                     const isComingSoon = m.is_ready === false;
 
-                    const isFree = resolveMascotIsFree(m);
+                    const isFree = inferIsFreeMascot(m);
                     const isPro = !isFree && !isCustom;
 
                     // Prefer DB-driven skills. If DB returns nothing (e.g. prod RPC/policy drift),
