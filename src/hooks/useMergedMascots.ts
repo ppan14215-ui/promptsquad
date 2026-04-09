@@ -12,12 +12,14 @@ import {
 } from '@/services/admin/mascot-images';
 import { supabase } from '@/services/supabase';
 import { useAuth } from '@/services/auth';
+import { logger } from '@/lib/utils/logger';
 import {
     ALL_MASCOTS,
     FREE_MASCOTS,
     mascotImages,
     OwnedMascot,
-    MascotColor
+    MascotColor,
+    resolveMascotIsFree,
 } from '@/config/mascots';
 
 type SkillRow = {
@@ -28,15 +30,15 @@ type SkillRow = {
     skill_prompt_preview?: string | null;
     skill_prompt?: string | null;
     sort_order?: number;
+    preferred_provider?: string | null;
 };
 
-/** Fetch all active skills for all mascots in one query (same table as useMascotSkills — avoids empty view JOINs). */
-function useAllMascotSkills(
-    mascotIds: string[],
-    dbMascots: MascotBasic[],
-    opts: { isAdmin: boolean; isSubscribed: boolean; userId: string | undefined }
-) {
-    const [skillsByMascot, setSkillsByMascot] = useState<Record<string, { id: string; label: string; summary?: string; prompt?: string }[]>>({});
+/** Batch-fetch active skills via get_mascot_skills_by_ids RPC (full prompts); falls back to mascot_skills table. */
+function useAllMascotSkills(mascotIds: string[], dbMascots: MascotBasic[]) {
+    const [skillsByMascot, setSkillsByMascot] = useState<
+        Record<string, { id: string; label: string; summary?: string; prompt?: string; preferredProvider?: string | null }[]>
+    >({});
+    const [isLoading, setIsLoading] = useState(true);
 
     const idsKey = mascotIds.join(',');
     const metaKey = useMemo(
@@ -44,31 +46,44 @@ function useAllMascotSkills(
         [dbMascots]
     );
 
-    const { isAdmin, isSubscribed, userId } = opts;
-
     const fetchAll = useCallback(async () => {
         if (!mascotIds.length) {
             setSkillsByMascot({});
+            setIsLoading(false);
             return;
         }
+        setIsLoading(true);
         try {
-            const { data, error } = await supabase
-                .from('mascot_skills' as any)
-                .select('*')
-                .in('mascot_id', mascotIds)
-                .eq('is_active', true)
-                .order('sort_order', { ascending: true })
-                .order('created_at', { ascending: true });
+            const rpc = await supabase.rpc('get_mascot_skills_by_ids', { p_mascot_ids: mascotIds });
+            let data: SkillRow[] | null = (rpc.data as SkillRow[]) ?? null;
+            let error = rpc.error;
+
+            if (error) {
+                logger.warn('[useAllMascotSkills] RPC failed, using table:', error.message);
+                const tbl = await supabase
+                    .from('mascot_skills' as any)
+                    .select('*')
+                    .in('mascot_id', mascotIds)
+                    .eq('is_active', true)
+                    .order('sort_order', { ascending: true })
+                    .order('created_at', { ascending: true });
+                data = tbl.data as SkillRow[] | null;
+                error = tbl.error;
+            }
+
             if (error || !data) {
+                if (error) {
+                    logger.error('[useAllMascotSkills] skills query failed:', error);
+                }
                 setSkillsByMascot({});
+                setIsLoading(false);
                 return;
             }
-            const map: Record<string, { id: string; label: string; summary?: string; prompt?: string }[]> = {};
+            const map: Record<
+                string,
+                { id: string; label: string; summary?: string; prompt?: string; preferredProvider?: string | null }[]
+            > = {};
             for (const row of data as SkillRow[]) {
-                const mascot = dbMascots.find((m) => m.id === row.mascot_id);
-                const isFree = mascot?.is_free ?? false;
-                const isOwner = !!(userId && mascot?.owner_id === userId);
-                const hasFullAccess = isAdmin || isSubscribed || isFree || isOwner;
                 const preview =
                     row.skill_prompt_preview ||
                     (row.skill_prompt
@@ -81,20 +96,25 @@ function useAllMascotSkills(
                     id: row.id,
                     label: row.skill_label,
                     summary,
-                    prompt: hasFullAccess ? (row.skill_prompt || undefined) : undefined,
+                    // Full DB prompts for everyone — access is gated by which mascots appear in the app (free/pro/unlock/custom), not by subscription tier.
+                    prompt: row.skill_prompt || undefined,
+                    preferredProvider: row.preferred_provider ?? null,
                 });
             }
             setSkillsByMascot(map);
-        } catch {
+        } catch (e) {
+            logger.error('[useAllMascotSkills] fetch failed:', e);
             setSkillsByMascot({});
+        } finally {
+            setIsLoading(false);
         }
-    }, [idsKey, metaKey, isAdmin, isSubscribed, userId, mascotIds, dbMascots]);
+    }, [idsKey, metaKey, mascotIds, dbMascots]);
 
     useEffect(() => {
         fetchAll();
     }, [fetchAll]);
 
-    return skillsByMascot;
+    return { skillsByMascot, isLoadingSkills: isLoading };
 }
 
 export function useMergedMascots() {
@@ -105,11 +125,7 @@ export function useMergedMascots() {
     const { user } = useAuth();
 
     const dbMascotIds = useMemo(() => dbMascots.map(m => m.id), [dbMascots]);
-    const skillsByMascot = useAllMascotSkills(dbMascotIds, dbMascots, {
-        isAdmin,
-        isSubscribed,
-        userId: user?.id,
-    });
+    const { skillsByMascot, isLoadingSkills } = useAllMascotSkills(dbMascotIds, dbMascots);
 
     const remoteMascotImagePrefetchKey = useMemo(
         () => dbMascots.map((m) => `${m.id}:${m.image_url || ''}`).join('\n'),
@@ -136,14 +152,19 @@ export function useMergedMascots() {
                     const isCustom = m.is_custom || false;
                     const isComingSoon = m.is_ready === false;
 
-                    const isFree = m.is_free !== undefined ? m.is_free : (parseInt(m.id) <= 4);
+                    const isFree = resolveMascotIsFree(m);
                     const isPro = !isFree && !isCustom;
 
-                    // Use DB skills if available, fallback to hardcoded
+                    // Prefer DB-driven skills. If DB returns nothing (e.g. prod RPC/policy drift),
+                    // fall back to bundled skills so non-admin users don't see empty mascots.
                     const dbSkills = skillsByMascot[m.id];
-                    const skills = dbSkills && dbSkills.length > 0
-                        ? dbSkills
-                        : (hardcodedMascot?.skills || []);
+                    const fallbackSkills = hardcodedMascot?.skills ?? [];
+                    const skills =
+                        dbSkills && dbSkills.length > 0
+                            ? dbSkills
+                            : isLoadingSkills
+                                ? []
+                                : fallbackSkills;
 
                     return {
                         id: m.id,
@@ -178,16 +199,14 @@ export function useMergedMascots() {
                     // Subscribers see all visible, non-coming-soon mascots
                     if (isSubscribed) return true;
 
-                    // Free users: only show mascots they have access to
-                    // - Their onboarding picks or purchased mascots (in unlockedMascotIds)
-                    // - Custom mascots they own
-                    // - Fallback: when unlockedMascotIds is empty (e.g. onboarding disabled),
-                    //   show all free mascots so new users have something in their deck
+                    // Pro / custom: onboarding or purchases (unlockedMascotIds), or user's own custom.
+                    // Free-tier mascots are always shown so the deck is never empty once DB rows load.
+                    if (m.isFree) return true;
+
                     const hasAccess = unlockedMascotIds.includes(m.id);
-                    const isOwnCustom = m.isCustom && !!m.ownerId;
-                    const noUnlocksYet = unlockedMascotIds.length === 0;
-                    const fallbackToFree = noUnlocksYet && m.isFree;
-                    return hasAccess || isOwnCustom || fallbackToFree;
+                    const isOwnCustom =
+                        m.isCustom && !!user?.id && m.ownerId === user.id;
+                    return hasAccess || isOwnCustom;
                 });
             }
         } else {
@@ -200,11 +219,11 @@ export function useMergedMascots() {
         }
 
         return convertedMascots;
-    }, [dbMascots, isAdmin, isSubscribed, unlockedMascotIds, skillsByMascot]);
+    }, [dbMascots, isAdmin, isSubscribed, unlockedMascotIds, skillsByMascot, isLoadingSkills, user?.id]);
 
     return {
         availableMascots,
-        isLoading: isLoadingMascots || isLoadingUnlocked,
+        isLoading: isLoadingMascots || isLoadingUnlocked || isLoadingSkills,
         error: mascotsError,
         refetch: refetchMascots
     };
