@@ -1,4 +1,4 @@
-import { Skill } from '@/components';
+import type { Skill } from '@/components/mascot/MascotDetails';
 import { AI_MODEL_DISPLAY } from '@/constants/ai-models';
 
 export const mascotImages = {
@@ -42,6 +42,25 @@ export type OwnedMascot = {
     bio?: string | null;
     isComingSoon?: boolean;
 };
+
+/**
+ * `mascots.is_free` can be NULL in Postgres. `?? false` wrongly treats that as paid.
+ * When unknown, infer legacy free tier (numeric ids 1–4) so free users see real prompts.
+ * Accepts DB shape (`is_free`) or UI shape (`isFree` on OwnedMascot).
+ */
+export function resolveMascotIsFree(
+  m:
+    | { id: string; is_free?: boolean | null; isFree?: boolean | null }
+    | null
+    | undefined
+): boolean {
+  if (!m) return false;
+  const raw = m.is_free !== undefined && m.is_free !== null ? m.is_free : m.isFree;
+  if (raw === true) return true;
+  if (raw === false) return false;
+  const n = parseInt(m.id, 10);
+  return !Number.isNaN(n) && n <= 4;
+}
 
 export const FREE_MASCOTS: OwnedMascot[] = [
     {
