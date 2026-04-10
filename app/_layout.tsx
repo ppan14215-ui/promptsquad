@@ -23,9 +23,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ChangelogModal } from '@/components/ui/ChangelogModal';
 import * as NavigationBar from 'expo-navigation-bar';
 
-const CURRENT_VERSION = '1.3.0';
+const CURRENT_VERSION = '1.4.0';
 const CHANGELOG_VERSION_KEY = 'last_seen_changelog_version';
 const LAST_VISITED_PATH_KEY = 'last_visited_path';
+const PASSWORD_RECOVERY_ACTIVE_KEY = 'password_recovery_active';
 const ONBOARDING_CHECK_TIMEOUT_MS = 6000;
 // Keep onboarding screens in codebase, but disable gating for now.
 const ONBOARDING_SELECTION_ENABLED = false;
@@ -142,31 +143,18 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     const first = segments[0];
     const inAuthGroup = first === '(auth)' || first === 'login' || first === 'callback';
     const inCallbackRoute = pathname.includes('/callback') || segments.includes('callback');
+    const inResetPasswordRoute = pathname.includes('/reset-password') || segments.includes('reset-password');
     const inOnboardingGroup = first === '(onboarding)';
 
     const checkRedirect = async () => {
-      // 0. Callback route: native callback screen handles its own single redirect.
-      // Keep AuthGate callback handling web-only to prevent redirect thrash.
+      // 0. Callback route: callback screen owns redirect handling.
       if (inCallbackRoute) {
-        if (Platform.OS !== 'web') return;
-        if (!user) {
-          router.replace('/(auth)/login');
-          return;
-        }
-        const redirectPath = await AsyncStorage.getItem('redirect_after_login');
-        if (isRestorablePath(redirectPath)) {
-          await AsyncStorage.removeItem('redirect_after_login');
-          router.replace(toValidHref(redirectPath));
-          return;
-        }
-        const lastPath = await AsyncStorage.getItem(LAST_VISITED_PATH_KEY);
-        if (isRestorablePath(lastPath)) {
-          router.replace(toValidHref(lastPath));
-          return;
-        }
-        router.replace('/(tabs)');
         return;
       }
+
+      const isRecoveryActive = user
+        ? await AsyncStorage.getItem(PASSWORD_RECOVERY_ACTIVE_KEY)
+        : null;
 
       // 1. Not logged in -> Redirect to Login
       if (!user && !inAuthGroup) {
@@ -177,8 +165,17 @@ function AuthGate({ children }: { children: React.ReactNode }) {
         }
         router.replace('/(auth)/login');
       }
+      // 1.5 If recovery is active, always force reset-password route.
+      else if (user && isRecoveryActive === 'true' && !inResetPasswordRoute) {
+        router.replace('/(auth)/reset-password');
+        return;
+      }
       // 2. Logged in, but on Auth pages (Login only; callback handled above) -> Redirect to App
       else if (user && inAuthGroup) {
+        // Allow recovery users to stay on reset screen to set new password.
+        if (inResetPasswordRoute) {
+          return;
+        }
         // Check if we have a saved redirect
         const redirectPath = await AsyncStorage.getItem('redirect_after_login');
         if (isRestorablePath(redirectPath)) {

@@ -4,7 +4,10 @@ import { Platform } from 'react-native';
 import * as Linking from 'expo-linking';
 import Constants from 'expo-constants';
 import * as WebBrowser from 'expo-web-browser';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/services/supabase';
+
+const PASSWORD_RECOVERY_ACTIVE_KEY = 'password_recovery_active';
 
 type AuthContextType = {
   session: Session | null;
@@ -84,7 +87,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
 
     // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        await AsyncStorage.setItem(PASSWORD_RECOVERY_ACTIVE_KEY, 'true');
+      }
+      if (event === 'SIGNED_OUT') {
+        await AsyncStorage.removeItem(PASSWORD_RECOVERY_ACTIVE_KEY);
+      }
       setSession(session);
       setUser(session?.user ?? null);
       setIsLoading(false);
@@ -121,6 +130,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = async () => {
     await supabase.auth.signOut();
+    await AsyncStorage.removeItem(PASSWORD_RECOVERY_ACTIVE_KEY);
   };
 
   const requestPasswordReset = async (email: string) => {
@@ -140,6 +150,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const updatePassword = async (password: string) => {
     const { error } = await supabase.auth.updateUser({ password });
+    if (!error) {
+      await AsyncStorage.removeItem(PASSWORD_RECOVERY_ACTIVE_KEY);
+    }
     return { error: error as Error | null };
   };
 

@@ -7,6 +7,7 @@ import { useTheme } from '@/design-system';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const LAST_VISITED_PATH_KEY = 'last_visited_path';
+const PASSWORD_RECOVERY_ACTIVE_KEY = 'password_recovery_active';
 
 function getCurrentWebPath() {
   if (Platform.OS === 'web' && typeof window !== 'undefined') {
@@ -49,6 +50,22 @@ export default function CallbackScreen() {
   useEffect(() => {
     const handleOAuthCallback = async () => {
       let recoveryDetected = false;
+      const queryParams = new URLSearchParams(window.location.search);
+      const queryType = queryParams.get('type');
+      if (queryType === 'recovery') {
+        recoveryDetected = true;
+        await AsyncStorage.setItem(PASSWORD_RECOVERY_ACTIVE_KEY, 'true');
+        setIsRecoveryFlow(true);
+      }
+
+      const authCode = queryParams.get('code');
+      if (authCode) {
+        try {
+          await supabase.auth.exchangeCodeForSession(authCode);
+        } catch {
+          // Continue; fallback logic and manual recovery UI handle failures.
+        }
+      }
 
       // Parse tokens from URL hash (web OAuth redirect)
       if (window.location.hash?.includes('access_token=')) {
@@ -58,6 +75,7 @@ export default function CallbackScreen() {
           const refreshToken = hashParams.get('refresh_token');
           recoveryDetected = hashParams.get('type') === 'recovery';
           if (recoveryDetected) {
+            await AsyncStorage.setItem(PASSWORD_RECOVERY_ACTIVE_KEY, 'true');
             setIsRecoveryFlow(true);
           }
           if (accessToken && refreshToken) {
@@ -78,8 +96,7 @@ export default function CallbackScreen() {
       }
 
       // Handle relay redirect (Vercel callback with redirect_to param)
-      const params = new URLSearchParams(window.location.search);
-      const redirectTo = params.get('redirect_to');
+      const redirectTo = queryParams.get('redirect_to');
       if (redirectTo && !recoveryDetected) {
         let destination = redirectTo;
         const lastVisitedPath = await AsyncStorage.getItem(LAST_VISITED_PATH_KEY);
