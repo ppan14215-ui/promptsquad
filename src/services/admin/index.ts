@@ -9,7 +9,7 @@ export type MascotSkill = {
   id: string;
   mascot_id: string;
   skill_label: string;
-  skill_prompt: string | null; // Full prompt (only for admins)
+  skill_prompt: string | null; // Full prompt from DB (same for all users; access is mascot-level)
   skill_summary: string | null; // Optional concise summary for UI cards
   skill_prompt_preview: string | null; // 25% preview (for everyone)
   is_full_access: boolean | null;
@@ -246,9 +246,10 @@ export function useMascots() {
           is_visible: m.is_visible !== undefined ? m.is_visible : true, // Default to visible
         })) as MascotBasic[];
 
-        // Custom mascots are private to their owner only, including against admin accounts.
+        // Custom mascots are private to their owner only. Use strict boolean — some rows may
+        // carry non-boolean values; only `true` should hide a mascot from other users.
         const ownerOnlyMascots = normalized.filter((m) => {
-          if (!m.is_custom) return true;
+          if (m.is_custom !== true) return true;
           if (!user?.id) return false;
           return m.owner_id === user.id;
         });
@@ -271,10 +272,28 @@ export function useMascots() {
   return { mascots, isLoading, error, refetch: fetchMascots };
 }
 
+function enrichMascotSkillRows(rows: any[] | null, mascotIdFilter?: string): MascotSkill[] {
+  let list = rows || [];
+  if (mascotIdFilter) {
+    list = list.filter((s: any) => s.mascot_id === mascotIdFilter);
+  }
+  return list.map((skill: any) => ({
+    ...skill,
+    skill_prompt: skill.skill_prompt || null,
+    skill_prompt_preview:
+      skill.skill_prompt_preview ||
+      (skill.skill_prompt
+        ? skill.skill_prompt.substring(0, Math.max(1, Math.floor(skill.skill_prompt.length / 4)))
+        : ''),
+    is_full_access: true,
+  })) as MascotSkill[];
+}
+
 // Hook to get skills for a mascot
+/** Params isMascotFree / isMascotOwner kept for call-site compatibility; skill prompts are no longer masked by tier. */
 export function useMascotSkills(mascotId: string | null, isMascotFree: boolean = false, isMascotOwner: boolean = false) {
-  const { isSubscribed } = useSubscription();
-  const { isAdmin } = useIsAdmin();
+  void isMascotFree;
+  void isMascotOwner;
   const [skills, setSkills] = useState<MascotSkill[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -308,43 +327,46 @@ export function useMascotSkills(mascotId: string | null, isMascotFree: boolean =
       try {
         logger.debug('[useMascotSkills] Fetching skills for mascot:', mascotId);
 
-        // Always query the raw mascot_skills table. It has a permissive "Public Read
-        // Access" RLS policy that lets any authenticated (or anon) user SELECT active
-        // skills. The old approach of routing non-admins through the public_mascot_skills
-        // VIEW failed for some mascots because the view JOINs with the mascots table,
-        // and the RLS on mascots can block the JOIN for certain profiles.
-        // Prompt visibility is handled client-side via hasFullAccess below.
-        const { data, error } = await supabase
-          .from('mascot_skills' as any)
-          .select('*')
-          .eq('mascot_id', mascotId)
-          .eq('is_active', true)
-          .order('sort_order', { ascending: true })
-          .order('created_at', { ascending: true });
+        // Prefer SECURITY DEFINER RPC (full skill_prompt); fall back to direct table if RPC missing/old DB.
+        const rpc = await supabase.rpc('get_mascot_skills', { p_mascot_id: mascotId });
+        let rows: any[] | null = (rpc.data as any[]) ?? null;
+        let fetchError = rpc.error;
+
+        if (fetchError) {
+          logger.warn('[useMascotSkills] RPC failed, using table:', fetchError.message);
+          const tbl = await supabase
+            .from('mascot_skills' as any)
+            .select('*')
+            .eq('mascot_id', mascotId)
+            .eq('is_active', true)
+            .order('sort_order', { ascending: true })
+            .order('created_at', { ascending: true });
+          rows = tbl.data as any[] | null;
+          fetchError = tbl.error;
+        }
+
+        if (fetchError) {
+          logger.warn('[useMascotSkills] Table read failed, using public view:', fetchError.message);
+          const pub = await supabase
+            .from('public_mascot_skills' as any)
+            .select('*')
+            .eq('mascot_id', mascotId)
+            .eq('is_active', true)
+            .order('sort_order', { ascending: true })
+            .order('created_at', { ascending: true });
+          rows = pub.data as any[] | null;
+          fetchError = pub.error;
+        }
 
         if (!isActive || latestMascotIdRef.current !== mascotId) return;
 
-        if (error) {
-          logger.error('[useMascotSkills] DB error:', error);
-          setError(error.message);
+        if (fetchError) {
+          logger.error('[useMascotSkills] DB error:', fetchError);
+          setError(fetchError.message);
           setSkills([]);
         } else {
-          logger.debug('[useMascotSkills] Fetched skills:', data?.length || 0, 'skills');
-
-          // Full access: Admin, Pro users, free mascot, OR mascot owner (sees real prompts)
-          const hasFullAccess = isAdmin || isSubscribed || isMascotFree || isMascotOwner;
-          const enrichedData = (data || [])
-            .filter((skill: any) => skill.mascot_id === mascotId)
-            .map((skill: any) => ({
-              ...skill,
-              // For users without full access, mask the full prompt (client-side)
-              skill_prompt: hasFullAccess ? (skill.skill_prompt || null) : null,
-              skill_prompt_preview: skill.skill_prompt_preview
-                || (skill.skill_prompt ? skill.skill_prompt.substring(0, Math.max(1, Math.floor(skill.skill_prompt.length / 4))) : ''),
-              is_full_access: hasFullAccess,
-            }));
-
-          setSkills(enrichedData as MascotSkill[]);
+          logger.debug('[useMascotSkills] Fetched skills:', rows?.length || 0, 'skills');
+          setSkills(enrichMascotSkillRows(rows, mascotId));
           setError(null);
         }
       } catch (err: any) {
@@ -366,7 +388,7 @@ export function useMascotSkills(mascotId: string | null, isMascotFree: boolean =
     return () => {
       isActive = false;
     };
-  }, [mascotId, isAdmin, isSubscribed, isMascotFree, isMascotOwner, refreshKey]);
+  }, [mascotId, refreshKey]);
 
   const refetch = useCallback(async () => {
     return new Promise<void>((resolve) => {
@@ -822,7 +844,6 @@ export async function getCombinedPrompt(
   const skill = skillsList.find((s) => s.id === skillId);
   if (!skill) throw new Error('Skill not found');
 
-  // For non-admins, skill_prompt will be null - use preview or throw
   const skillPrompt = skill.skill_prompt || skill.skill_prompt_preview;
   const personality = personalityData?.personality || '';
 
