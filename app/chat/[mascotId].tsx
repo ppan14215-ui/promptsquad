@@ -52,6 +52,7 @@ import { createConversation, saveMessage, generateConversationTitle, useConversa
 import { useMascotAccess, incrementTrialUsage } from '@/services/mascot-access';
 import { ChainOfThought } from '@/components/chat/ChainOfThought';
 import { StreamingCursor } from '@/components/chat/StreamingCursor';
+import { resolveMascotIsFree } from '@/config/mascots';
 
 // Message types
 type MessageRole = 'user' | 'assistant';
@@ -76,6 +77,24 @@ type ChatTab = 'chat' | 'sources' | 'skills' | 'personality' | 'history';
 
 type ApiLlmProvider = 'openai' | 'gemini' | 'perplexity' | 'grok' | 'claude';
 
+/**
+ * Transport-level failures (browser/RN), not HTTP 4xx/5xx bodies from the Edge Function.
+ * Avoid matching generic "fetch" — that mislabels many server errors.
+ */
+function isLikelyClientNetworkError(message: string): boolean {
+  const m = message.toLowerCase();
+  if (m.includes('cors') || m.includes('cross-origin')) return false;
+  return (
+    m.includes('failed to fetch') ||
+    m.includes('networkerror') ||
+    m.includes('network request failed') ||
+    m.includes('load failed') ||
+    m.includes('the network connection was lost') ||
+    m.includes('internet connection appears to be offline') ||
+    /econnrefused|enotfound|etimedout|socket hang up|net::err_/i.test(message)
+  );
+}
+
 /** Normalize DB / admin UI `preferred_provider` to Edge Function codes (lowercase). */
 function normalizePreferredProvider(
   raw: string | null | undefined
@@ -92,6 +111,31 @@ function normalizePreferredProvider(
   };
   if (alias[x]) return alias[x];
   return undefined;
+}
+
+function inferMimeTypeFromBase64(base64: string | undefined): string | undefined {
+  if (!base64) return undefined;
+  const cleaned = base64.trim();
+  if (!cleaned) return undefined;
+
+  // PNG signature: 89 50 4E 47
+  if (cleaned.startsWith('iVBOR')) return 'image/png';
+  // JPEG signature: FF D8 FF
+  if (cleaned.startsWith('/9j/')) return 'image/jpeg';
+  // GIF signatures: GIF87a / GIF89a
+  if (cleaned.startsWith('R0lGOD')) return 'image/gif';
+  // WEBP starts with RIFF....WEBP
+  if (cleaned.startsWith('UklGR')) return 'image/webp';
+  return undefined;
+}
+
+function resolveAttachmentMimeType(
+  attachment?: { mimeType?: string; base64?: string }
+): string {
+  const inferred = inferMimeTypeFromBase64(attachment?.base64);
+  if (inferred) return inferred;
+  if (attachment?.mimeType && attachment.mimeType.startsWith('image/')) return attachment.mimeType;
+  return 'image/jpeg';
 }
 
 /** Expo Router may pass search params as `string | string[]`. */
@@ -666,7 +710,7 @@ export default function ChatScreen() {
   const canEdit = isAdmin || isSubscribed;
 
   // Fetch skills and personality from database
-  const { skills: dbSkills, isLoading: skillsLoading, error: skillsError, refetch: refetchSkills } = useMascotSkills(resolvedMascotId || null, dbMatch?.is_free ?? false, isOwner);
+  const { skills: dbSkills, isLoading: skillsLoading, error: skillsError, refetch: refetchSkills } = useMascotSkills(resolvedMascotId || null, resolveMascotIsFree(dbMatch), isOwner);
   const { personality: dbPersonality, isLoading: personalityLoading, refetch: refetchPersonality } = useMascotPersonality(resolvedMascotId || null);
 
   // Fetch like data for mascot
@@ -1356,7 +1400,9 @@ export default function ChatScreen() {
         (effSkill?.id ?? activeSkillId) || undefined, // skillId (row id for Edge lookup)
         providerOverride as any, // provider override (undefined = system chooses)
         deepThinkingEnabled, // Deep Thinking mode (uses pro models)
-        attachment && attachment.base64 ? { mimeType: attachment.mimeType || 'image/jpeg', base64: attachment.base64 } : undefined,
+        attachment && attachment.base64
+          ? { mimeType: resolveAttachmentMimeType(attachment), base64: attachment.base64 }
+          : undefined,
         mascot.taskCategory, // Pass task category for auto provider selection
         webSearchEnabled, // Enable web grounding
         (thinking) => setThinkingStatus(thinking), // Transient thinking indicator callback
@@ -1443,10 +1489,7 @@ export default function ChatScreen() {
         errorMessage.toLowerCase().includes('cross-origin');
       const isAuthError = errorMessage.toLowerCase().includes('unauthorized') ||
         errorMessage.toLowerCase().includes('not authenticated');
-      const isConnectionError = (errorMessage.toLowerCase().includes('connection') ||
-        errorMessage.toLowerCase().includes('network') ||
-        errorMessage.toLowerCase().includes('fetch') ||
-        errorMessage.toLowerCase().includes('timeout')) && !isCorsError;
+      const isConnectionError = isLikelyClientNetworkError(errorMessage) && !isCorsError;
       const isProLimitReached = errorMessage.includes('429') || errorMessage.toLowerCase().includes('monthly pro limit reached');
 
       // Provide specific error messages
@@ -1456,7 +1499,8 @@ export default function ChatScreen() {
       } else if (isAuthError) {
         userFriendlyMessage = 'Authentication error: Please sign in again.';
       } else if (isConnectionError) {
-        userFriendlyMessage = 'Connection error: Please check your internet connection and try again.';
+        userFriendlyMessage =
+          'Could not reach the chat service (network). Check your connection, VPN/ad-blockers, and try again. If it persists, the chat server may be busy — check Supabase Edge Function logs.';
       } else if (isProLimitReached) {
         userFriendlyMessage = "You've reached your monthly limit of 300 premium messages. Your usage resets next month.\n\nYou can continue chatting using the free models like Gemini—switch your model in the input bar to keep going.";
       } else {
@@ -1690,10 +1734,7 @@ export default function ChatScreen() {
     const skillLabel = typeof skill === 'string' ? skill : skill.skill_label;
     const skillIdToActivate = typeof skill === 'string' ? null : skill.id;
 
-    // CRITICAL: Get the FULL skill prompt from the skill object or from dbSkills
-    // For non-admin users, skill_prompt will be null - DO NOT use skill_prompt_preview
-    // The Edge Function will fetch the full prompt from the database using skillId
-    // We only use skill_prompt (full prompt), never skill_prompt_preview (partial preview)
+    // Full skill prompt from client or dbSkills; Edge Function can still resolve by skillId if missing.
     let skillPrompt = typeof skill === 'string' ? null : skill.skill_prompt;
 
     // If we don't have the prompt from the skill object, try to get it from dbSkills
@@ -2001,10 +2042,7 @@ export default function ChatScreen() {
         errorMessage.toLowerCase().includes('cross-origin');
       const isAuthError = errorMessage.toLowerCase().includes('unauthorized') ||
         errorMessage.toLowerCase().includes('not authenticated');
-      const isConnectionError = (errorMessage.toLowerCase().includes('connection') ||
-        errorMessage.toLowerCase().includes('network') ||
-        errorMessage.toLowerCase().includes('fetch') ||
-        errorMessage.toLowerCase().includes('timeout')) && !isCorsError;
+      const isConnectionError = isLikelyClientNetworkError(errorMessage) && !isCorsError;
       const isProLimitReached = errorMessage.includes('429') || errorMessage.toLowerCase().includes('monthly pro limit reached');
 
       // Provide specific error messages
@@ -2014,7 +2052,8 @@ export default function ChatScreen() {
       } else if (isAuthError) {
         userFriendlyMessage = 'Authentication error: Please sign in again.';
       } else if (isConnectionError) {
-        userFriendlyMessage = 'Connection error: Please check your internet connection and try again.';
+        userFriendlyMessage =
+          'Could not reach the chat service (network). Check your connection, VPN/ad-blockers, and try again. If it persists, the chat server may be busy — check Supabase Edge Function logs.';
       } else if (isProLimitReached) {
         userFriendlyMessage = "You've reached your monthly limit of 300 premium messages. Your usage resets next month.\n\nYou can continue chatting using the free models like Gemini—switch your model in the input bar to keep going.";
       } else {
@@ -2301,26 +2340,26 @@ export default function ChatScreen() {
                 </Text>
               ) : (
                 skillsForMascot.map((skill) => {
-                  // Check if skill is locked (user doesn't have full access)
-                  const isSkillLocked = !skill.is_full_access;
+                  const hasPromptText = !!(skill.skill_prompt?.trim());
+                  const isSkillLocked = !hasPromptText;
 
                   return (
                     <Pressable
                       key={skill.id}
                       onPress={() => {
-                        if (!isSkillLocked || skill.is_full_access) {
+                        if (!isSkillLocked) {
                           handleSkillPress(skill);
                         }
                       }}
                       style={[
                         styles.skillPreviewCard,
-                        isSkillLocked && !skill.is_full_access && { opacity: 0.6 },
+                        isSkillLocked && { opacity: 0.6 },
                       ]}
                     >
                       <SkillPreview
                         skillLabel={skill.skill_label}
                         skillPromptPreview={skill.skill_prompt_preview || ''}
-                        isFullAccess={skill.is_full_access || false}
+                        isFullAccess={skill.is_full_access ?? hasPromptText}
                         fullPrompt={skill.skill_prompt}
                         mascotColor={mascot.color}
                       />
@@ -2413,7 +2452,7 @@ export default function ChatScreen() {
       ) : activeTab === 'history' ? (
         <ChatHistory
           mascotId={mascotId}
-          isMascotFree={dbMatch?.is_free ?? false}
+          isMascotFree={resolveMascotIsFree(dbMatch)}
           onConversationPress={(conversationId) => {
             // Switch to the selected conversation
             // This will trigger the useEffect to load messages
@@ -3123,6 +3162,11 @@ const styles = StyleSheet.create({
     paddingBottom: 0, // Will be set dynamically based on safe area
     alignItems: 'center',
     marginBottom: 0, // Ensure no extra margin
+    ...Platform.select({
+      /** Above skills strip (zIndex 50) so LLM dropdown can extend upward without sitting under pills. */
+      web: { zIndex: 60, position: 'relative' as const },
+      default: {},
+    }),
   },
   purchaseContainer: {
     width: '100%',
