@@ -5,7 +5,7 @@
 export const AI_MODEL_DISPLAY = {
   openai: 'OpenAI GPT-5.4',
   gemini: 'Google Gemini 3.1 Pro',
-  geminiFlash: 'Google Gemini 3 Flash',
+  geminiFlash: 'Google Gemini 3.1 Pro',
   perplexity: 'Perplexity Sonar Reasoning Pro',
   grok: 'xAI Grok 4.1',
   claude: 'Anthropic Claude 4.5 Sonnet',
@@ -38,9 +38,9 @@ export const LLM_VENDOR = {
 export const LLM_AUTO_SUBTITLE = 'Best model per task';
 
 export const LLM_OPTION_DESCRIPTIONS = {
-  gemini: 'Google frontier multimodal (Pro / Flash)',
+  gemini: 'Google frontier multimodal (latest Pro)',
   openai: 'OpenAI flagship for reasoning & coding',
-  perplexity: 'Web-grounded research',
+  perplexity: 'Web-grounded reasoning research',
   grok: 'xAI with live X and search',
   claude: 'Long-form articulation & creativity',
 } as const;

@@ -2,10 +2,12 @@ import { View, StyleSheet, ScrollView, Text, Modal, Pressable, Platform, useWind
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { MascotCard, TextButton, BigPrimaryButton, CreateCustomCard, MascotDetails, Skill, PaywallModal, CreateMascotModal } from '@/components';
+import { resolveMascotDetailsShortBio } from '@/lib/mascot-short-bio';
 import { useTheme, textStyles, fontFamilies } from '@/design-system';
 import { useI18n } from '@/i18n';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useIsAdmin, MascotBasic, useMascotSkills, MascotSkill, deleteMascot } from '@/services/admin';
+import { resolveMascotIsFree } from '@/config/mascots';
 import { useMascotsData } from '@/context/MascotsDataContext';
 import { useAuth } from '@/services/auth';
 import { getMascotImageSource, getMascotGrayscaleImageSource } from '@/services/admin/mascot-images';
@@ -482,7 +484,12 @@ export default function StoreScreen() {
           id: m.id,
           name: m.name,
           subtitle: m.subtitle || '',
-          customBio: m.bio || undefined,
+          customBio:
+            resolveMascotDetailsShortBio({
+              bio: m.bio,
+              name: m.name,
+              skills: hardcodedMascot?.skills ?? [],
+            }) || undefined,
           image: imageSource,
           grayscaleImage: grayscaleSource || undefined,
           color: (m.color || 'yellow') as MascotColor,
@@ -704,7 +711,10 @@ export default function StoreScreen() {
   }) {
     // Try to fetch from database if using database mascots
     const dbMascot = dbMascots.find(m => m.id === mascot.id);
-    const { skills: dbSkills } = useMascotSkills(mascot.id, dbMascot?.is_free ?? (mascot as any).isFree ?? false);
+    const { skills: dbSkills } = useMascotSkills(
+      mascot.id,
+      resolveMascotIsFree(dbMascot ?? { id: mascot.id, isFree: (mascot as any).isFree })
+    );
 
     // Use database skills if available, otherwise use hardcoded
     const displaySkills: Skill[] = React.useMemo(() => {
@@ -715,6 +725,7 @@ export default function StoreScreen() {
           prompt: skill.skill_prompt || undefined,
           summary: skill.skill_summary?.trim() || undefined,
           promptPreview: skill.skill_prompt_preview?.trim() || undefined,
+          preferredProvider: skill.preferred_provider ?? null,
         }));
       }
       // Fallback to hardcoded skills

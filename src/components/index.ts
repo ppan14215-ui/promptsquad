@@ -8,6 +8,7 @@ export * from './ui/MediumDarkButton';
 export * from './ui/TextButton';
 export * from './ui/LinkPill';
 export * from './ui/SkillPillWithTooltip';
+export * from './ui/ModelPillRow';
 export * from './ui/ColoredTab';
 export * from './ui/SegmentedToggle';
 export * from './ui/InputField';

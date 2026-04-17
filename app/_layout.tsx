@@ -28,8 +28,7 @@ const CHANGELOG_VERSION_KEY = 'last_seen_changelog_version';
 const LAST_VISITED_PATH_KEY = 'last_visited_path';
 const PASSWORD_RECOVERY_ACTIVE_KEY = 'password_recovery_active';
 const ONBOARDING_CHECK_TIMEOUT_MS = 6000;
-// Keep onboarding screens in codebase, but disable gating for now.
-const ONBOARDING_SELECTION_ENABLED = false;
+const ONBOARDING_SELECTION_ENABLED = true;
 
 function getCurrentAppPath(pathname: string) {
   if (Platform.OS === 'web' && typeof window !== 'undefined') {
@@ -170,12 +169,32 @@ function AuthGate({ children }: { children: React.ReactNode }) {
         router.replace('/(auth)/reset-password');
         return;
       }
-      // 2. Logged in, but on Auth pages (Login only; callback handled above) -> Redirect to App
+      // 2. Logged in, but on Auth pages (Login only; callback handled above) -> Redirect to onboarding/app
       else if (user && inAuthGroup) {
         // Allow recovery users to stay on reset screen to set new password.
         if (inResetPasswordRoute) {
           return;
         }
+        if (ONBOARDING_SELECTION_ENABLED && !isCheckingOnboarding) {
+          setIsCheckingOnboarding(true);
+          try {
+            const completed = await hasCompletedOnboardingWithTimeout();
+            setOnboardingChecked(true);
+            setIsCheckingOnboarding(false);
+
+            if (!completed) {
+              router.replace('/(onboarding)/showcase');
+              return;
+            }
+          } catch (e) {
+            setIsCheckingOnboarding(false);
+            router.replace('/(onboarding)/showcase');
+            return;
+          }
+        } else if (!ONBOARDING_SELECTION_ENABLED) {
+          setOnboardingChecked(true);
+        }
+
         // Check if we have a saved redirect
         const redirectPath = await AsyncStorage.getItem('redirect_after_login');
         if (isRestorablePath(redirectPath)) {
@@ -190,26 +209,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
           return;
         }
 
-        if (!ONBOARDING_SELECTION_ENABLED) {
-          setOnboardingChecked(true);
-          router.replace('/(tabs)');
-          return;
-        }
-
-        // Onboarding check
-        if (!isCheckingOnboarding) {
-          setIsCheckingOnboarding(true);
-          try {
-            const completed = await hasCompletedOnboardingWithTimeout();
-            setOnboardingChecked(true);
-            setIsCheckingOnboarding(false);
-            if (completed) router.replace('/(tabs)');
-            else router.replace('/(onboarding)/select-mascots');
-          } catch (e) {
-            setIsCheckingOnboarding(false);
-            router.replace('/(onboarding)/select-mascots');
-          }
-        }
+        router.replace('/(tabs)');
       }
       // 3. Logged in, on Onboarding -> Just mark checked
       else if (user && inOnboardingGroup) {
@@ -251,7 +251,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
             setIsCheckingOnboarding(false);
 
             if (!completed) {
-              router.replace('/(onboarding)/select-mascots');
+              router.replace('/(onboarding)/showcase');
             } else if (currentPath === '/' || currentPath.startsWith('/?') || currentPath.startsWith('/#')) {
               const lastVisitedPath = await AsyncStorage.getItem(LAST_VISITED_PATH_KEY);
               if (isRestorablePath(lastVisitedPath)) {

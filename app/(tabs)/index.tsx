@@ -21,9 +21,11 @@ import {
   COLOR_LIGHT_MAP,
   MascotColor,
   OwnedMascot,
-  mascotImages
+  mascotImages,
+  resolveMascotIsFree,
 } from '@/config/mascots';
 import { useMergedMascots } from '@/hooks/useMergedMascots';
+import { resolveMascotDetailsShortBio } from '@/lib/mascot-short-bio';
 import { resolveMascotColor } from '@/lib/utils/mascot-colors';
 
 // Responsive breakpoint
@@ -124,7 +126,7 @@ export default function HomeScreen() {
   // Fetch skills from database for the selected mascot (only if mascot exists)
   const { skills: dbSkills, isLoading: isSkillsLoading } = useMascotSkills(
     selectedMascot?.id || '',
-    selectedMascot?.isFree ?? false,
+    resolveMascotIsFree(selectedMascot),
     isMascotOwner
   );
 
@@ -143,6 +145,7 @@ export default function HomeScreen() {
         prompt: s.skill_prompt || undefined,
         summary: s.skill_summary?.trim() || undefined,
         promptPreview: s.skill_prompt_preview?.trim() || undefined,
+        preferredProvider: s.preferred_provider ?? null,
       }));
     }
     if (selectedMascot.skills && selectedMascot.skills.length > 0) {
@@ -311,6 +314,7 @@ export default function HomeScreen() {
         skills: m.skills || [],
         models: m.models || [],
         bio: m.bio,
+        longBio: m.longBio ?? null,
         isCustom: m.isCustom || false,
         isPro: !m.isCustom && (m.isPro || isLocked),
         isLocked,
@@ -745,6 +749,16 @@ export default function HomeScreen() {
                 imageSource={selectedMascotDetails.image}
                 personality={selectedMascotDetails.personality}
                 models={selectedMascotDetails.models}
+                customBio={
+                  resolveMascotDetailsShortBio({
+                    bio: selectedMascotDetails.bio,
+                    name: selectedMascotDetails.name,
+                    skills:
+                      selectedMascotDetails.id === selectedMascot?.id
+                        ? displaySkills
+                        : selectedMascotDetails.skills,
+                  }) || undefined
+                }
                 // Use displaySkills if this is the currently selected mascot (which has dynamic skills loaded)
                 // Otherwise use the mascot's own skills (fallback/static)
                 skills={selectedMascotDetails.id === selectedMascot?.id ? displaySkills : selectedMascotDetails.skills}

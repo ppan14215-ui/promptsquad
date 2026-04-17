@@ -1,4 +1,44 @@
+import { Platform } from 'react-native';
 import { supabase } from '@/services/supabase';
+
+/*
+ * Edge Function SSE protocol (supabase/functions/chat)
+ * -----------------------------------------------------
+ * Each event is a single `data: {...}` line terminated by `\n\n`.
+ * The client understands the following event shapes:
+ *
+ *   { content: "chunk" }         Answer tokens. Concatenate on client.
+ *   { reasoning: "chunk" }       Chain-of-thought tokens. Accumulate and
+ *                                render in the collapsible ReasoningTrace
+ *                                block. Only emit for providers that
+ *                                actually produce a reasoning trace:
+ *                                  Claude: set `thinking: { type: "enabled",
+ *                                          budget_tokens: N }` on the
+ *                                          Anthropic request and forward
+ *                                          every `thinking_delta` as a
+ *                                          `reasoning` event.
+ *                                  OpenAI o-series: use the Responses API
+ *                                          with `reasoning: { effort: "medium" }`
+ *                                          and forward reasoning summary
+ *                                          deltas.
+ *                                  Gemini/Grok/Perplexity: skip unless
+ *                                          they expose one.
+ *   { reasoningDone: true,       Emit when the model transitions from
+ *     reasoningSeconds: 12 }     reasoning → answer. `reasoningSeconds` is
+ *                                optional; client uses it to render
+ *                                "Thought for 12s". If omitted, the client
+ *                                uses its own wall-clock timer.
+ *   { thinking: "Searching…" }   Short transient status label (existing).
+ *                                For things the user should see at a
+ *                                glance while waiting. Not persisted.
+ *   { citations: [url, url] }    Perplexity source URLs.
+ *   { done: true, model, provider } End of stream.
+ *   { error: "..." }             Terminal failure.
+ *
+ * Ordering expectation:
+ *   reasoning* → reasoningDone → content* → done
+ *   thinking events can appear anywhere before `done`.
+ */
 
 export type ChatMessage = {
   role: 'user' | 'assistant' | 'system';
@@ -11,6 +51,15 @@ export type SecureChatResponse = {
   provider?: 'openai' | 'gemini' | 'perplexity' | 'grok' | 'claude';
   citations?: string[]; // Citation URLs from Perplexity
   downgradedFrom?: string; // Original model if downgraded
+  /**
+   * Full reasoning / chain-of-thought trace, concatenated from all
+   * `data.reasoning` SSE events. Populated when the backend enables extended
+   * thinking (Claude `thinking: enabled`, OpenAI o-series, etc.) and streams
+   * the trace back. Empty / undefined otherwise.
+   */
+  reasoning?: string;
+  /** Wall-clock seconds spent in the reasoning phase, if the backend reported it. */
+  reasoningSeconds?: number;
 };
 
 /**
@@ -28,7 +77,19 @@ export async function secureChatStream(
   taskCategory?: string,
   webSearch?: boolean,
   onThinking?: (thinkingStatus: string | null) => void,
-  onDowngrade?: (originalModel: string) => void
+  onDowngrade?: (originalModel: string) => void,
+  /**
+   * Called for every `data.reasoning` SSE event. Each chunk is appended —
+   * callers are expected to accumulate them. Only fires when the backend has
+   * extended thinking enabled for the selected model.
+   */
+  onReasoningChunk?: (chunk: string) => void,
+  /**
+   * Called once the reasoning phase ends and the model starts emitting the
+   * final answer. Receives the total wall-clock seconds spent thinking (if
+   * the backend supplied it via `data.reasoningSeconds`, otherwise undefined).
+   */
+  onReasoningDone?: (seconds?: number) => void,
 ): Promise<SecureChatResponse> {
   // Get fresh session (getUser refreshes token if needed)
   const { data: { user: currentUser }, error: userError } = await supabase.auth.getUser();
@@ -97,10 +158,10 @@ export async function secureChatStream(
   if (webSearch !== undefined) requestBody.webSearch = webSearch;
   if (provider) requestBody.provider = provider;
 
-  // Dev/Prod Separation:
-  // - Localhost (__DEV__): Uses 'chat-dev' for safe testing
-  // - Production: Uses 'chat' (stable)
-  const functionName = __DEV__ ? 'chat-dev' : 'chat';
+  // `chat-dev` is optional and must be deployed separately. Expo web runs with __DEV__ but always
+  // calls the remote Supabase URL — only `chat` exists there, so web would 404 on chat-dev.
+  const functionName =
+    __DEV__ && Platform.OS !== 'web' ? 'chat-dev' : 'chat';
 
   console.log('[SecureChat] Sending request to Edge Function:', {
     url: `${supabaseUrl}/functions/v1/${functionName}`,
@@ -139,18 +200,32 @@ export async function secureChatStream(
     console.warn('[SecureChat] Failed to decode token for debugging', e);
   }
 
+  // Fresh access token before Edge Function (web often had stale/expired session → 401).
+  const refreshed = await supabase.auth.refreshSession();
+  if (refreshed.data.session?.access_token) {
+    session = refreshed.data.session;
+  }
+  if (!session?.access_token) {
+    throw new Error('Session expired. Please sign in again.');
+  }
+
+  // Gateway validates Authorization as the anon key (user JWT there → "Invalid JWT").
+  // Web: avoid custom header CORS by sending the session in JSON as _authAccessToken (Edge strips it).
+  // Native: x-user-token header + anon Bearer (unchanged).
+  const isWeb = Platform.OS === 'web';
+  const bodyWithAuth = {
+    ...requestBody,
+    _authAccessToken: session.access_token,
+  };
   const response = await fetch(`${supabaseUrl}/functions/v1/${functionName}`, {
     method: 'POST',
     headers: {
-      // PROXY BYPASS: Send Anon Key in Auth header to satisfy Gateway verification
-      // The Gateway will validate this (it's valid) and let the request through.
-      'Authorization': `Bearer ${supabaseAnonKey}`,
-      // Pass the actual User Token in a custom header for the Function to validate
-      'x-user-token': session.access_token,
+      Authorization: `Bearer ${supabaseAnonKey}`,
       'Content-Type': 'application/json',
-      'apikey': supabaseAnonKey,
+      apikey: supabaseAnonKey,
+      ...(!isWeb ? { 'x-user-token': session.access_token } : {}),
     },
-    body: JSON.stringify(requestBody),
+    body: JSON.stringify(bodyWithAuth),
   });
 
   // Check for downgrade header
@@ -199,6 +274,8 @@ export async function secureChatStream(
       let model = '';
       let actualProvider: 'openai' | 'gemini' | 'perplexity' | 'grok' | 'claude' | undefined = undefined;
       let citations: string[] | undefined = undefined;
+      let fullReasoning = '';
+      let reasoningSeconds: number | undefined = undefined;
 
       for (const line of lines) {
         try {
@@ -210,8 +287,17 @@ export async function secureChatStream(
           } else if (data.content) {
             fullContent += data.content;
             onChunk(data.content);
+          } else if (data.reasoning) {
+            // Chain-of-thought chunk. Accumulate + forward to caller.
+            fullReasoning += data.reasoning;
+            if (onReasoningChunk) onReasoningChunk(data.reasoning);
+          } else if (data.reasoningDone) {
+            if (typeof data.reasoningSeconds === 'number') {
+              reasoningSeconds = data.reasoningSeconds;
+            }
+            if (onReasoningDone) onReasoningDone(reasoningSeconds);
           } else if (data.thinking) {
-            // Show thinking status in UI (transient indicator)
+            // Short transient status label (existing behavior).
             if (onThinking) {
               onThinking(data.thinking);
             }
@@ -223,7 +309,15 @@ export async function secureChatStream(
           throw e; // Re-throw actual errors
         }
       }
-      return { content: fullContent, model, provider: actualProvider, citations, downgradedFrom: downgradedFrom || undefined };
+      return {
+        content: fullContent,
+        model,
+        provider: actualProvider,
+        citations,
+        downgradedFrom: downgradedFrom || undefined,
+        reasoning: fullReasoning || undefined,
+        reasoningSeconds,
+      };
     } catch (e: any) {
       console.error('[SecureChat] Fallback failed:', e);
       throw new Error(`No response body and fallback failed: ${e.message}`);
@@ -235,6 +329,8 @@ export async function secureChatStream(
   let model = '';
   let actualProvider: 'openai' | 'gemini' | 'perplexity' | 'grok' | 'claude' | undefined = undefined;
   let citations: string[] | undefined = undefined;
+  let fullReasoning = '';
+  let reasoningSeconds: number | undefined = undefined;
 
   // Buffer incomplete SSE events - chunks can be split across network packets
   let sseBuffer = '';
@@ -267,6 +363,14 @@ export async function secureChatStream(
         } else if (data.content) {
           fullContent += data.content;
           onChunk(data.content);
+        } else if (data.reasoning) {
+          fullReasoning += data.reasoning;
+          if (onReasoningChunk) onReasoningChunk(data.reasoning);
+        } else if (data.reasoningDone) {
+          if (typeof data.reasoningSeconds === 'number') {
+            reasoningSeconds = data.reasoningSeconds;
+          }
+          if (onReasoningDone) onReasoningDone(reasoningSeconds);
         } else if (data.thinking) {
           if (onThinking) {
             onThinking(data.thinking);
@@ -294,6 +398,14 @@ export async function secureChatStream(
         } else if (data.content) {
           fullContent += data.content;
           onChunk(data.content);
+        } else if (data.reasoning) {
+          fullReasoning += data.reasoning;
+          if (onReasoningChunk) onReasoningChunk(data.reasoning);
+        } else if (data.reasoningDone) {
+          if (typeof data.reasoningSeconds === 'number') {
+            reasoningSeconds = data.reasoningSeconds;
+          }
+          if (onReasoningDone) onReasoningDone(reasoningSeconds);
         } else if (data.citations) {
           citations = data.citations;
         }
@@ -303,7 +415,15 @@ export async function secureChatStream(
     }
   }
 
-  return { content: fullContent, model, provider: actualProvider, citations, downgradedFrom: downgradedFrom || undefined };
+  return {
+    content: fullContent,
+    model,
+    provider: actualProvider,
+    citations,
+    downgradedFrom: downgradedFrom || undefined,
+    reasoning: fullReasoning || undefined,
+    reasoningSeconds,
+  };
 }
 
 /**

@@ -40,6 +40,8 @@ function inferIsFreeMascot(m: { id: string; is_free?: boolean | null; isFree?: b
     return !Number.isNaN(n) && n <= 4;
 }
 
+const STARTER_MASCOT_IDS = new Set(['1', '2', '3', '4']);
+
 /** Batch-fetch active skills via get_mascot_skills_by_ids RPC (full prompts); falls back to mascot_skills table. */
 function useAllMascotSkills(mascotIds: string[], dbMascots: MascotBasic[]) {
     const [skillsByMascot, setSkillsByMascot] = useState<
@@ -206,9 +208,9 @@ export function useMergedMascots() {
                     // Subscribers see all visible, non-coming-soon mascots
                     if (isSubscribed) return true;
 
-                    // Pro / custom: onboarding or purchases (unlockedMascotIds), or user's own custom.
-                    // Free-tier mascots are always shown so the deck is never empty once DB rows load.
-                    if (m.isFree) return true;
+                    // Default accounts only see the starter squad by default.
+                    // Additional mascots appear only if explicitly unlocked/owned or self-created.
+                    if (STARTER_MASCOT_IDS.has(m.id)) return true;
 
                     const hasAccess = unlockedMascotIds.includes(m.id);
                     const isOwnCustom =

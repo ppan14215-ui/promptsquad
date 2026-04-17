@@ -29,6 +29,7 @@ import {
 } from '@/services/admin';
 import { useMascotsData } from '@/context/MascotsDataContext';
 import { useAuth } from '@/services/auth';
+import { resolveMascotIsFree } from '@/config/mascots';
 
 export default function SkillsScreen() {
   const { colors } = useTheme();
@@ -51,7 +52,7 @@ export default function SkillsScreen() {
     isLoading: isSkillsLoading,
     refetch: refetchSkills,
     error: skillsError,
-  } = useMascotSkills(selectedMascotId, selectedMascot?.is_free ?? false);
+  } = useMascotSkills(selectedMascotId, resolveMascotIsFree(selectedMascot));
   const {
     personality: mascotPersonality,
     isLoading: isPersonalityLoading,
@@ -522,7 +523,7 @@ export default function SkillsScreen() {
                       <SkillPreview
                         skillLabel={skill.skill_label}
                         skillPromptPreview={skill.skill_prompt_preview || ''}
-                        isFullAccess={skill.is_full_access || false}
+                        isFullAccess={skill.is_full_access ?? !!skill.skill_prompt?.trim()}
                         fullPrompt={skill.skill_prompt || ''}
                         mascotColor={selectedMascot.color}
                       />

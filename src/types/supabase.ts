@@ -455,15 +455,35 @@ export type Database = {
       get_mascot_skills: {
         Args: { p_mascot_id: string }
         Returns: {
-          created_at: string
+          created_at: string | null
           id: string
-          is_active: boolean
-          is_full_access: boolean
+          is_active: boolean | null
+          is_full_access: boolean | null
           mascot_id: string
           skill_label: string
-          skill_prompt: string
-          sort_order: number
-          updated_at: string
+          skill_prompt: string | null
+          skill_prompt_preview: string | null
+          skill_summary: string | null
+          sort_order: number | null
+          preferred_provider: string | null
+          updated_at: string | null
+        }[]
+      }
+      get_mascot_skills_by_ids: {
+        Args: { p_mascot_ids: string[] }
+        Returns: {
+          created_at: string | null
+          id: string
+          is_active: boolean | null
+          is_full_access: boolean | null
+          mascot_id: string
+          skill_label: string
+          skill_prompt: string | null
+          skill_prompt_preview: string | null
+          skill_summary: string | null
+          sort_order: number | null
+          preferred_provider: string | null
+          updated_at: string | null
         }[]
       }
       increment_trial_usage:

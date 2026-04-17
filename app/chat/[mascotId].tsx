@@ -51,6 +51,7 @@ import { useMascotLike } from '@/services/mascot-likes';
 import { createConversation, saveMessage, generateConversationTitle, useConversationMessages, deleteConversation, getConversation } from '@/services/chat-history';
 import { useMascotAccess, incrementTrialUsage } from '@/services/mascot-access';
 import { ChainOfThought } from '@/components/chat/ChainOfThought';
+import { ReasoningTrace } from '@/components/chat/ReasoningTrace';
 import { StreamingCursor } from '@/components/chat/StreamingCursor';
 import { resolveMascotIsFree } from '@/config/mascots';
 
@@ -65,6 +66,10 @@ type Message = {
   provider?: 'openai' | 'gemini' | 'perplexity' | 'grok' | 'claude'; // Provider used for this message
   citations?: string[]; // Citation URLs from Perplexity
   isThinking?: boolean;
+  /** Full chain-of-thought trace for this assistant message, if the model produced one. */
+  reasoning?: string;
+  /** Total wall-clock seconds the model spent in its reasoning phase. */
+  reasoningSeconds?: number;
   attachment?: {
     uri: string;
     mimeType?: string;
@@ -930,6 +935,14 @@ export default function ChatScreen() {
   const [streamingContent, setStreamingContent] = useState('');
   const [thinkingStatus, setThinkingStatus] = useState<string | null>(null); // Transient thinking indicator
   const [isRecording, setIsRecording] = useState(false);
+  // Chain-of-thought state — mirrors the pattern used in the onboarding
+  // preview. Chunks are accumulated in streamingReasoning while the model
+  // is in its reasoning phase; once reasoningDone fires (or the first
+  // content chunk arrives), the final trace is frozen onto the message
+  // object via the `reasoning` / `reasoningSeconds` fields.
+  const [streamingReasoning, setStreamingReasoning] = useState('');
+  const [isReasoning, setIsReasoning] = useState(false);
+  const [reasoningSeconds, setReasoningSeconds] = useState<number | undefined>(undefined);
 
   // Downgrade notification state
   const [showDowngradeToast, setShowDowngradeToast] = useState(false);
@@ -1107,6 +1120,11 @@ export default function ChatScreen() {
     setInputText('');
     setIsLoading(true);
     setStreamingContent('');
+    // Reset reasoning state for the new turn — any prior streaming chain-of
+    // -thought is already frozen onto its assistant message.
+    setStreamingReasoning('');
+    setIsReasoning(false);
+    setReasoningSeconds(undefined);
     // Reset scroll lock when user sends a new message
     isUserScrollingRef.current = false;
 
@@ -1379,6 +1397,12 @@ export default function ChatScreen() {
         console.log('[Chat] Filtered for Perplexity alternation:', secureMessages.length, '→', messagesToSend.length, 'messages');
       }
 
+      // Buffers for this turn's reasoning — frozen onto the assistant
+      // message once streaming finishes. Kept outside state so the loop
+      // body can update them synchronously without React batching delays.
+      let reasoningBuf = '';
+      let turnReasoningSeconds: number | undefined = undefined;
+
       // Use secure chat stream through Supabase Edge Function (avoids CORS)
       const response = await secureChatStream(
         mascotId || '1',
@@ -1386,6 +1410,9 @@ export default function ChatScreen() {
         (chunk) => {
           // Clear thinking status when content starts streaming
           setThinkingStatus(null);
+          // First content chunk marks the end of the reasoning phase, in
+          // case the backend didn't send reasoningDone explicitly.
+          if (fullContent.length === 0) setIsReasoning(false);
           fullContent += chunk;
           setStreamingContent(fullContent);
           // Auto-scroll while streaming - but only if user hasn't scrolled away
@@ -1406,7 +1433,21 @@ export default function ChatScreen() {
         mascot.taskCategory, // Pass task category for auto provider selection
         webSearchEnabled, // Enable web grounding
         (thinking) => setThinkingStatus(thinking), // Transient thinking indicator callback
-        handleDowngrade
+        handleDowngrade,
+        (chunk) => {
+          // Chain-of-thought chunk. First one flips into reasoning mode so
+          // ReasoningTrace renders; subsequent chunks append.
+          if (reasoningBuf.length === 0) setIsReasoning(true);
+          reasoningBuf += chunk;
+          setStreamingReasoning(reasoningBuf);
+        },
+        (seconds) => {
+          // Reasoning phase finished. Freeze the timer; ReasoningTrace
+          // auto-collapses once isStreaming flips false.
+          turnReasoningSeconds = seconds;
+          setReasoningSeconds(seconds);
+          setIsReasoning(false);
+        },
       );
 
       const assistantContent = response.content;
@@ -1477,9 +1518,16 @@ export default function ChatScreen() {
           model: response.model,
           provider: actualProvider, // Store which provider was used
           citations: response.citations, // Store Perplexity citations
+          // Freeze the reasoning trace onto the message so it's readable
+          // after the stream ends. Prefer the server-reported total over
+          // the local buffer count.
+          reasoning: response.reasoning || reasoningBuf || undefined,
+          reasoningSeconds: response.reasoningSeconds ?? turnReasoningSeconds,
         },
       ]);
       setStreamingContent('');
+      setStreamingReasoning('');
+      setIsReasoning(false);
     } catch (error) {
       console.error('AI Error:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -1520,6 +1568,8 @@ export default function ChatScreen() {
     } finally {
       setIsLoading(false);
       setThinkingStatus(null); // Clear thinking indicator
+      setStreamingReasoning('');
+      setIsReasoning(false);
       // Focus input after response completes so user can continue typing
       // Use longer delay to ensure response rendering is complete
       if (Platform.OS === 'web') {
@@ -1774,6 +1824,9 @@ export default function ChatScreen() {
     setMessages((prev) => [...prev, userMessage]);
     setIsLoading(true);
     setStreamingContent('');
+    setStreamingReasoning('');
+    setIsReasoning(false);
+    setReasoningSeconds(undefined);
     // setShowSkills(false); // Keep skills visible
 
     // Switch to chat tab to show the message
@@ -1969,6 +2022,10 @@ export default function ChatScreen() {
         console.warn('[Chat] No conversationId available to save user message');
       }
 
+      // Buffers for this skill turn's reasoning.
+      let reasoningBuf = '';
+      let turnReasoningSeconds: number | undefined = undefined;
+
       // Use secure chat stream through Supabase Edge Function (avoids CORS)
       // CRITICAL: Even though skill prompt is in the user message, we still pass skillId
       // as a fallback in case the prompt wasn't properly extracted above
@@ -1979,6 +2036,7 @@ export default function ChatScreen() {
         (chunk: string) => {
           // Clear thinking status when content starts streaming
           setThinkingStatus(null);
+          if (fullContent.length === 0) setIsReasoning(false);
           fullContent += chunk;
           setStreamingContent(fullContent);
           scrollViewRef.current?.scrollToEnd({ animated: false });
@@ -1991,7 +2049,17 @@ export default function ChatScreen() {
         mascot.taskCategory, // Pass task category for auto provider selection
         webSearchEnabled, // Enable web grounding
         (thinking) => setThinkingStatus(thinking), // Transient thinking indicator callback
-        handleDowngrade
+        handleDowngrade,
+        (chunk) => {
+          if (reasoningBuf.length === 0) setIsReasoning(true);
+          reasoningBuf += chunk;
+          setStreamingReasoning(reasoningBuf);
+        },
+        (seconds) => {
+          turnReasoningSeconds = seconds;
+          setReasoningSeconds(seconds);
+          setIsReasoning(false);
+        },
       );
 
       const assistantContent = response.content;
@@ -2030,9 +2098,13 @@ export default function ChatScreen() {
           content: assistantContent,
           model: response.model,
           provider: actualProvider, // Store which provider was used
+          reasoning: response.reasoning || reasoningBuf || undefined,
+          reasoningSeconds: response.reasoningSeconds ?? turnReasoningSeconds,
         },
       ]);
       setStreamingContent('');
+      setStreamingReasoning('');
+      setIsReasoning(false);
     } catch (error) {
       console.error('AI Error:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -2072,6 +2144,8 @@ export default function ChatScreen() {
     } finally {
       setIsLoading(false);
       setThinkingStatus(null); // Clear thinking indicator
+      setStreamingReasoning('');
+      setIsReasoning(false);
     }
   };
 
@@ -2547,6 +2621,15 @@ export default function ChatScreen() {
                 </View>
               ) : (
                 <View style={styles.assistantMessage}>
+                  {/* Persisted chain-of-thought trace for this assistant
+                      turn. Collapsed by default — tap to re-read. */}
+                  {message.reasoning ? (
+                    <ReasoningTrace
+                      reasoning={message.reasoning}
+                      isStreaming={false}
+                      seconds={message.reasoningSeconds}
+                    />
+                  ) : null}
                   {message.content && typeof message.content === 'string' && message.content.trim() ? (
                     <>
                       <Markdown
@@ -2602,6 +2685,22 @@ export default function ChatScreen() {
             </View>
           ))}
 
+          {/* Live reasoning trace — shows the model's chain of thought as
+              it streams. Renders as soon as the first reasoning chunk
+              arrives and sits above the streaming answer bubble. */}
+          {isLoading && (streamingReasoning.length > 0 || isReasoning) && (
+            <View style={[styles.messageWrapper, styles.assistantMessageWrapper]}>
+              <View style={styles.assistantMessage}>
+                <ReasoningTrace
+                  reasoning={streamingReasoning}
+                  isStreaming={isReasoning}
+                  seconds={reasoningSeconds}
+                  defaultExpanded
+                />
+              </View>
+            </View>
+          )}
+
           {/* Streaming response - smooth fade-in and blinking cursor for natural typing feel */}
           {isLoading && streamingContent && typeof streamingContent === 'string' && streamingContent.trim().length > 0 && (
             <StreamingMessageBlock>
@@ -2616,17 +2715,23 @@ export default function ChatScreen() {
             </StreamingMessageBlock>
           )}
 
-          {/* Thinking indicator - shows dynamic status (e.g., "🌐 Searching the web...") or generic "Thinking..." */}
-          {/* Thinking indicator - shows dynamic chain of thought */}
-          {isLoading && !streamingContent && (
-            <View style={[styles.messageWrapper, styles.assistantMessageWrapper]}>
-              <ChainOfThought
-                status={thinkingStatus}
-                isDeepThinking={deepThinkingEnabled}
-                contextPrompt={messages.filter(m => m.role === 'user').pop()?.content}
-              />
-            </View>
-          )}
+          {/* Pre-reasoning / pre-content indicator. Only visible when we
+              have neither reasoning nor answer yet — i.e. the request is
+              in-flight but the model hasn't started emitting anything.
+              Once reasoning or content starts flowing, the blocks above
+              take over. */}
+          {isLoading &&
+            !streamingContent &&
+            !streamingReasoning &&
+            !isReasoning && (
+              <View style={[styles.messageWrapper, styles.assistantMessageWrapper]}>
+                <ChainOfThought
+                  status={thinkingStatus}
+                  isDeepThinking={deepThinkingEnabled}
+                  contextPrompt={messages.filter(m => m.role === 'user').pop()?.content}
+                />
+              </View>
+            )}
         </ScrollView>
       )}
 

@@ -8,7 +8,7 @@ import Animated, {
   Extrapolation,
   Easing,
 } from 'react-native-reanimated';
-import type { SharedValue } from 'react-native-reanimated';
+import type { SharedValue } from 'react-native-reanimated/lib/typescript/commonTypes';
 import { Image } from 'expo-image';
 
 import type { OwnedMascot } from '@/config/mascots';
@@ -19,6 +19,9 @@ import {
   SkillPillWithTooltip,
   getSkillTooltipTextFromSummaryFields,
 } from '@/components/ui/SkillPillWithTooltip';
+import { ModelPillRow } from '@/components/ui/ModelPillRow';
+import { defaultModelPillLabelsFromSkills } from '@/lib/default-model-pills';
+import { resolveMascotMarketingDescription } from '@/lib/mascot-short-bio';
 
 export type CircularMascotCarouselProps = {
   mascots: OwnedMascot[];
@@ -108,8 +111,7 @@ export function CircularMascotCarousel({
   activeNameOverride,
   onSkillTabPress,
 }: CircularMascotCarouselProps) {
-  const { colors, mode } = useTheme();
-  const chipFill = mode === 'dark' ? colors.chatBubble : colors.surface;
+  const { colors } = useTheme();
   const { width } = useWindowDimensions();
   const total = mascots.length;
 
@@ -136,7 +138,6 @@ export function CircularMascotCarousel({
       // minmax(0, fr) lets columns shrink so long bio text wraps instead of overlapping the next column.
       return {
         display: 'grid',
-        // Two-column desktop: deck on the left, bio + skills stacked on the right.
         gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1.6fr)',
         columnGap: 256,
         alignItems: 'start',
@@ -242,22 +243,18 @@ export function CircularMascotCarousel({
   const descriptionChips = useMemo(() => {
     if (descriptionChipsOverride) return descriptionChipsOverride;
     if (!activeMascot) return [];
-    const techLike = [
-      ...(activeMascot.models ?? []),
-      ...(activeMascot.personality ?? []).slice(0, 3),
-    ];
-    return techLike.filter(Boolean).slice(0, 6);
+    return defaultModelPillLabelsFromSkills(activeMascot.skills ?? [], activeMascot.models ?? []);
   }, [activeMascot, descriptionChipsOverride]);
 
   const descriptionText = useMemo(() => {
     if (descriptionTextOverride) return descriptionTextOverride;
     if (!activeMascot) return '';
-    return (
-      activeMascot.bio ||
-      (activeMascot.personality?.length ? activeMascot.personality.join(', ') : '') ||
-      activeMascot.questionPrompt ||
-      ''
-    );
+    return resolveMascotMarketingDescription({
+      longBio: activeMascot.longBio,
+      bio: activeMascot.bio,
+      name: activeMascot.name,
+      skills: activeMascot.skills ?? [],
+    });
   }, [activeMascot, descriptionTextOverride]);
 
   const skillTabs = useMemo(() => {
@@ -281,8 +278,7 @@ export function CircularMascotCarousel({
       <View style={[styles.leftCol, narrow && styles.sectionStack, nativeWide && styles.leftColNativeWide]}>
         <View style={styles.deckOuter}>
           <View
-            // @ts-expect-error: PanResponder props
-            {...panResponder.panHandlers}
+            {...(panResponder.panHandlers as object)}
             style={[styles.deckContainer, { height: deckContainerHeight }]}
           >
             {/* We render animated cards below (separate loop) to keep hooks valid. */}
@@ -408,24 +404,19 @@ export function CircularMascotCarousel({
           </Text>
 
           <View style={styles.chipsRow}>
-            {descriptionChips.map((chip) => (
-              <View
-                key={chip}
-                style={[
-                  styles.chip,
-                  { borderColor: colors.outline, backgroundColor: chipFill },
-                ]}
-              >
-                <Text style={[styles.chipText, { color: colors.textMuted }]}>{chip}</Text>
-              </View>
-            ))}
+            <ModelPillRow labels={descriptionChips} style={{ justifyContent: 'flex-start' }} />
           </View>
 
           <Text
             style={[
               styles.descText,
               { color: colors.textMuted, fontFamily: fontFamilies.figtree.regular },
-              Platform.OS === 'web' && (styles.descTextWeb as any),
+              Platform.OS === 'web' &&
+                ({
+                  overflowWrap: 'break-word',
+                  wordBreak: 'break-word',
+                  maxWidth: '100%',
+                } as any),
             ]}
           >
             {descriptionText}
@@ -825,34 +816,15 @@ const styles = StyleSheet.create({
     textAlign: 'left',
   },
   chipsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
     marginBottom: 12,
-    justifyContent: 'flex-start',
-  },
-  chip: {
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 999,
-    borderWidth: 1,
-  },
-  chipText: {
-    fontSize: 11,
-    fontWeight: '500',
+    alignSelf: 'stretch',
   },
   descText: {
     fontSize: 14,
     lineHeight: 22,
-    minHeight: 176,
     textAlign: 'left',
     flexWrap: 'wrap',
     flexShrink: 1,
-  },
-  descTextWeb: {
-    overflowWrap: 'break-word',
-    wordBreak: 'break-word',
-    maxWidth: '100%',
   },
   /** Compact skill chips (same family as MascotDetails / LinkPill), not full SkillCard rows. */
   skillsPillsRow: {

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator, Platform, ScrollView, Modal, Pressable, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -6,9 +6,10 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Image as ExpoImage } from 'expo-image';
 
 import { CircularMascotCarousel, Icon, MascotDetails, PaywallModal } from '@/components';
+import { resolveMascotDetailsShortBio, resolveMascotMarketingDescription } from '@/lib/mascot-short-bio';
 import { useTheme, fontFamilies } from '@/design-system';
 import { useMergedMascots } from '@/hooks/useMergedMascots';
-import type { OwnedMascot } from '@/config/mascots';
+import { type OwnedMascot, resolveMascotIsFree } from '@/config/mascots';
 import type { Skill } from '@/components';
 import { useAuth } from '@/services/auth';
 import { useSubscription } from '@/services/subscription';
@@ -74,7 +75,7 @@ export default function AgentsScreen() {
     void ExpoImage.prefetch(uris, 'memory-disk').catch(() => {});
   }, [deckMascots]);
 
-  const { skills: detailsDbSkills } = useMascotSkills(detailsMascot?.id ?? '', detailsMascot?.isFree ?? false);
+  const { skills: detailsDbSkills } = useMascotSkills(detailsMascot?.id ?? '', resolveMascotIsFree(detailsMascot));
 
   const detailsModalSkills = useMemo((): Skill[] => {
     if (!detailsMascot) return [];
@@ -85,6 +86,7 @@ export default function AgentsScreen() {
         prompt: s.skill_prompt || undefined,
         summary: s.skill_summary?.trim() || undefined,
         promptPreview: s.skill_prompt_preview?.trim() || undefined,
+        preferredProvider: s.preferred_provider ?? null,
       }));
     }
     return detailsMascot.skills ?? [];
@@ -92,44 +94,14 @@ export default function AgentsScreen() {
 
   const activeMascot = deckMascots[selectedIndex] ?? deckMascots[0];
 
-  const recommendedAiPills = useMemo(() => {
-    if (!activeMascot) return [];
-    return (activeMascot.models ?? []).filter(Boolean).slice(0, 6);
-  }, [activeMascot]);
-
   const bioText = useMemo(() => {
     if (!activeMascot) return '';
-
-    const explicitLongBio = activeMascot.longBio?.trim();
-    if (explicitLongBio) return explicitLongBio;
-
-    const skillLabels = (activeMascot.skills ?? [])
-      .map((s) => s.label)
-      .filter(Boolean)
-      .slice(0, 6);
-
-    const models = (activeMascot.models ?? []).filter(Boolean).slice(0, 4);
-    const prompt = activeMascot.questionPrompt?.trim();
-    const subtitle = activeMascot.subtitle?.trim();
-
-    const skillSentence = skillLabels.length
-      ? `It focuses on ${skillLabels.join(', ')}, so you can move from a messy request to a clear deliverable without guessing.`
-      : `It helps you go from a messy request to a clear deliverable by structuring the work and guiding the next steps.`;
-
-    const modelSentence =
-      models.length > 0
-        ? `When you ask, it leans on ${models.join(', ')} to structure the output, fill gaps, and refine it until it matches what you meant.`
-        : `When you ask, it structures the output and refines it until it matches what you meant.`;
-
-    const promptSentence = prompt
-      ? `You can use it to answer ${prompt} and turn the result into something you can ship.`
-      : `You can use it to turn your input into something you can ship.`;
-
-    const subtitleSentence = subtitle
-      ? `For ${subtitle}, this is the fastest path from idea to execution.`
-      : `This is the fastest path from idea to execution.`;
-
-    return `${subtitleSentence} I built this to help you go from “what do I do?” to “here’s the work.” ${skillSentence} ${modelSentence} ${promptSentence}`;
+    return resolveMascotMarketingDescription({
+      longBio: activeMascot.longBio,
+      bio: activeMascot.bio,
+      name: activeMascot.name,
+      skills: activeMascot.skills ?? [],
+    });
   }, [activeMascot]);
 
   const handleStartChatWithSkill = (skill: Skill) => {
@@ -150,6 +122,14 @@ export default function AgentsScreen() {
     });
   };
 
+  const onCarouselIndexChange = useCallback(
+    (next: number) => {
+      setSelectedIndex(next);
+      void AsyncStorage.setItem(LAST_MASCOT_KEY, deckMascots[next]?.id).catch(() => {});
+    },
+    [deckMascots]
+  );
+
   if (isLoading) {
     return (
       <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
@@ -169,6 +149,20 @@ export default function AgentsScreen() {
       </SafeAreaView>
     );
   }
+
+  const agentsCarousel = (
+    <CircularMascotCarousel
+      mascots={deckMascots}
+      activeIndex={selectedIndex}
+      onActiveIndexChange={onCarouselIndexChange}
+      onActiveMascotPress={(mascot) => {
+        if (mascot.isComingSoon) return;
+        setDetailsMascot(mascot);
+      }}
+      descriptionTextOverride={bioText}
+      onSkillTabPress={handleStartChatWithSkill}
+    />
+  );
 
   // Wrapper component - use KeyboardAvoidingView on both platforms
   return (
@@ -207,21 +201,7 @@ export default function AgentsScreen() {
               </Text>
             </View>
           </View>
-          <CircularMascotCarousel
-            mascots={deckMascots}
-            activeIndex={selectedIndex}
-            onActiveIndexChange={(next) => {
-              setSelectedIndex(next);
-              void AsyncStorage.setItem(LAST_MASCOT_KEY, deckMascots[next]?.id).catch(() => {});
-            }}
-            onActiveMascotPress={(mascot) => {
-              if (mascot.isComingSoon) return;
-              setDetailsMascot(mascot);
-            }}
-            descriptionChipsOverride={recommendedAiPills}
-            descriptionTextOverride={bioText}
-            onSkillTabPress={handleStartChatWithSkill}
-          />
+          {agentsCarousel}
         </View>
       </ScrollView>
 
@@ -236,7 +216,11 @@ export default function AgentsScreen() {
                 personality={detailsMascot.personality}
                 models={detailsMascot.models}
                 skills={detailsModalSkills}
-                customBio={detailsMascot.longBio ?? undefined}
+                customBio={resolveMascotDetailsShortBio({
+                  bio: detailsMascot.bio,
+                  name: detailsMascot.name,
+                  skills: detailsMascot.skills,
+                }) || undefined}
                 variant={!detailsMascot.isFree && !isSubscribed && !isAdmin ? 'locked' : 'available'}
                 mascotId={detailsMascot.id}
                 isPro={detailsMascot.isPro}

@@ -298,7 +298,7 @@ const styles = StyleSheet.create({
   },
   backTop: {
     paddingTop: 14,
-    paddingBottom: 10,
+    paddingBottom: 4,
     paddingHorizontal: 12,
   },
   backTopHeader: {
@@ -327,9 +327,9 @@ const styles = StyleSheet.create({
     paddingRight: 8,
   },
   skillTab: {
-    borderRadius: 10,
+    borderRadius: 999,
     borderWidth: 1,
-    paddingVertical: 8,
+    paddingVertical: 6,
     paddingHorizontal: 12,
     minWidth: 72,
     maxWidth: 160,
@@ -344,13 +344,13 @@ const styles = StyleSheet.create({
   },
   previewContent: {
     paddingHorizontal: 14,
-    paddingVertical: 14,
+    paddingTop: 6,
     paddingBottom: 42,
   },
   previewTitle: {
     fontSize: 13,
     fontFamily: fontFamilies.figtree.semiBold,
-    marginBottom: 8,
+    marginBottom: 4,
   },
   previewText: {
     fontSize: 14,

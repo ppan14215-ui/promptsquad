@@ -11,8 +11,9 @@ import {
   SkillPillWithTooltip,
   getSkillTooltipTextFromSummaryFields,
 } from '@/components/ui/SkillPillWithTooltip';
-import { ColoredTab } from '@/components/ui/ColoredTab';
-import { AI_MODEL_DISPLAY } from '@/constants/ai-models';
+import { ModelPillRow } from '@/components/ui/ModelPillRow';
+import { defaultModelPillLabelsFromSkills } from '@/lib/default-model-pills';
+import { fallbackShortBioFromSkills } from '@/lib/mascot-short-bio';
 import { useMascotLike } from '@/services/mascot-likes';
 // import { useMascotSkills } from '@/services/admin';
 
@@ -26,6 +27,8 @@ export type Skill = {
   summary?: string;
   /** DB preview snippet when full prompt is unavailable (e.g. masked). */
   promptPreview?: string;
+  /** Skill settings: preferred LLM (`mascot_skills.preferred_provider`). */
+  preferredProvider?: string | null;
 };
 
 export type MascotDetailsProps = {
@@ -84,87 +87,15 @@ export function MascotDetails({
   const displaySkills = skills.slice(0, 4);
   const isLoadingSkills = false;
 
-  const fallbackSkillBio = useMemo(() => {
-    if (!displaySkills.length) {
-      return `${name} can help with a wide range of everyday tasks and conversations.`;
-    }
+  const fallbackSkillBio = useMemo(
+    () => fallbackShortBioFromSkills(name, displaySkills),
+    [displaySkills, name]
+  );
 
-    const labels = displaySkills
-      .map((skill) => skill.label?.trim())
-      .filter((label): label is string => !!label);
-
-    if (!labels.length) {
-      return `${name} helps with tailored tasks based on your selected goals.`;
-    }
-
-    if (labels.length === 1) {
-      return `${name} specializes in ${labels[0].toLowerCase()} and gives focused, practical support.`;
-    }
-
-    const primary = labels.slice(0, 3);
-    const listText =
-      primary.length === 2
-        ? `${primary[0]} and ${primary[1]}`
-        : `${primary[0]}, ${primary[1]}, and ${primary[2]}`;
-    const suffix = labels.length > 3 ? ', plus additional related workflows' : '';
-
-    return `${name} helps with ${listText.toLowerCase()}${suffix}, so you can move from ideas to clear outcomes faster.`;
-  }, [displaySkills, name]);
-
-  const bestModels = useMemo(() => {
-    const text = `${name} ${subtitle} ${displaySkills.map((skill) => `${skill.label} ${skill.prompt || ''}`).join(' ')}`.toLowerCase();
-
-    if (
-      text.includes('write') ||
-      text.includes('writing') ||
-      text.includes('blog') ||
-      text.includes('copy') ||
-      text.includes('email') ||
-      text.includes('story') ||
-      text.includes('translate') ||
-      text.includes('editor')
-    ) {
-      return [AI_MODEL_DISPLAY.chipClaude, AI_MODEL_DISPLAY.chipGemini];
-    }
-
-    if (
-      text.includes('code') ||
-      text.includes('debug') ||
-      text.includes('developer') ||
-      text.includes('api') ||
-      text.includes('architecture') ||
-      text.includes('program')
-    ) {
-      return [AI_MODEL_DISPLAY.chipOpenai, AI_MODEL_DISPLAY.chipClaude];
-    }
-
-    if (
-      text.includes('research') ||
-      text.includes('analysis') ||
-      text.includes('market') ||
-      text.includes('data') ||
-      text.includes('strategy') ||
-      text.includes('report')
-    ) {
-      return [AI_MODEL_DISPLAY.chipOpenai, AI_MODEL_DISPLAY.chipPerplexity];
-    }
-
-    if (
-      text.includes('support') ||
-      text.includes('coaching') ||
-      text.includes('conversation') ||
-      text.includes('advice') ||
-      text.includes('interview')
-    ) {
-      return [AI_MODEL_DISPLAY.chipGemini, AI_MODEL_DISPLAY.chipClaude];
-    }
-
-    if (models?.length) {
-      return models.slice(0, 2);
-    }
-
-    return [AI_MODEL_DISPLAY.chipGemini, AI_MODEL_DISPLAY.chipOpenai];
-  }, [displaySkills, models, name, subtitle]);
+  const defaultModelLabels = useMemo(
+    () => defaultModelPillLabelsFromSkills(displaySkills, models ?? []),
+    [displaySkills, models]
+  );
 
   // Shadow for header
   const headerShadowStyle = Platform.select({
@@ -204,13 +135,9 @@ export function MascotDetails({
           { fontFamily: fontFamilies.figtree.semiBold, color: colors.text },
         ]}
       >
-        Best models
+        {t.mascot.defaultModels}
       </Text>
-      <View style={styles.tagsRow}>
-        {bestModels.map((model, index) => (
-          <ColoredTab key={index} label={model} forceState="default" />
-        ))}
-      </View>
+      <ModelPillRow labels={defaultModelLabels} compact />
     </View>
   );
 

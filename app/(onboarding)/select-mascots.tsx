@@ -9,7 +9,6 @@ import {
   Alert,
   Modal,
   Platform,
-  useWindowDimensions,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -24,12 +23,10 @@ import { useSubscription } from '@/services/subscription';
 import { useIsAdmin } from '@/services/admin';
 
 const REQUIRED_SELECTION = 4;
-const DESKTOP_BREAKPOINT = 768;
 
 export default function SelectMascotsScreen() {
   const { colors } = useTheme();
   const router = useRouter();
-  const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const { mascots, isLoading } = useMascotsData();
   const [selectedMascots, setSelectedMascots] = useState<string[]>([]);
@@ -51,7 +48,6 @@ export default function SelectMascotsScreen() {
     return allMascots.filter(m => m.is_free === true);
   }, [allMascots]);
 
-  const isDesktop = width >= DESKTOP_BREAKPOINT;
   const allSelected = selectedMascots.length === REQUIRED_SELECTION;
 
   const handleMascotToggle = (mascotId: string) => {
@@ -211,7 +207,7 @@ export default function SelectMascotsScreen() {
             const mascotId = parseInt(mascot.id);
             const isPro = mascot.is_pro || (mascotId >= 11 && mascotId <= 20); // Fallback to ID check if flag missing
             const isSelectable = mascot.is_free === true; // Use explicit is_free flag
-            const isLocked = !isSelectable || (!isSelected && isSelectable);
+            const isLocked = !isSelectable;
 
             const imageSource = getMascotImageSource(mascot.image_url || '');
             const grayscaleSource = getMascotGrayscaleImageSource(mascot.image_url || '');
@@ -230,7 +226,7 @@ export default function SelectMascotsScreen() {
                       handleMascotToggle(mascot.id);
                     }
                   }}
-                  isLocked={isLocked && !isSelected}
+                  isLocked={isLocked}
                   isPro={isPro}
                   isUnlocked={false}
                   forceState={isSelected ? 'hover' : (isLocked ? 'locked' : 'default')}
@@ -269,7 +265,7 @@ export default function SelectMascotsScreen() {
         borderTopColor: colors.outline,
       }]}>
         <BigPrimaryButton
-          label={allSelected ? `Continue with ${REQUIRED_SELECTION} Mascots` : `Continue with ${selectedMascots.length} Mascot${selectedMascots.length !== 1 ? 's' : ''}`}
+          label={allSelected ? `Continue with ${REQUIRED_SELECTION} mascots` : `Continue with ${selectedMascots.length} mascot${selectedMascots.length !== 1 ? 's' : ''}`}
           onPress={handleContinue}
           disabled={!allSelected || isUnlocking}
         />
@@ -316,7 +312,7 @@ export default function SelectMascotsScreen() {
                 },
               ]}
             >
-              Do you wanna confirm the selection? This selection cannot be changed afterwards.
+              Ready to lock this in? You can't change it afterwards.
             </Text>
 
             {/* Modal Buttons */}

@@ -16,6 +16,7 @@ import { useTheme, fontFamilies } from '@/design-system';
 import type { Skill } from './MascotDetails';
 import { FlippableCard } from './FlippableCard';
 import { resolveMascotColor } from '@/lib/utils/mascot-colors';
+import { resolveMascotDetailsShortBio } from '@/lib/mascot-short-bio';
 
 export type DeckMascot = {
   id: string;
@@ -30,7 +31,10 @@ export type DeckMascot = {
   isPro?: boolean;
   isLocked?: boolean;
   isComingSoon?: boolean;
+  /** `mascots.bio` — short card line. */
   bio?: string | null;
+  /** `mascots.description` — long bio; preferred for flip-card front when set. */
+  longBio?: string | null;
 };
 
 type MascotCardDeckProps = {
@@ -376,7 +380,11 @@ export function MascotCardDeck({
                   color={card.mascot.color}
                   skills={card.mascot.skills || []}
                   models={card.mascot.models || []}
-                  customBio={card.mascot.bio}
+                  customBio={resolveMascotDetailsShortBio({
+                    bio: card.mascot.bio,
+                    name: card.mascot.name,
+                    skills: card.mascot.skills,
+                  }) || undefined}
                   isCustom={card.mascot.isCustom}
                   isPro={card.mascot.isPro}
                   isLocked={card.mascot.isLocked}

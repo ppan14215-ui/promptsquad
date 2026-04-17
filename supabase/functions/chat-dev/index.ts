@@ -3,12 +3,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.94.1/+esm';
 import { GoogleGenerativeAI } from 'https://cdn.jsdelivr.net/npm/@google/generative-ai@0.24.1/+esm';
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-user-token',
-  'Access-Control-Expose-Headers': 'x-model-downgraded-from',
-};
+import { corsHeaders } from '../_shared/cors.ts';
 
 interface ChatRequest {
   mascotId: string;
@@ -20,6 +15,8 @@ interface ChatRequest {
   image?: { mimeType: string; base64: string };
   taskCategory?: string; // For auto provider selection
   webSearch?: boolean;
+  /** Same as x-user-token when browsers block that header (CORS). Stripped before handling. */
+  _authAccessToken?: string;
 }
 
 serve(async (req: Request) => {
@@ -44,9 +41,40 @@ serve(async (req: Request) => {
       );
     }
 
+    // Read body once: web clients send user JWT in _authAccessToken (CORS) instead of x-user-token.
+    let rawBody = '';
+    try {
+      rawBody = await req.text();
+    } catch {
+      return new Response(
+        JSON.stringify({ error: 'Bad request' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    let parsedBody: ChatRequest | null = null;
+    if (rawBody.trim()) {
+      try {
+        parsedBody = JSON.parse(rawBody);
+      } catch {
+        return new Response(
+          JSON.stringify({ error: 'Invalid JSON' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+    }
+
+    const bodyAuthToken =
+      parsedBody && typeof parsedBody._authAccessToken === 'string'
+        ? parsedBody._authAccessToken.trim()
+        : '';
+    if (parsedBody && '_authAccessToken' in parsedBody) {
+      delete parsedBody._authAccessToken;
+    }
+
     // Get Authorization header
-    // BYPASS LOGIC: Check custom 'x-user-token' first, fall back to Authorization
-    const customAuth = req.headers.get('x-user-token');
+    // BYPASS LOGIC: x-user-token OR body _authAccessToken (web), else Authorization bearer (anon key)
+    const customAuth = (req.headers.get('x-user-token') || bodyAuthToken || '').trim();
     const authHeader = req.headers.get('Authorization');
 
     if (!customAuth && (!authHeader || !authHeader.startsWith('Bearer '))) {
@@ -56,25 +84,36 @@ serve(async (req: Request) => {
       );
     }
 
-    // Extract token: Use custom token if available, else standard bearer
+    // User session JWT (header or body); else gateway anon key from Authorization
     const token = customAuth ? customAuth.trim() : authHeader.replace(/^Bearer\s+/i, '').trim();
 
     console.log('[Edge Function] Extracted token (first 20 chars):', token.substring(0, 20) + '...');
     console.log('[Edge Function] Token length:', token.length);
 
-    // Verify we have the Anon Key
     const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY');
 
-    // Auth Strategy: 
-    // 1. Try standard validation with getUser()
-    // 2. If that fails (due to secret mismatch), fallback to manual decode
+    /** JWT payload uses base64url; atob() alone often fails on segment 2 */
+    const decodeJwtPayload = (jwt) => {
+      try {
+        const parts = jwt.split('.');
+        if (parts.length !== 3) return null;
+        let b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+        const pad = b64.length % 4;
+        if (pad) b64 += '='.repeat(4 - pad);
+        return JSON.parse(atob(b64));
+      } catch {
+        return null;
+      }
+    };
+
     let userId = '';
     let usedFallback = false;
 
     try {
       if (supabaseAnonKey) {
+        const authForUser = customAuth ? `Bearer ${customAuth}` : authHeader;
         const supabaseClient = createClient(supabaseUrl, supabaseAnonKey, {
-          global: { headers: { Authorization: authHeader } },
+          global: { headers: { Authorization: authForUser } },
         });
         const { data: { user }, error: authError } = await supabaseClient.auth.getUser();
 
@@ -89,18 +128,15 @@ serve(async (req: Request) => {
       console.warn('[Edge Function] Client creation failed:', e);
     }
 
-    // Fallback: Manual Token Decode if getUser() failed but we have a token
     if (!userId && token) {
       console.log('[Edge Function] Falling back to manual token decoding...');
       try {
-        const parts = token.split('.');
-        if (parts.length === 3) {
-          const payload = JSON.parse(atob(parts[1]));
+        const payload = decodeJwtPayload(token);
+        if (payload) {
           const now = Math.floor(Date.now() / 1000);
-
-          // Allow 5 minutes of clock drift/grace
-          if (payload.exp > now - 300 && payload.sub) {
-            userId = payload.sub;
+          const sub = payload.sub;
+          if (payload.exp > now - 300 && sub && typeof sub === 'string') {
+            userId = sub;
             usedFallback = true;
             console.log('[Edge Function] Manual decode successful. User:', userId);
           } else {
@@ -128,8 +164,14 @@ serve(async (req: Request) => {
     // Create admin client for database operations (bypassing RLS)
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Parse request body
-    const body: ChatRequest = await req.json();
+    if (!parsedBody) {
+      return new Response(
+        JSON.stringify({ error: 'Missing request body' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const body: ChatRequest = parsedBody;
     const {
       mascotId,
       messages,
@@ -179,6 +221,35 @@ serve(async (req: Request) => {
       }
       return true; // All other providers are High-Tier
     }
+
+    const isOpenAIReasoningModel = (model: string): boolean => {
+      const lower = (model || '').toLowerCase();
+      return /(^|[^a-z0-9])(o1|o1-mini|o3|o3-mini|o4-mini)([^a-z0-9]|$)/.test(lower);
+    };
+
+    const supportsAnthropicThinking = (model: string): boolean => {
+      const lower = (model || '').toLowerCase();
+      return (
+        lower.includes('claude-3-7-sonnet') ||
+        lower.includes('claude-sonnet-4') ||
+        lower.includes('claude-opus-4') ||
+        lower.includes('claude-4-6')
+      );
+    };
+
+    const supportsGeminiThinking = (model: string): boolean => {
+      const lower = (model || '').toLowerCase();
+      return (
+        lower.includes('gemini-2.5-pro') ||
+        lower.includes('gemini-2.5-flash') ||
+        lower.includes('gemini-2.5-flash-lite') ||
+        lower.includes('gemini-2.0-flash-thinking') ||
+        lower.includes('gemini-3-pro') ||
+        lower.includes('gemini-3-flash') ||
+        lower.includes('gemini-3-pro-preview') ||
+        lower.includes('gemini-3-flash-preview')
+      );
+    };
 
     // Determine basic provider/model early for checking (final selection happens later if 'auto')
     const tempProvider = clientProvider || 'gemini'; // Default for checking
@@ -337,7 +408,7 @@ serve(async (req: Request) => {
       // Grok model selection based on capabilities (https://docs.x.ai/docs/models)
       // Priority: deepThinking (Pro) > webSearch > default
       if (deepThinking) {
-        useModel = 'grok-4'; // Full reasoning model (also supports native X/web search)
+        useModel = 'grok-4-1-fast'; // Latest generally available Grok family model
       } else if (webSearch) {
         useModel = 'grok-4-1-fast'; // Optimized for agentic search
       } else {
@@ -350,10 +421,10 @@ serve(async (req: Request) => {
           useProvider === 'perplexity' ? 'sonar-reasoning-pro' :
             useProvider === 'claude' ? 'claude-sonnet-4-5-20250929' :
               'gemini-3-pro-preview')
-        : (useProvider === 'openai' ? 'gpt-5-mini' :
-          useProvider === 'perplexity' ? 'sonar' :
+        : (useProvider === 'openai' ? 'gpt-5.4' :
+          useProvider === 'perplexity' ? 'sonar-reasoning-pro' :
             useProvider === 'claude' ? 'claude-sonnet-4-5-20250929' :
-              'gemini-3-flash-preview'); // Use Gemini 3 Flash for free tier
+              'gemini-3-pro-preview');
     }
 
     console.log(`[Edge Function] Using model: ${useModel} (provider: ${useProvider}, webSearch: ${webSearch}, deepThinking: ${deepThinking})`);
@@ -477,18 +548,31 @@ serve(async (req: Request) => {
         }),
       ];
 
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${openaiApiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: useModel,
-          messages: openaiMessages,
-          stream: true,
-        }),
-      });
+      const useOpenAIReasoning = isOpenAIReasoningModel(useModel);
+      const response = await fetch(
+        useOpenAIReasoning ? 'https://api.openai.com/v1/responses' : 'https://api.openai.com/v1/chat/completions',
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${openaiApiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(
+            useOpenAIReasoning
+              ? {
+                  model: useModel,
+                  input: openaiMessages,
+                  stream: true,
+                  reasoning: { effort: 'medium' },
+                }
+              : {
+                  model: useModel,
+                  messages: openaiMessages,
+                  stream: true,
+                }
+          ),
+        }
+      );
 
       if (!response.ok) {
         const error = await response.text();
@@ -499,6 +583,9 @@ serve(async (req: Request) => {
       }
 
       const transformStream = new TransformStream({
+        reasoningSeen: false,
+        reasoningDoneEmitted: false,
+        reasoningStart: 0,
         async transform(chunk, controller) {
           const text = new TextDecoder().decode(chunk);
           const lines = text.split('\n').filter(line => line.startsWith('data: '));
@@ -510,9 +597,51 @@ serve(async (req: Request) => {
             } else {
               try {
                 const parsed = JSON.parse(data);
-                const content = parsed.choices?.[0]?.delta?.content;
-                if (content) {
-                  controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ content })}\n\n`));
+                if (useOpenAIReasoning) {
+                  const eventType = parsed.type;
+                  const summaryDelta =
+                    parsed.delta?.summary_text ||
+                    parsed.delta?.text ||
+                    parsed.summary_text ||
+                    parsed.reasoning?.summary?.[0]?.text;
+
+                  const isReasoningEvent =
+                    typeof summaryDelta === 'string' &&
+                    summaryDelta.length > 0 &&
+                    (
+                      eventType?.includes?.('reasoning') ||
+                      eventType === 'response.reasoning_summary_text.delta' ||
+                      eventType === 'response.reasoning.delta'
+                    );
+
+                  if (isReasoningEvent) {
+                    if (!this.reasoningSeen) {
+                      this.reasoningSeen = true;
+                      this.reasoningStart = Date.now();
+                    }
+                    controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ reasoning: summaryDelta })}\n\n`));
+                    continue;
+                  }
+
+                  const content =
+                    parsed.delta?.output_text ||
+                    parsed.delta?.text ||
+                    parsed.output_text ||
+                    parsed.response?.output_text ||
+                    parsed.choices?.[0]?.delta?.content;
+                  if (typeof content === 'string' && content.length > 0) {
+                    if (this.reasoningSeen && !this.reasoningDoneEmitted) {
+                      const reasoningSeconds = Math.round((Date.now() - this.reasoningStart) / 1000);
+                      controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ reasoningDone: true, reasoningSeconds })}\n\n`));
+                      this.reasoningDoneEmitted = true;
+                    }
+                    controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ content })}\n\n`));
+                  }
+                } else {
+                  const content = parsed.choices?.[0]?.delta?.content;
+                  if (content) {
+                    controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ content })}\n\n`));
+                  }
                 }
               } catch {
                 // Skip invalid JSON
@@ -660,10 +789,23 @@ serve(async (req: Request) => {
       const currentDate = new Date().toISOString().split('T')[0];
       grokSystemPrompt += `\n\n[Current Date: ${currentDate}]`;
 
-      // Format for Responses API
+      // Format for Responses API. Include image on the latest user message when provided.
       const grokInput = [
         { role: 'developer', content: grokSystemPrompt },
-        ...messages.map((m) => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content })),
+        ...messages.map((m, index) => {
+          const role = m.role === 'assistant' ? 'assistant' : 'user';
+          const isLast = index === messages.length - 1;
+          if (isLast && role === 'user' && image?.base64) {
+            return {
+              role,
+              content: [
+                { type: 'input_text', text: m.content },
+                { type: 'input_image', image_url: `data:${image.mimeType};base64,${image.base64}` },
+              ],
+            };
+          }
+          return { role, content: m.content };
+        }),
       ];
 
       // Native search tools for Responses API
@@ -704,41 +846,59 @@ serve(async (req: Request) => {
       }
 
       const transformStream = new TransformStream({
+        reasoningSeen: false,
+        reasoningDoneEmitted: false,
+        reasoningStart: 0,
         async transform(chunk, controller) {
           const text = new TextDecoder().decode(chunk);
           const lines = text.split('\n').filter(line => line.startsWith('data: '));
 
+          const emit = (event: Record<string, unknown>) => {
+            controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(event)}\n\n`));
+          };
+
+          const emitReasoning = (reasoningText: string) => {
+            if (!reasoningText) return;
+            if (!this.reasoningSeen) {
+              this.reasoningSeen = true;
+              this.reasoningStart = Date.now();
+            }
+            emit({ reasoning: reasoningText });
+          };
+
+          const emitContent = (contentText: string) => {
+            if (!contentText) return;
+            if (this.reasoningSeen && !this.reasoningDoneEmitted) {
+              const reasoningSeconds = Math.round((Date.now() - this.reasoningStart) / 1000);
+              emit({ reasoningDone: true, reasoningSeconds });
+              this.reasoningDoneEmitted = true;
+            }
+            emit({ content: contentText });
+          };
+
           for (const line of lines) {
             const data = line.slice(6);
             if (data === '[DONE]') {
-              console.log('[Grok] Stream done');
-              controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ done: true, model: useModel, provider: 'grok' })}\n\n`));
+              emit({ done: true, model: useModel, provider: 'grok' });
             } else {
               try {
                 const parsed = JSON.parse(data);
+                const eventType = parsed.type;
 
-                // Debug: log the structure
-                console.log('[Grok Responses] Event type:', parsed.type, 'Keys:', Object.keys(parsed));
-
-                // Responses API format - handle different event types
-                if (parsed.type === 'response.output_item.added') {
-                  // Tool usage indicator
+                if (eventType === 'response.output_item.added') {
                   const item = parsed.item;
                   if (item?.type === 'tool_use') {
                     const toolName = item.name;
                     let thinkingMessage = '';
                     let query = '';
-
-                    // Try to extract query from arguments
                     if (item.arguments) {
                       try {
                         const args = JSON.parse(item.arguments);
                         query = args.query || args.search_query || '';
-                      } catch (e) {
-                        // ignore parse error
+                      } catch {
+                        // ignore
                       }
                     }
-
                     if (toolName === 'web_search') {
                       thinkingMessage = query
                         ? `🌐 Searching web for "${query}"...`
@@ -750,39 +910,48 @@ serve(async (req: Request) => {
                     } else {
                       thinkingMessage = `🔧 Using ${toolName}${query ? ` with "${query}"` : ''}...`;
                     }
-                    controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ thinking: thinkingMessage })}\n\n`));
+                    emit({ thinking: thinkingMessage });
                   }
-                } else if (parsed.type === 'response.output_text.delta') {
-                  // Text content delta
+                } else if (
+                  eventType === 'response.reasoning.delta' ||
+                  eventType === 'response.reasoning_summary_text.delta' ||
+                  (typeof eventType === 'string' && eventType.includes('reasoning'))
+                ) {
+                  const reasoningDelta =
+                    parsed.delta?.text ||
+                    parsed.delta?.summary_text ||
+                    (typeof parsed.delta === 'string' ? parsed.delta : '') ||
+                    parsed.summary_text ||
+                    parsed.reasoning?.summary?.[0]?.text;
+                  if (typeof reasoningDelta === 'string' && reasoningDelta.length > 0) {
+                    emitReasoning(reasoningDelta);
+                  }
+                } else if (eventType === 'response.output_text.delta') {
                   const content = parsed.delta;
-                  if (content) {
-                    console.log('[Grok] Content:', content.substring(0, 100));
-                    controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ content })}\n\n`));
+                  if (typeof content === 'string' && content.length > 0) {
+                    emitContent(content);
                   }
-                } else if (parsed.type === 'response.completed') {
-                  // Response complete - extract final content if not streamed
+                } else if (eventType === 'response.completed') {
                   const output = parsed.response?.output;
                   if (output && Array.isArray(output)) {
                     for (const item of output) {
                       if (item.type === 'message' && item.content) {
                         for (const part of item.content) {
                           if (part.type === 'text' && part.text) {
-                            controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ content: part.text })}\n\n`));
+                            emitContent(part.text);
                           }
                         }
                       }
                     }
                   }
-                  controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ done: true, model: useModel, provider: 'grok' })}\n\n`));
+                  emit({ done: true, model: useModel, provider: 'grok' });
                 }
 
-                // Fallback: Check for Chat Completions format too (in case API fallback)
                 const deltaContent = parsed.choices?.[0]?.delta?.content;
-                if (deltaContent) {
-                  controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ content: deltaContent })}\n\n`));
+                if (typeof deltaContent === 'string' && deltaContent.length > 0) {
+                  emitContent(deltaContent);
                 }
               } catch (e) {
-                // Log parse errors for debugging
                 console.log('[Grok] Parse error:', e, 'Raw data:', data.substring(0, 200));
               }
             }
@@ -858,6 +1027,13 @@ serve(async (req: Request) => {
           return { role: m.role, content: m.content };
         });
 
+      const enableAnthropicThinking = supportsAnthropicThinking(useModel) && (deepThinking === true || isOpenAIReasoningModel(useModel));
+      const existingAnthropicMaxTokens = 4096;
+      const thinkingBudgetTokens = 5000;
+      const answerHeadroomTokens = 4000;
+      const anthropicMaxTokens = enableAnthropicThinking
+        ? Math.max(existingAnthropicMaxTokens, thinkingBudgetTokens + answerHeadroomTokens)
+        : existingAnthropicMaxTokens;
       const response = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: {
@@ -870,7 +1046,8 @@ serve(async (req: Request) => {
           system: systemPrompt,
           messages: claudeMessages,
           stream: true,
-          max_tokens: 4096,
+          max_tokens: anthropicMaxTokens,
+          ...(enableAnthropicThinking ? { thinking: { type: 'enabled', budget_tokens: thinkingBudgetTokens } } : {}),
         }),
       });
 
@@ -883,6 +1060,9 @@ serve(async (req: Request) => {
       }
 
       const transformStream = new TransformStream({
+        reasoningSeen: false,
+        reasoningDoneEmitted: false,
+        reasoningStart: 0,
         async transform(chunk, controller) {
           const text = new TextDecoder().decode(chunk);
           const lines = text.split('\n');
@@ -893,9 +1073,26 @@ serve(async (req: Request) => {
               try {
                 const parsed = JSON.parse(data);
                 if (parsed.type === 'content_block_delta') {
-                  const content = parsed.delta?.text;
-                  if (content) {
-                    controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ content })}\n\n`));
+                  const deltaType = parsed.delta?.type;
+                  if (deltaType === 'thinking_delta') {
+                    const reasoningChunk = parsed.delta?.thinking;
+                    if (typeof reasoningChunk === 'string' && reasoningChunk.length > 0) {
+                      if (!this.reasoningSeen) {
+                        this.reasoningSeen = true;
+                        this.reasoningStart = Date.now();
+                      }
+                      controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ reasoning: reasoningChunk })}\n\n`));
+                    }
+                  } else if (deltaType === 'text_delta') {
+                    const content = parsed.delta?.text;
+                    if (content) {
+                      if (this.reasoningSeen && !this.reasoningDoneEmitted) {
+                        const reasoningSeconds = Math.round((Date.now() - this.reasoningStart) / 1000);
+                        controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ reasoningDone: true, reasoningSeconds })}\n\n`));
+                        this.reasoningDoneEmitted = true;
+                      }
+                      controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ content })}\n\n`));
+                    }
                   }
                 } else if (parsed.type === 'message_stop') {
                   controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ done: true, model: useModel, provider: 'claude' })}\n\n`));
@@ -932,10 +1129,24 @@ serve(async (req: Request) => {
 
     console.log(`[Edge Function] FINAL GEMINI MODEL: '${useModel.trim()}' (Length: ${useModel.trim().length})`);
 
+    const geminiThinkingEnabled = supportsGeminiThinking(useModel);
+    const geminiThinkingBudget = 5000;
+    const geminiAnswerHeadroom = 4000;
+    const geminiThinkingGenerationConfig = geminiThinkingEnabled
+      ? {
+          thinkingConfig: {
+            includeThoughts: true,
+            thinkingBudget: geminiThinkingBudget,
+          },
+          maxOutputTokens: geminiThinkingBudget + geminiAnswerHeadroom,
+        }
+      : undefined;
+
     const model = genAI.getGenerativeModel({
       model: useModel.trim(),
       systemInstruction: systemPrompt,
       tools: tools,
+      ...(geminiThinkingGenerationConfig ? { generationConfig: geminiThinkingGenerationConfig } : {}),
     });
 
     const geminiHistory: Array<{ role: 'user' | 'model'; parts: Array<{ text: string }> }> = [];
@@ -988,17 +1199,125 @@ serve(async (req: Request) => {
     const stream = new ReadableStream({
       async start(controller) {
         const encoder = new TextEncoder();
-        try {
-          for await (const chunk of result.stream) {
-            const text = chunk.text();
-            if (text) {
-              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content: text })}\n\n`));
+
+        // Gemini can inline chain-of-thought as `<think>...</think>` or `<thinking>...</thinking>` blocks
+        // inside normal text streams. We split server-side so the client sees a clean two-phase stream
+        // (reasoning* -> reasoningDone -> content*) just like Anthropic.
+        const THINK_OPEN_RE = /<think(?:ing)?\s*>/i;
+        const THINK_CLOSE_RE = /<\/think(?:ing)?\s*>/i;
+        const TAG_SAFE_TAIL = 20;
+
+        let tagBuffer = '';
+        let insideThink = false;
+        let reasoningSeen = false;
+        let reasoningDoneEmitted = false;
+        let reasoningStart = 0;
+
+        const emit = (event: Record<string, unknown>) => {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+        };
+
+        const emitReasoning = (text: string) => {
+          if (!text) return;
+          if (!reasoningSeen) {
+            reasoningSeen = true;
+            reasoningStart = Date.now();
+          }
+          emit({ reasoning: text });
+        };
+
+        const emitContent = (text: string) => {
+          if (!text) return;
+          if (reasoningSeen && !reasoningDoneEmitted) {
+            const reasoningSeconds = Math.round((Date.now() - reasoningStart) / 1000);
+            emit({ reasoningDone: true, reasoningSeconds });
+            reasoningDoneEmitted = true;
+          }
+          emit({ content: text });
+        };
+
+        const feedTextThroughTagParser = (text: string, isFinal: boolean) => {
+          if (!text && !isFinal) return;
+          tagBuffer += text;
+
+          while (true) {
+            if (!insideThink) {
+              const match = tagBuffer.match(THINK_OPEN_RE);
+              if (!match) {
+                if (isFinal) {
+                  emitContent(tagBuffer);
+                  tagBuffer = '';
+                } else {
+                  const safeLen = Math.max(0, tagBuffer.length - TAG_SAFE_TAIL);
+                  if (safeLen > 0) {
+                    emitContent(tagBuffer.slice(0, safeLen));
+                    tagBuffer = tagBuffer.slice(safeLen);
+                  }
+                }
+                return;
+              }
+              const before = tagBuffer.slice(0, match.index ?? 0);
+              if (before) emitContent(before);
+              tagBuffer = tagBuffer.slice((match.index ?? 0) + match[0].length);
+              insideThink = true;
+            } else {
+              const match = tagBuffer.match(THINK_CLOSE_RE);
+              if (!match) {
+                if (isFinal) {
+                  emitReasoning(tagBuffer);
+                  tagBuffer = '';
+                } else {
+                  const safeLen = Math.max(0, tagBuffer.length - TAG_SAFE_TAIL);
+                  if (safeLen > 0) {
+                    emitReasoning(tagBuffer.slice(0, safeLen));
+                    tagBuffer = tagBuffer.slice(safeLen);
+                  }
+                }
+                return;
+              }
+              const before = tagBuffer.slice(0, match.index ?? 0);
+              if (before) emitReasoning(before);
+              tagBuffer = tagBuffer.slice((match.index ?? 0) + match[0].length);
+              insideThink = false;
             }
           }
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, model: useModel, provider: 'gemini' })}\n\n`));
+        };
+
+        try {
+          for await (const chunk of result.stream) {
+            const candidates =
+              chunk?.candidates ||
+              chunk?.response?.candidates ||
+              chunk?.rawResponse?.candidates ||
+              [];
+            const parts = candidates?.[0]?.content?.parts;
+
+            if (Array.isArray(parts) && parts.length > 0) {
+              for (const part of parts) {
+                const partText = typeof part?.text === 'string' ? part.text : '';
+                if (!partText) continue;
+
+                const isThoughtPart =
+                  part?.thought === true || part?.type === 'thought' || part?.role === 'thought';
+
+                if (isThoughtPart) {
+                  emitReasoning(partText);
+                } else {
+                  feedTextThroughTagParser(partText, false);
+                }
+              }
+            } else {
+              const text = typeof chunk?.text === 'function' ? chunk.text() : '';
+              if (text) feedTextThroughTagParser(text, false);
+            }
+          }
+
+          feedTextThroughTagParser('', true);
+
+          emit({ done: true, model: useModel, provider: 'gemini' });
           controller.close();
         } catch (error: any) {
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: error.message })}\n\n`));
+          emit({ error: error.message });
           controller.close();
         }
       },

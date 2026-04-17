@@ -13,10 +13,10 @@ export function ChangelogModal({ visible, onDismiss, version }: ChangelogModalPr
     const { colors } = useTheme();
 
     const updates = [
-        { title: '💎 Pro Subscription', description: 'Unlock all mascots and features with our new Pro plan.' },
-        { title: '🎨 Custom Mascots', description: 'Create your own AI companions with unique personalities and skills.' },
-        { title: '🔒 Local Privacy', description: 'Your custom mascots stay locally on your device for enhanced privacy.' },
-        { title: '✨ UI Refinements', description: 'Smoother animations and cleaner design across the app.' }
+        { title: '💬 Skill tooltips', description: 'Hover or tap skill pills to see a short summary, preview, or full prompt when you have access.' },
+        { title: '🖥️ Web polish', description: 'Tooltips float above the page on web so the Agents carousel and chat layout stay steady.' },
+        { title: '📋 Skills tab', description: 'Preview cards show the faded prompt snippet only—no duplicate tooltip on top.' },
+        { title: '✨ Chat layout', description: 'Skill suggestions sit above the message layer so tooltips are not hidden behind replies.' },
     ];
 
     const ModalContent = (

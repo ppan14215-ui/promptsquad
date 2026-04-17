@@ -167,7 +167,7 @@ function SkillTooltipOverlayWeb({
   return portalSkillTooltipToBody(node);
 }
 
-/** DB mascot_skills row: summary → preview → full prompt only when user has full access. */
+/** DB mascot_skills row: summary → preview → full prompt when present (no tier gate). */
 export function getSkillTooltipTextFromMascotSkill(skill: {
   skill_summary?: string | null;
   skill_prompt_preview?: string | null;
@@ -177,8 +177,7 @@ export function getSkillTooltipTextFromMascotSkill(skill: {
 }): string {
   const sum = skill.skill_summary?.trim() || '';
   const prev = skill.skill_prompt_preview?.trim() || '';
-  const full =
-    skill.is_full_access && skill.skill_prompt?.trim() ? skill.skill_prompt.trim() : '';
+  const full = skill.skill_prompt?.trim() || '';
   const core = sum || prev || full;
   if (core) return core;
   const label = skill.skill_label?.trim();

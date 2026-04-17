@@ -79,6 +79,7 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
   const [isDeepThinkingHovered, setIsDeepThinkingHovered] = useState(false);
   const [isSendHovered, setIsSendHovered] = useState(false);
   const [isLlmPickerHovered, setIsLlmPickerHovered] = useState(false);
+  const [hoveredLlmOption, setHoveredLlmOption] = useState<LLMPreference | null>(null);
   const [isContainerHovered, setIsContainerHovered] = useState(false);
   const [isInputFocused, setIsInputFocused] = useState(false);
   const [inputHeight, setInputHeight] = useState(48); // Start with min height
@@ -171,6 +172,10 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
     }
   }, [value]);
 
+  useEffect(() => {
+    if (!showLLMDropdown) setHoveredLlmOption(null);
+  }, [showLLMDropdown]);
+
   const handlePaste = useCallback((e: any) => {
     if (Platform.OS !== 'web') return;
 
@@ -242,6 +247,11 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
             borderColor: accentOutline ? sendButtonColor : colors.outline,
             maxWidth,
           },
+          Platform.OS === 'web' &&
+            showLLMDropdown && {
+              zIndex: 2000,
+              position: 'relative' as const,
+            },
           Platform.OS === 'web' &&
             ({
               transitionProperty: 'border-color, box-shadow',
@@ -405,6 +415,7 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
                     const isLocked = isProModel && !canAccessPro;
                     const isSelected = chatLLM === option.code;
                     const optionSub = llmOptionSubtitle(option);
+                    const isRowHovered = Platform.OS === 'web' && hoveredLlmOption === option.code && !isSelected;
 
                     return (
                       <Pressable
@@ -412,7 +423,15 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
                         style={[
                           styles.llmDropdownItem,
                           isSelected && { backgroundColor: colors.primaryBg },
+                          isRowHovered && {
+                            backgroundColor: mode === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)',
+                          },
                           isLocked && { opacity: 0.5, backgroundColor: mode === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.02)' },
+                          Platform.OS === 'web' &&
+                            ({
+                              transition: 'background-color 120ms ease-out',
+                              cursor: isLocked ? 'default' : 'pointer',
+                            } as object),
                         ]}
                         onPress={() => {
                           if (isLocked) {
@@ -422,6 +441,14 @@ export const ChatInputBox = forwardRef<ChatInputBoxRef, ChatInputBoxProps>(({
                           }
                           onLLMChange(option.code);
                           setShowLLMDropdown(false);
+                        }}
+                        onHoverIn={() => {
+                          if (Platform.OS === 'web') setHoveredLlmOption(option.code);
+                        }}
+                        onHoverOut={() => {
+                          if (Platform.OS === 'web') {
+                            setHoveredLlmOption((prev) => (prev === option.code ? null : prev));
+                          }
                         }}
                       >
                         <View style={styles.llmDropdownRow}>
@@ -693,10 +720,14 @@ const styles = StyleSheet.create({
     marginBottom: 4,
     borderRadius: 8,
     borderWidth: 1,
-    zIndex: 100,
+    zIndex: 3000,
     overflow: 'hidden',
     alignSelf: 'flex-start',
     alignItems: 'stretch',
+    ...Platform.select({
+      default: { elevation: 24 },
+      web: {},
+    }),
   },
   llmDropdownRow: {
     flexDirection: 'row',

@@ -1,10 +1,13 @@
 import React from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, Platform, Alert } from 'react-native';
+import { useRouter } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme, fontFamilies, textStyles } from '@/design-system';
 import { useI18n, LANGUAGES, Language } from '@/i18n';
 import { useAuth } from '@/services/auth';
 import { useIsAdmin } from '@/services/admin';
 import { useSubscription, openBillingPortal } from '@/services/subscription';
+import { supabase } from '@/services/supabase';
 import { Icon, CreateMascotModal } from '@/components';
 import { ChangelogModal } from '@/components/ui/ChangelogModal';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -177,6 +180,7 @@ function LanguageOption({ code, name, nativeName, isSelected, onPress }: Languag
 }
 
 export default function ProfileScreen() {
+  const router = useRouter();
   const { colors, mode, setMode } = useTheme();
   const { language, setLanguage, t } = useI18n();
   const { user, signOut } = useAuth();
@@ -185,6 +189,7 @@ export default function ProfileScreen() {
   const [showChangelog, setShowChangelog] = React.useState(false);
   const [showCreateMascotModal, setShowCreateMascotModal] = React.useState(false);
   const [isOpeningPortal, setIsOpeningPortal] = React.useState(false);
+  const [isResettingOnboarding, setIsResettingOnboarding] = React.useState(false);
 
   const userName = user?.user_metadata?.full_name || user?.user_metadata?.name || user?.email?.split('@')[0] || 'User';
   const userEmail = user?.email || '';
@@ -203,6 +208,63 @@ export default function ProfileScreen() {
       }
     } finally {
       setIsOpeningPortal(false);
+    }
+  };
+
+  const handleResetOnboardingForTesting = async () => {
+    if (!user || isResettingOnboarding) return;
+
+    const confirmed = await new Promise<boolean>((resolve) => {
+      if (Platform.OS === 'web') {
+        resolve(window.confirm('Reset onboarding and re-run onboarding intro for this account?'));
+        return;
+      }
+      Alert.alert(
+        'Re-run Onboarding',
+        'Reset onboarding and re-run onboarding intro for this account?',
+        [
+          { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+          { text: 'Continue', style: 'destructive', onPress: () => resolve(true) },
+        ]
+      );
+    });
+
+    if (!confirmed) return;
+
+    setIsResettingOnboarding(true);
+    try {
+      const { error: deleteError } = await supabase
+        .from('user_mascots')
+        .delete()
+        .eq('user_id', user.id);
+
+      if (deleteError) throw deleteError;
+
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .update({
+          onboarding_completed: false,
+          updated_at: new Date().toISOString(),
+        } as any)
+        .eq('id', user.id);
+
+      if (profileError) throw profileError;
+
+      await Promise.all([
+        AsyncStorage.removeItem('redirect_after_login'),
+        AsyncStorage.removeItem('last_visited_path'),
+      ]);
+
+      router.replace('/(onboarding)/showcase');
+    } catch (error: any) {
+      const message = error?.message || 'Failed to reset onboarding.';
+      if (Platform.OS === 'web') {
+        window.alert(message);
+      } else {
+        Alert.alert('Re-run Onboarding', message);
+      }
+    } finally {
+      setIsResettingOnboarding(false);
     }
   };
 
@@ -359,6 +421,20 @@ export default function ProfileScreen() {
               showCheckmark={false}
             />
           )}
+          {__DEV__ && user && (
+            <SettingRow
+              label={isResettingOnboarding ? 'Resetting onboarding...' : 'Re-run Onboarding (Temp)'}
+              value="Testing only (default squad)"
+              onPress={handleResetOnboardingForTesting}
+              showCheckmark={false}
+            />
+          )}
+          <SettingRow
+            label="Preview Stock Bear Onboarding"
+            value="New mascot-led flow"
+            onPress={() => router.push('/(onboarding)/meet-stockbear')}
+            showCheckmark={false}
+          />
           <Pressable
             style={[
               styles.signOutButton,

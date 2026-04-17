@@ -14,11 +14,8 @@ type SkillPreviewProps = {
 };
 
 /**
- * SkillPreview Component
- * 
- * Displays a skill with its prompt preview.
- * - For admins: Shows full prompt without fade
- * - For regular users: Shows 25% preview with fade effect and lock icon
+ * SkillPreview — shows DB skill text. If `fullPrompt` is present, always show it (tier is gated
+ * elsewhere). Lock UI only when there is no full prompt and no elevated access flag.
  */
 export function SkillPreview({
   skillLabel,
@@ -32,12 +29,11 @@ export function SkillPreview({
   const fallbackPreview = `Use ${skillLabel.toLowerCase()} to get a guided response with clear, practical next steps.`;
   const normalizedFullPrompt = fullPrompt?.trim() || '';
   const normalizedPreview = skillPromptPreview?.trim() || '';
-  // Display full prompt for owners/admins; otherwise preview text.
-  // Some skills can have empty preview fields depending on access/table sync,
-  // so always provide a fallback to avoid blank cards.
-  const displayText = isFullAccess
-    ? (normalizedFullPrompt || normalizedPreview || fallbackPreview)
-    : (normalizedPreview || fallbackPreview);
+  const hasFullPromptText = !!normalizedFullPrompt;
+  const showUnlocked = isFullAccess || hasFullPromptText;
+  const displayText = hasFullPromptText
+    ? normalizedFullPrompt
+    : normalizedPreview || fallbackPreview;
 
   return (
     <View style={[styles.container, { backgroundColor: colors.surface, borderColor: colors.outline }]}>
@@ -55,7 +51,7 @@ export function SkillPreview({
         >
           {skillLabel}
         </Text>
-        {!isFullAccess && (
+        {!showUnlocked && (
           <View style={[styles.lockBadge, { backgroundColor: colors.outline }]}>
             <Icon name="lock" size={14} color={colors.textMuted} />
           </View>
@@ -63,7 +59,7 @@ export function SkillPreview({
       </View>
 
       {/* Prompt content – capped height with fade so cards stay compact */}
-      <View style={[styles.contentContainer, isFullAccess && styles.contentContainerFull]}>
+      <View style={[styles.contentContainer, showUnlocked && styles.contentContainerFull]}>
         <FormattedText
           style={{
             fontFamily: textStyles.body.fontFamily,
@@ -72,7 +68,7 @@ export function SkillPreview({
           }}
           baseColor={colors.text}
         >
-          {isFullAccess
+          {showUnlocked
             ? (displayText || '').split('\n').slice(0, 12).join('\n')
             : (displayText || '').split('\n').slice(0, 8).join('\n')}
         </FormattedText>
@@ -84,8 +80,8 @@ export function SkillPreview({
         />
       </View>
 
-      {/* Lock message for non-admins */}
-      {!isFullAccess && (
+      {/* Lock message only when we truly have no full prompt text */}
+      {!showUnlocked && (
         <View style={[styles.lockMessage, { borderTopColor: colors.outline }]}>
           <Icon name="lock" size={16} color={colors.textMuted} />
           <Text
@@ -118,7 +114,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingTop: 16,
-    paddingBottom: 8,
+    paddingBottom: 4,
   },
   skillLabel: {
     fontSize: 16,
